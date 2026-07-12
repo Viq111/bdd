@@ -502,16 +502,16 @@ func (db *DB) AddNote(ctx context.Context, in AddNote) (*Note, error) {
 		}
 		defer tx.Rollback()
 
+		now := time.Now().UTC()
+		nowStr := formatTime(now)
+
 		var revision int64
-		if err := tx.QueryRowContext(ctx, `SELECT revision FROM cards WHERE id = ?`, in.CardID).Scan(&revision); err != nil {
+		if err := tx.QueryRowContext(ctx, `UPDATE cards SET revision = revision + 1, updated_at = ? WHERE id = ? RETURNING revision`, nowStr, in.CardID).Scan(&revision); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("bdd: card %s: %w", in.CardID, ErrNotFound)
 			}
 			return err
 		}
-
-		now := time.Now().UTC()
-		nowStr := formatTime(now)
 
 		res, err := tx.ExecContext(ctx, `INSERT INTO notes (card_id, author, body, created_at) VALUES (?, ?, ?, ?)`, in.CardID, in.Author, in.Body, nowStr)
 		if err != nil {

@@ -471,6 +471,39 @@ func TestAddNoteAppendsChronologically(t *testing.T) {
 	}
 }
 
+func TestAddNoteIncrementsCardRevision(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	if created.Revision != 1 {
+		t.Fatalf("created.Revision = %d, want 1", created.Revision)
+	}
+
+	if _, err := db.AddNote(ctx, AddNote{CardID: created.ID, Body: "note", Author: "alice"}); err != nil {
+		t.Fatalf("AddNote() error = %v", err)
+	}
+
+	got, err := db.GetCard(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if got.Revision != 2 {
+		t.Fatalf("GetCard().Revision = %d, want 2", got.Revision)
+	}
+
+	var eventRevision int64
+	if err := db.sql.QueryRowContext(ctx, `SELECT revision FROM events WHERE subject_kind = 'card' AND subject_key = ? AND action = 'note'`, created.ID).Scan(&eventRevision); err != nil {
+		t.Fatalf("querying note event: %v", err)
+	}
+	if eventRevision != 2 {
+		t.Fatalf("note event revision = %d, want 2", eventRevision)
+	}
+}
+
 func TestAddNoteRequiresBodyAndExistingCard(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
