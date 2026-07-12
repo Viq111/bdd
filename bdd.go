@@ -193,39 +193,51 @@ func (db *DB) Upgrade(ctx context.Context) error {
 // InitOptions configures Init.
 type InitOptions struct {
 	// Workspace is the directory Init creates .bdd/bdd.sqlite under. An
-	// empty Workspace means the current working directory.
+	// empty Workspace means the current working directory. Ignored when
+	// DBPath is set.
 	Workspace string
 
 	// Prefix is the workspace's card ID prefix (<prefix>-<random-suffix>),
 	// stored in the workspace table. Required: lowercase, starting with a
 	// letter, and containing only letters, digits, and hyphens.
 	Prefix string
+
+	// DBPath is an explicit path to create the database file at. When set,
+	// it takes precedence over Workspace: Init creates the database at
+	// exactly this path instead of under <Workspace>/.bdd/bdd.sqlite,
+	// mirroring how OpenOptions.Path takes precedence in Open.
+	DBPath string
 }
 
 var prefixPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
-// Init creates a new bdd workspace database at <workspace>/.bdd/bdd.sqlite,
-// applying every schema migration and seeding the built-in statuses and
-// types, then records Prefix in the workspace table. Init fails rather than
-// replacing anything already at that path, compatible or not: if a file
-// already exists at <workspace>/.bdd/bdd.sqlite, Init returns
-// ErrAlreadyExists without modifying it.
+// Init creates a new bdd workspace database, applying every schema
+// migration and seeding the built-in statuses and types, then records
+// Prefix in the workspace table. By default the database is created at
+// <workspace>/.bdd/bdd.sqlite; if DBPath is set, it is created at that exact
+// path instead. Init fails rather than replacing anything already at the
+// resolved path, compatible or not: if a file already exists there, Init
+// returns ErrAlreadyExists without modifying it.
 func Init(ctx context.Context, opts InitOptions) (*DB, error) {
 	if !prefixPattern.MatchString(opts.Prefix) {
 		return nil, &ValidationError{Fields: []string{"prefix"}}
 	}
 
-	workspaceDir := opts.Workspace
-	if workspaceDir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("bdd: init: %w", err)
+	var dbPath string
+	if opts.DBPath != "" {
+		dbPath = opts.DBPath
+	} else {
+		workspaceDir := opts.Workspace
+		if workspaceDir == "" {
+			wd, err := os.Getwd()
+			if err != nil {
+				return nil, fmt.Errorf("bdd: init: %w", err)
+			}
+			workspaceDir = wd
 		}
-		workspaceDir = wd
+		dbPath = filepath.Join(workspaceDir, bddDirName, bddFileName)
 	}
-
-	dbDir := filepath.Join(workspaceDir, bddDirName)
-	dbPath := filepath.Join(dbDir, bddFileName)
+	dbDir := filepath.Dir(dbPath)
 
 	if _, err := os.Stat(dbPath); err == nil {
 		return nil, fmt.Errorf("bdd: init: %s already exists: %w", dbPath, ErrAlreadyExists)

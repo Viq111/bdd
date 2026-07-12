@@ -77,6 +77,55 @@ func TestInitSilentEmitsOnlyDatabasePath(t *testing.T) {
 	}
 }
 
+func TestInitHonorsExplicitDBFlag(t *testing.T) {
+	workspaceDir := t.TempDir()
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "custom.sqlite")
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"init", "--db", dbPath, "--prefix", "qadb", "--json", workspaceDir}, &stdout, &stderr, "dev")
+	if code != ExitSuccess {
+		t.Fatalf("Run(init --db) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected database at %s: %v", dbPath, err)
+	}
+	defaultDBPath := filepath.Join(workspaceDir, ".bdd", "bdd.sqlite")
+	if _, err := os.Stat(defaultDBPath); err == nil {
+		t.Fatalf("expected no database at workspace-derived path %s, --db should have taken precedence", defaultDBPath)
+	}
+
+	var result InitResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	if result.Database != dbPath {
+		t.Fatalf("result.Database = %q, want %q", result.Database, dbPath)
+	}
+
+	// bdd status against the same --db path must resolve the same database.
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"status", "--db", dbPath, "--json"}, &stdout, &stderr, "dev")
+	if code != ExitSuccess {
+		t.Fatalf("Run(status --db) exit = %d, stderr = %q", code, stderr.String())
+	}
+	var status StatusResult
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	if status.Database != dbPath {
+		t.Fatalf("status.Database = %q, want %q", status.Database, dbPath)
+	}
+	if status.Prefix == nil || *status.Prefix != "qadb" {
+		t.Fatalf("status.Prefix = %v, want \"qadb\"", status.Prefix)
+	}
+}
+
 func TestInitFailsIfAlreadyExists(t *testing.T) {
 	dir := t.TempDir()
 

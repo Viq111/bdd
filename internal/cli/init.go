@@ -50,31 +50,47 @@ func runInit(g GlobalFlags, args []string, s *Streams) int {
 		i++
 	}
 
-	workspace := g.Workspace
-	if path != "" {
-		workspace = path
-	}
-	if workspace == "" {
-		wd, err := os.Getwd()
+	initOpts := bdd.InitOptions{Prefix: prefix}
+	var derivedFrom string
+
+	if g.DBPath != "" {
+		absDB, err := filepath.Abs(g.DBPath)
 		if err != nil {
 			s.Errorf("bdd: init: %v\n", err)
 			return ExitOther
 		}
-		workspace = wd
-	}
+		initOpts.DBPath = absDB
+		derivedFrom = workspaceDir(absDB)
+	} else {
+		workspace := g.Workspace
+		if path != "" {
+			workspace = path
+		}
+		if workspace == "" {
+			wd, err := os.Getwd()
+			if err != nil {
+				s.Errorf("bdd: init: %v\n", err)
+				return ExitOther
+			}
+			workspace = wd
+		}
 
-	absWorkspace, err := filepath.Abs(workspace)
-	if err != nil {
-		s.Errorf("bdd: init: %v\n", err)
-		return ExitOther
+		absWorkspace, err := filepath.Abs(workspace)
+		if err != nil {
+			s.Errorf("bdd: init: %v\n", err)
+			return ExitOther
+		}
+		initOpts.Workspace = absWorkspace
+		derivedFrom = absWorkspace
 	}
 
 	if prefix == "" {
-		prefix = derivePrefix(absWorkspace)
+		prefix = derivePrefix(derivedFrom)
+		initOpts.Prefix = prefix
 	}
 
 	ctx := context.Background()
-	db, err := bdd.Init(ctx, bdd.InitOptions{Workspace: absWorkspace, Prefix: prefix})
+	db, err := bdd.Init(ctx, initOpts)
 	if err != nil {
 		s.Errorf("bdd: init: %v\n", err)
 		return ExitCode(err)
@@ -88,7 +104,7 @@ func runInit(g GlobalFlags, args []string, s *Streams) int {
 	}
 
 	result := InitResult{
-		Workspace:     absWorkspace,
+		Workspace:     workspaceDir(db.Path()),
 		Database:      db.Path(),
 		Prefix:        prefix,
 		SchemaVersion: onDisk,

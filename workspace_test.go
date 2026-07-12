@@ -50,6 +50,31 @@ func TestInitCreatesWorkspaceDatabase(t *testing.T) {
 	}
 }
 
+func TestInitHonorsExplicitDBPath(t *testing.T) {
+	workspaceDir := t.TempDir()
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "custom.sqlite")
+	ctx := context.Background()
+
+	db, err := Init(ctx, InitOptions{Workspace: workspaceDir, DBPath: dbPath, Prefix: "bdd"})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	defer db.Close()
+
+	if db.Path() != dbPath {
+		t.Fatalf("db.Path() = %q, want %q", db.Path(), dbPath)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected database at %s: %v", dbPath, err)
+	}
+
+	defaultPath := filepath.Join(workspaceDir, ".bdd", "bdd.sqlite")
+	if _, err := os.Stat(defaultPath); err == nil {
+		t.Fatalf("expected no database at workspace-derived path %s, DBPath should have taken precedence", defaultPath)
+	}
+}
+
 func TestInitFailsIfDatabaseAlreadyExists(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
