@@ -201,6 +201,63 @@ func TestRestoreRoundTripsData(t *testing.T) {
 	}
 }
 
+// TestRestoreFromDefaultBackupPathPreservesSource covers the regression
+// where Restore's default source (<dir>/backup.sqlite, as left by a prior
+// Snapshot) and its default pre-restore BackupPath resolve to the same
+// file. Restore must install the snapshot's original contents rather than
+// the backup it writes over that same path mid-restore.
+func TestRestoreFromDefaultBackupPathPreservesSource(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	db, err := Init(ctx, InitOptions{Workspace: dir, Prefix: "bdd"})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("Remember() error = %v", err)
+	}
+
+	// Snapshot with no Output defaults to <dir>/.bdd/backup.sqlite.
+	snap, err := db.Snapshot(ctx, SnapshotOptions{})
+	if err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	wantDefault := filepath.Join(dir, ".bdd", DefaultSnapshotName)
+	if snap.Path != wantDefault {
+		t.Fatalf("Snapshot().Path = %q, want %q", snap.Path, wantDefault)
+	}
+
+	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
+		t.Fatalf("Remember() error = %v", err)
+	}
+	db.Close()
+
+	dbPath := filepath.Join(dir, ".bdd", "bdd.sqlite")
+	// Source and the (unset) BackupPath both resolve to snap.Path.
+	result, err := Restore(ctx, RestoreOptions{Path: dbPath, Source: snap.Path})
+	if err != nil {
+		t.Fatalf("Restore() error = %v", err)
+	}
+	if result.BackupPath != snap.Path {
+		t.Fatalf("Restore().BackupPath = %q, want %q", result.BackupPath, snap.Path)
+	}
+
+	reopened, err := Open(ctx, OpenOptions{Path: dbPath})
+	if err != nil {
+		t.Fatalf("Open() after restore error = %v", err)
+	}
+	defer reopened.Close()
+
+	m, err := reopened.Recall(ctx, "hello")
+	if err != nil {
+		t.Fatalf("Recall() error = %v", err)
+	}
+	if m.Body != "world" {
+		t.Fatalf("restored memory body = %q, want %q (pre-change value from the snapshot)", m.Body, "world")
+	}
+}
+
 func TestRestoreSkipBackupOmitsBackupFile(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()

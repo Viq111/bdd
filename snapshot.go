@@ -110,7 +110,11 @@ type RestoreResult struct {
 // if another process holds the database open, rather than restoring out
 // from under active readers or writers. Unless SkipBackup is set, Restore
 // saves the current target to BackupPath before installing Source. Restore
-// does not touch Source or the target until every validation has passed.
+// does not touch Source or the target until every validation has passed,
+// and it stages Source into a private temp file before writing the
+// pre-restore backup, so installing Source succeeds even when BackupPath
+// resolves to the same file as Source (both default to
+// <dir>/backup.sqlite).
 func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 	source := strings.TrimSpace(opts.Source)
 	if source == "" {
@@ -155,6 +159,25 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 		targetExists = false
 	}
 
+	// Stage Source into a private temp file before anything below touches
+	// the target: the pre-restore backup, when it lands at the default
+	// path, can share Source's own path (e.g. both default to
+	// <workspace>/.bdd/backup.sqlite). Copying Source now, ahead of the
+	// backup, guarantees Restore installs what it validated even if the
+	// backup step later overwrites the file at Source's path.
+	tmpPath, err := reserveTempPath(targetDir, "bdd-restore-*.sqlite.tmp")
+	if err != nil {
+		return nil, fmt.Errorf("bdd: restore: %w", err)
+	}
+	defer os.Remove(tmpPath)
+
+	if err := copyFile(source, tmpPath); err != nil {
+		return nil, fmt.Errorf("bdd: restore: copying %s: %w", source, err)
+	}
+	if err := fsyncPath(tmpPath); err != nil {
+		return nil, fmt.Errorf("bdd: restore: %w", err)
+	}
+
 	var backupPath string
 	if targetExists {
 		// Hold the exclusive lock for the rest of Restore, not just the
@@ -193,19 +216,6 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 		// lock, bypassing the exclusivity this function is supposed to
 		// guarantee. Their cleanup happens below, after the install, where
 		// it's cosmetic rather than load-bearing.
-	}
-
-	tmpPath, err := reserveTempPath(targetDir, "bdd-restore-*.sqlite.tmp")
-	if err != nil {
-		return nil, fmt.Errorf("bdd: restore: %w", err)
-	}
-	defer os.Remove(tmpPath)
-
-	if err := copyFile(source, tmpPath); err != nil {
-		return nil, fmt.Errorf("bdd: restore: copying %s: %w", source, err)
-	}
-	if err := fsyncPath(tmpPath); err != nil {
-		return nil, fmt.Errorf("bdd: restore: %w", err)
 	}
 	if err := os.Rename(tmpPath, target); err != nil {
 		return nil, fmt.Errorf("bdd: restore: installing %s: %w", target, err)
