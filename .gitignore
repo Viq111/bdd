@@ -8,3 +8,8 @@
 
 # Personal Claude Code settings (per-machine, not committed)
 .claude/
+
+# Generated benchmark artifacts (bd bdd-hqo2): regenerate with `make fixture`
+# and `make bench` rather than committing them.
+/bin/
+/testdata/bench/
