@@ -57,9 +57,18 @@ type CreateCard struct {
 // is left unchanged; a non-nil pointer to "" clears the stored value.
 // Changing Type does not re-run CreateCard's required-field rules.
 // AddLabels/RemoveLabels are idempotent. Status, label, and edge changes
-// (via AddParent/RemoveParent/AddChild/RemoveChild) are applied atomically
-// alongside field changes in a single transaction; an illegal status
-// transition returns ErrInvalidTransition and nothing is written.
+// (via AddParents/RemoveParents/AddChildren/RemoveChildren) are applied
+// atomically alongside field changes in a single transaction; an illegal
+// status transition returns ErrInvalidTransition and nothing is written.
+//
+// Status is validated against categoryTransitionAllowed: every transition
+// is legal except leaving a done-category status directly, which requires
+// ReopenCard instead (the only mutation that clears ClosedAt/StartedAt/
+// Assignee alongside the status change).
+//
+// AddParents/RemoveParents/AddChildren/RemoveChildren carry the same
+// self-edge, cycle, and existence semantics as AddParent/RemoveParent/
+// AddChild/RemoveChild.
 type UpdateCard struct {
 	Title *string
 	Type  *CardType
@@ -78,6 +87,11 @@ type UpdateCard struct {
 
 	AddLabels    []string
 	RemoveLabels []string
+
+	AddParents     []string
+	RemoveParents  []string
+	AddChildren    []string
+	RemoveChildren []string
 
 	Actor string
 }
@@ -209,13 +223,7 @@ func (db *DB) CreateCard(ctx context.Context, in CreateCard) (*Card, error) {
 
 // UpdateCard applies in to the card identified by id in a single
 // transaction and returns the resulting card. See the UpdateCard type for
-// field semantics.
-//
-// Status is applied as an ordinary field (validated only by the database's
-// status_definitions foreign key): the legal-transition state machine and
-// ErrInvalidTransition land with the dedicated lifecycle mutations
-// (ClaimCard, CloseCard, ReopenCard, DeferCard, HumanCard), which are out of
-// scope for this method.
+// field semantics, including the Status transition rules.
 func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, error) {
 	if err := validateUpdateCard(in); err != nil {
 		return nil, err
@@ -227,6 +235,10 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 
 	addLabels := dedupe(in.AddLabels)
 	removeLabels := dedupe(in.RemoveLabels)
+	addParents := dedupe(in.AddParents)
+	removeParents := dedupe(in.RemoveParents)
+	addChildren := dedupe(in.AddChildren)
+	removeChildren := dedupe(in.RemoveChildren)
 
 	var card *Card
 	err := sqlite.Retry(ctx, func() error {
@@ -238,6 +250,28 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 
 		now := time.Now().UTC()
 		nowStr := formatTime(now)
+
+		if in.Status != nil {
+			var curStatus string
+			if err := tx.QueryRowContext(ctx, `SELECT status FROM cards WHERE id = ?`, id).Scan(&curStatus); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("bdd: card %s: %w", id, ErrNotFound)
+				}
+				return err
+			}
+			fromCategory, err := statusCategory(ctx, tx, Status(curStatus))
+			if err != nil {
+				return err
+			}
+			toCategory, err := statusCategory(ctx, tx, *in.Status)
+			if err != nil {
+				return err
+			}
+			if !categoryTransitionAllowed(fromCategory, toCategory) {
+				return fmt.Errorf("bdd: update card %s: cannot transition from %s (%s) to %s (%s): %w",
+					id, curStatus, fromCategory, *in.Status, toCategory, ErrInvalidTransition)
+			}
+		}
 
 		sets := []string{"updated_at = ?", "revision = revision + 1"}
 		args := []any{nowStr}
@@ -329,6 +363,27 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 			changed["remove_labels"] = removeLabels
 		}
 
+		for _, p := range addParents {
+			if err := addEdgeTx(ctx, tx, p, id, in.Actor, nowStr); err != nil {
+				return err
+			}
+		}
+		for _, p := range removeParents {
+			if err := removeEdgeTx(ctx, tx, p, id, in.Actor, nowStr); err != nil {
+				return err
+			}
+		}
+		for _, c := range addChildren {
+			if err := addEdgeTx(ctx, tx, id, c, in.Actor, nowStr); err != nil {
+				return err
+			}
+		}
+		for _, c := range removeChildren {
+			if err := removeEdgeTx(ctx, tx, id, c, in.Actor, nowStr); err != nil {
+				return err
+			}
+		}
+
 		got, err := loadCard(ctx, tx, id)
 		if err != nil {
 			return err
@@ -412,6 +467,13 @@ func validateUpdateCard(in UpdateCard) error {
 	}
 	if !validateLabels(in.AddLabels) || !validateLabels(in.RemoveLabels) {
 		return fmt.Errorf("bdd: update card: labels must be non-empty, valid UTF-8, and at most %d bytes: %w", MaxLabelBytes, ErrInvalidArgument)
+	}
+	for _, ids := range [][]string{in.AddParents, in.RemoveParents, in.AddChildren, in.RemoveChildren} {
+		for _, id := range ids {
+			if id == "" {
+				return fmt.Errorf("bdd: update card: edge card ids must be non-empty: %w", ErrInvalidArgument)
+			}
+		}
 	}
 	return nil
 }
@@ -623,37 +685,9 @@ func (db *DB) RemoveLabel(ctx context.Context, id, label, actor string) (*Card, 
 	return nil, errNotImplemented
 }
 
-// ClaimCard atomically moves an active-category card to in_progress,
-// setting Assignee and StartedAt. Claiming a card already claimed by a
-// different actor returns ErrClaimed; claiming again as the same actor is a
-// no-op that returns the current card.
-func (db *DB) ClaimCard(ctx context.Context, id, actor string) (*Card, error) {
-	return nil, errNotImplemented
-}
-
-// CloseCard moves a card to a done-category status, setting ClosedAt.
-// CloseCard is idempotent.
-func (db *DB) CloseCard(ctx context.Context, id string, in CloseCard) (*Card, error) {
-	return nil, errNotImplemented
-}
-
-// ReopenCard moves a done-category card back to StatusOpen, clearing
-// ClosedAt, StartedAt, and Assignee.
-func (db *DB) ReopenCard(ctx context.Context, id string, actor string) (*Card, error) {
-	return nil, errNotImplemented
-}
-
-// DeferCard moves a card to StatusDeferred, optionally recording until as
-// DeferUntil. Deferral is never applied automatically by time passing.
-func (db *DB) DeferCard(ctx context.Context, id string, actor string, until *time.Time) (*Card, error) {
-	return nil, errNotImplemented
-}
-
-// HumanCard atomically adds the "human" label and appends reason as a note
-// in one transaction, flagging the card as needing human attention.
-func (db *DB) HumanCard(ctx context.Context, id string, actor string, reason string) (*Card, error) {
-	return nil, errNotImplemented
-}
+// ClaimCard, CloseCard, ReopenCard, DeferCard, and HumanCard (the dedicated
+// lifecycle mutations) live in lifecycle.go alongside the status-category
+// transition rules they and UpdateCard share.
 
 // AddParent adds a blocking edge: parentID must reach a done-category
 // status before childID is ready. Idempotent; rejects self-edges

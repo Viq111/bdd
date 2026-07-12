@@ -57,9 +57,6 @@ func (db *DB) addEdge(ctx context.Context, parentID, childID, actor string) erro
 	if parentID == "" || childID == "" {
 		return fmt.Errorf("bdd: add edge: parent and child ids are required: %w", ErrInvalidArgument)
 	}
-	if parentID == childID {
-		return fmt.Errorf("bdd: add edge: a card cannot be its own parent: %w", ErrInvalidArgument)
-	}
 
 	if err := db.ready(); err != nil {
 		return err
@@ -72,49 +69,65 @@ func (db *DB) addEdge(ctx context.Context, parentID, childID, actor string) erro
 		}
 		defer tx.Rollback()
 
-		parentRev, err := cardRevision(ctx, tx, parentID)
-		if err != nil {
-			return err
-		}
-		childRev, err := cardRevision(ctx, tx, childID)
-		if err != nil {
-			return err
-		}
-
-		var exists int
-		err = tx.QueryRowContext(ctx, `SELECT 1 FROM card_edges WHERE parent_id = ? AND child_id = ?`, parentID, childID).Scan(&exists)
-		if err == nil {
-			return tx.Commit()
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-
-		cyclic, err := wouldCreateCycle(ctx, tx, parentID, childID)
-		if err != nil {
-			return err
-		}
-		if cyclic {
-			return fmt.Errorf("bdd: add edge %s -> %s: %w", parentID, childID, ErrCycle)
-		}
-
 		now := formatTime(time.Now())
-		if _, err := tx.ExecContext(ctx, `INSERT INTO card_edges (parent_id, child_id, created_at, created_by) VALUES (?, ?, ?, ?)`, parentID, childID, now, actor); err != nil {
-			return err
-		}
-
-		childPayload, _ := json.Marshal(map[string]any{"parent_id": parentID})
-		if err := writeEvent(ctx, tx, childID, childRev, "add_parent", actor, now, childPayload); err != nil {
-			return err
-		}
-		parentPayload, _ := json.Marshal(map[string]any{"child_id": childID})
-		if err := writeEvent(ctx, tx, parentID, parentRev, "add_child", actor, now, parentPayload); err != nil {
+		if err := addEdgeTx(ctx, tx, parentID, childID, actor, now); err != nil {
 			return err
 		}
 
 		return tx.Commit()
 	})
 	return translateWriteErr(err, "add edge")
+}
+
+// addEdgeTx is the transaction-scoped core of addEdge, reused by UpdateCard
+// so field, label, status, and edge changes commit atomically together. now
+// is the caller's formatted current time, kept identical across every
+// change in the enclosing transaction.
+func addEdgeTx(ctx context.Context, tx *sql.Tx, parentID, childID, actor, now string) error {
+	if parentID == childID {
+		return fmt.Errorf("bdd: add edge: a card cannot be its own parent: %w", ErrInvalidArgument)
+	}
+
+	parentRev, err := cardRevision(ctx, tx, parentID)
+	if err != nil {
+		return err
+	}
+	childRev, err := cardRevision(ctx, tx, childID)
+	if err != nil {
+		return err
+	}
+
+	var exists int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM card_edges WHERE parent_id = ? AND child_id = ?`, parentID, childID).Scan(&exists)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+
+	cyclic, err := wouldCreateCycle(ctx, tx, parentID, childID)
+	if err != nil {
+		return err
+	}
+	if cyclic {
+		return fmt.Errorf("bdd: add edge %s -> %s: %w", parentID, childID, ErrCycle)
+	}
+
+	if _, err := tx.ExecContext(ctx, `INSERT INTO card_edges (parent_id, child_id, created_at, created_by) VALUES (?, ?, ?, ?)`, parentID, childID, now, actor); err != nil {
+		return err
+	}
+
+	childPayload, _ := json.Marshal(map[string]any{"parent_id": parentID})
+	if err := writeEvent(ctx, tx, childID, childRev, "add_parent", actor, now, childPayload); err != nil {
+		return err
+	}
+	parentPayload, _ := json.Marshal(map[string]any{"child_id": childID})
+	if err := writeEvent(ctx, tx, parentID, parentRev, "add_child", actor, now, parentPayload); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // removeEdge idempotently deletes the blocking edge parentID -> childID.
@@ -135,40 +148,51 @@ func (db *DB) removeEdge(ctx context.Context, parentID, childID, actor string) e
 		}
 		defer tx.Rollback()
 
-		res, err := tx.ExecContext(ctx, `DELETE FROM card_edges WHERE parent_id = ? AND child_id = ?`, parentID, childID)
-		if err != nil {
-			return err
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return tx.Commit()
-		}
-
 		now := formatTime(time.Now())
-		parentRev, err := cardRevision(ctx, tx, parentID)
-		if err != nil {
-			return err
-		}
-		childRev, err := cardRevision(ctx, tx, childID)
-		if err != nil {
-			return err
-		}
-
-		childPayload, _ := json.Marshal(map[string]any{"parent_id": parentID})
-		if err := writeEvent(ctx, tx, childID, childRev, "remove_parent", actor, now, childPayload); err != nil {
-			return err
-		}
-		parentPayload, _ := json.Marshal(map[string]any{"child_id": childID})
-		if err := writeEvent(ctx, tx, parentID, parentRev, "remove_child", actor, now, parentPayload); err != nil {
+		if err := removeEdgeTx(ctx, tx, parentID, childID, actor, now); err != nil {
 			return err
 		}
 
 		return tx.Commit()
 	})
 	return translateWriteErr(err, "remove edge")
+}
+
+// removeEdgeTx is the transaction-scoped core of removeEdge, reused by
+// UpdateCard so field, label, status, and edge changes commit atomically
+// together.
+func removeEdgeTx(ctx context.Context, tx *sql.Tx, parentID, childID, actor, now string) error {
+	res, err := tx.ExecContext(ctx, `DELETE FROM card_edges WHERE parent_id = ? AND child_id = ?`, parentID, childID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+
+	parentRev, err := cardRevision(ctx, tx, parentID)
+	if err != nil {
+		return err
+	}
+	childRev, err := cardRevision(ctx, tx, childID)
+	if err != nil {
+		return err
+	}
+
+	childPayload, _ := json.Marshal(map[string]any{"parent_id": parentID})
+	if err := writeEvent(ctx, tx, childID, childRev, "remove_parent", actor, now, childPayload); err != nil {
+		return err
+	}
+	parentPayload, _ := json.Marshal(map[string]any{"child_id": childID})
+	if err := writeEvent(ctx, tx, parentID, parentRev, "remove_child", actor, now, parentPayload); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // edgeRefs runs query (which must select id, title, card_type, status and

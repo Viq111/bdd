@@ -224,17 +224,127 @@ func (db *DB) SearchCards(ctx context.Context, opts SearchOptions) ([]Card, erro
 	return runCardQuery(ctx, db.sql, query, args)
 }
 
+// readyConds is the WHERE-clause fragment shared by ReadyCards and (in
+// spirit; ExplainReady re-checks the same six conditions per-field for a
+// single card) the readiness predicate: status category active,
+// dispatchable, unassigned, lacking the human label, and every parent
+// done-category (plan section 16).
+var readyConds = []string{
+	"status IN (SELECT name FROM status_definitions WHERE category = '" + string(StatusCategoryActive) + "')",
+	"dispatchable <> 0",
+	"assignee = ''",
+	"NOT EXISTS (SELECT 1 FROM labels WHERE labels.card_id = cards.id AND labels.label = '" + HumanLabel + "')",
+	"NOT EXISTS (" +
+		"SELECT 1 FROM card_edges ce JOIN cards p ON p.id = ce.parent_id " +
+		"WHERE ce.child_id = cards.id AND p.status NOT IN (SELECT name FROM status_definitions WHERE category = '" + string(StatusCategoryDone) + "')" +
+		")",
+}
+
 // ReadyCards returns every card matching the readiness predicate described
-// on ReadyOptions, in ready-dispatch order.
+// on ReadyOptions, in ready-dispatch order (priority ascending, then
+// created_at ascending, then ID).
 func (db *DB) ReadyCards(ctx context.Context, opts ReadyOptions) ([]Card, error) {
-	return nil, errNotImplemented
+	if !validateLabels(opts.Labels) {
+		return nil, fmt.Errorf("bdd: ready cards: labels must be non-empty, valid UTF-8, and at most %d bytes: %w", MaxLabelBytes, ErrInvalidArgument)
+	}
+	if opts.Limit < 0 {
+		return nil, fmt.Errorf("bdd: ready cards: limit must be >= 0: %w", ErrInvalidArgument)
+	}
+	if err := db.ready(); err != nil {
+		return nil, err
+	}
+
+	conds := append([]string{}, readyConds...)
+	var args []any
+	for _, l := range dedupe(opts.Labels) {
+		conds = append(conds, "EXISTS (SELECT 1 FROM labels WHERE labels.card_id = cards.id AND labels.label = ?)")
+		args = append(args, l)
+	}
+
+	query := "SELECT " + cardColumns + " FROM cards WHERE " + strings.Join(conds, " AND ") + " ORDER BY priority ASC, created_at ASC, id ASC"
+	if opts.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", opts.Limit)
+	}
+
+	return runCardQuery(ctx, db.sql, query, args)
+}
+
+// unfinishedParent is one parent card that is not yet in a done-category
+// status, as reported by ExplainReady.
+type unfinishedParent struct {
+	ID     string
+	Status Status
+}
+
+// unfinishedParents returns every parent of id that is not in a
+// done-category status, ordered by parent ID ascending.
+func unfinishedParents(ctx context.Context, q execer, id string) ([]unfinishedParent, error) {
+	rows, err := q.QueryContext(ctx, `
+SELECT p.id, p.status FROM card_edges ce JOIN cards p ON p.id = ce.parent_id
+WHERE ce.child_id = ? AND p.status NOT IN (SELECT name FROM status_definitions WHERE category = ?)
+ORDER BY p.id ASC`, id, string(StatusCategoryDone))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []unfinishedParent{}
+	for rows.Next() {
+		var up unfinishedParent
+		var status string
+		if err := rows.Scan(&up.ID, &status); err != nil {
+			return nil, err
+		}
+		up.Status = Status(status)
+		out = append(out, up)
+	}
+	return out, rows.Err()
 }
 
 // ExplainReady evaluates the same readiness predicate as ReadyCards for a
-// single card and returns every reason it is excluded (including the IDs
-// of any unfinished parents). A ready card returns an empty slice.
+// single card and returns every reason it is excluded (including one entry
+// per unfinished parent). A ready card returns an empty (non-nil) slice.
 func (db *DB) ExplainReady(ctx context.Context, id string) ([]string, error) {
-	return nil, errNotImplemented
+	if err := db.ready(); err != nil {
+		return nil, err
+	}
+
+	cur, err := loadCard(ctx, db.sql, id)
+	if err != nil {
+		return nil, err
+	}
+
+	category, err := statusCategory(ctx, db.sql, cur.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	reasons := []string{}
+	if category != StatusCategoryActive {
+		reasons = append(reasons, fmt.Sprintf("status %q is %s-category, not active", cur.Status, category))
+	}
+	if !cur.Dispatchable {
+		reasons = append(reasons, "not dispatchable")
+	}
+	if cur.Assignee != "" {
+		reasons = append(reasons, fmt.Sprintf("assigned to %s", cur.Assignee))
+	}
+	for _, l := range cur.Labels {
+		if l == HumanLabel {
+			reasons = append(reasons, "has the human label")
+			break
+		}
+	}
+
+	unfinished, err := unfinishedParents(ctx, db.sql, id)
+	if err != nil {
+		return nil, fmt.Errorf("bdd: explain ready: %w", err)
+	}
+	for _, p := range unfinished {
+		reasons = append(reasons, fmt.Sprintf("parent %s is not done (status: %s)", p.ID, p.Status))
+	}
+
+	return reasons, nil
 }
 
 // runCardQuery executes a SELECT built around cardColumns, scans every row
