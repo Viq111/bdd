@@ -258,6 +258,55 @@ func TestRestoreFromDefaultBackupPathPreservesSource(t *testing.T) {
 	}
 }
 
+func TestRestoreExplicitBackupPathCollidingWithSourcePreservesSource(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	db, err := Init(ctx, InitOptions{Workspace: dir, Prefix: "bdd"})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("Remember() error = %v", err)
+	}
+
+	// A non-default snapshot destination that opts also names as BackupPath
+	// below, so Source and BackupPath collide without either being the
+	// DefaultSnapshotName convention.
+	snapPath := filepath.Join(dir, "custom-snap.sqlite")
+	if _, err := db.Snapshot(ctx, SnapshotOptions{Output: snapPath}); err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+
+	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
+		t.Fatalf("Remember() error = %v", err)
+	}
+	db.Close()
+
+	dbPath := filepath.Join(dir, ".bdd", "bdd.sqlite")
+	result, err := Restore(ctx, RestoreOptions{Path: dbPath, Source: snapPath, BackupPath: snapPath})
+	if err != nil {
+		t.Fatalf("Restore() error = %v", err)
+	}
+	if result.BackupPath != snapPath {
+		t.Fatalf("Restore().BackupPath = %q, want %q", result.BackupPath, snapPath)
+	}
+
+	reopened, err := Open(ctx, OpenOptions{Path: dbPath})
+	if err != nil {
+		t.Fatalf("Open() after restore error = %v", err)
+	}
+	defer reopened.Close()
+
+	m, err := reopened.Recall(ctx, "hello")
+	if err != nil {
+		t.Fatalf("Recall() error = %v", err)
+	}
+	if m.Body != "world" {
+		t.Fatalf("restored memory body = %q, want %q (pre-change value from the snapshot)", m.Body, "world")
+	}
+}
+
 func TestRestoreSkipBackupOmitsBackupFile(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
