@@ -2,7 +2,15 @@ package bdd
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
 	"time"
+
+	"github.com/viq111/bdd/internal/sqlite"
 )
 
 // Rune holds a durable, human-keyed piece of standing instruction: a role,
@@ -79,24 +87,326 @@ type RuneQuery struct {
 	Limit int // 0 means unlimited
 }
 
+// requireReady returns ErrInvalidArgument if db is closed and
+// ErrSchemaTooOld if its schema predates this build, per the Open/Upgrade
+// contract in bdd.go.
+func (db *DB) requireReady() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if db.closed {
+		return fmt.Errorf("bdd: database is closed: %w", ErrInvalidArgument)
+	}
+	if db.schemaTooOld {
+		return ErrSchemaTooOld
+	}
+	return nil
+}
+
+// runeKeySegment matches one lowercase, letter-led segment of a rune key.
+var runeKeySegment = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+// parseRuneKey validates key against the "<kind>/<name>" grammar and
+// returns its two segments.
+func parseRuneKey(key string) (kind, name string, err error) {
+	parts := strings.SplitN(key, "/", 2)
+	if len(parts) != 2 || !runeKeySegment.MatchString(parts[0]) || !runeKeySegment.MatchString(parts[1]) {
+		return "", "", &ValidationError{Fields: []string{"key"}}
+	}
+	return parts[0], parts[1], nil
+}
+
 // PutRune atomically creates or updates the rune identified by in.Key.
 func (db *DB) PutRune(ctx context.Context, in PutRune) (*Rune, error) {
-	return nil, errNotImplemented
+	if err := db.requireReady(); err != nil {
+		return nil, err
+	}
+	if db.opts.ReadOnly {
+		return nil, fmt.Errorf("bdd: put rune: database is read-only: %w", ErrInvalidArgument)
+	}
+
+	kind, _, err := parseRuneKey(in.Key)
+	if err != nil {
+		return nil, err
+	}
+	if in.Kind == "" || in.Kind != kind {
+		return nil, &ValidationError{Fields: []string{"kind"}}
+	}
+	if in.Mutation.Metadata != nil && !json.Valid([]byte(*in.Mutation.Metadata)) {
+		return nil, &ValidationError{Fields: []string{"metadata"}}
+	}
+
+	var result *Rune
+	err = sqlite.Retry(ctx, func() error {
+		tx, err := db.sql.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		existing, err := getRuneTx(ctx, tx, in.Key)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+
+		now := time.Now().UTC()
+		if existing == nil {
+			r, err := createRuneTx(ctx, tx, in, now)
+			if err != nil {
+				return err
+			}
+			result = r
+		} else {
+			if in.CreateOnly {
+				return ErrAlreadyExists
+			}
+			if in.ExpectedRevision != nil && *in.ExpectedRevision != existing.Revision {
+				return fmt.Errorf("bdd: put rune: expected revision %d, found %d: %w", *in.ExpectedRevision, existing.Revision, ErrInvalidArgument)
+			}
+			if existing.Protected && !in.Force {
+				return fmt.Errorf("bdd: put rune: %s is protected, Force required: %w", in.Key, ErrInvalidArgument)
+			}
+			r, err := updateRuneTx(ctx, tx, existing, in, now)
+			if err != nil {
+				return err
+			}
+			result = r
+		}
+
+		return tx.Commit()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func createRuneTx(ctx context.Context, tx *sql.Tx, in PutRune, now time.Time) (*Rune, error) {
+	title := ""
+	if in.Mutation.Title != nil {
+		title = *in.Mutation.Title
+	}
+	body := ""
+	if in.Mutation.Body != nil {
+		body = *in.Mutation.Body
+	}
+	metadata := "{}"
+	if in.Mutation.Metadata != nil {
+		metadata = *in.Mutation.Metadata
+	}
+	enabled := true
+	if in.Mutation.Enabled != nil {
+		enabled = *in.Mutation.Enabled
+	}
+	protected := false
+	if in.Mutation.Protected != nil {
+		protected = *in.Mutation.Protected
+	}
+	if in.ExpectedRevision != nil {
+		return nil, fmt.Errorf("bdd: put rune: %s does not exist, cannot check expected revision: %w", in.Key, ErrInvalidArgument)
+	}
+
+	nowStr := now.Format(time.RFC3339Nano)
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO runes (key, kind, title, body, metadata_json, enabled, protected, created_by, updated_by, created_at, updated_at, revision)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+		in.Key, in.Kind, title, body, metadata, boolToInt(enabled), boolToInt(protected), in.Actor, in.Actor, nowStr, nowStr)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := insertRuneEvent(ctx, tx, in.Key, 1, "rune.create", in.Actor, map[string]any{"kind": in.Kind}, now); err != nil {
+		return nil, err
+	}
+
+	return &Rune{
+		Key: in.Key, Kind: in.Kind, Title: title, Body: body, Metadata: metadata,
+		Enabled: enabled, Protected: protected,
+		CreatedBy: in.Actor, UpdatedBy: in.Actor, CreatedAt: now, UpdatedAt: now, Revision: 1,
+	}, nil
+}
+
+func updateRuneTx(ctx context.Context, tx *sql.Tx, existing *Rune, in PutRune, now time.Time) (*Rune, error) {
+	title := existing.Title
+	if in.Mutation.Title != nil {
+		title = *in.Mutation.Title
+	}
+	body := existing.Body
+	if in.Mutation.Body != nil {
+		body = *in.Mutation.Body
+	}
+	metadata := existing.Metadata
+	if in.Mutation.Metadata != nil {
+		metadata = *in.Mutation.Metadata
+	}
+	enabled := existing.Enabled
+	if in.Mutation.Enabled != nil {
+		enabled = *in.Mutation.Enabled
+	}
+	protected := existing.Protected
+	if in.Mutation.Protected != nil {
+		protected = *in.Mutation.Protected
+	}
+
+	revision := existing.Revision + 1
+	nowStr := now.Format(time.RFC3339Nano)
+	_, err := tx.ExecContext(ctx, `
+		UPDATE runes SET title = ?, body = ?, metadata_json = ?, enabled = ?, protected = ?, updated_by = ?, updated_at = ?, revision = ?
+		WHERE key = ?`,
+		title, body, metadata, boolToInt(enabled), boolToInt(protected), in.Actor, nowStr, revision, in.Key)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := insertRuneEvent(ctx, tx, in.Key, revision, "rune.update", in.Actor, map[string]any{"kind": existing.Kind}, now); err != nil {
+		return nil, err
+	}
+
+	return &Rune{
+		Key: in.Key, Kind: existing.Kind, Title: title, Body: body, Metadata: metadata,
+		Enabled: enabled, Protected: protected,
+		CreatedBy: existing.CreatedBy, UpdatedBy: in.Actor,
+		CreatedAt: existing.CreatedAt, UpdatedAt: now, Revision: revision,
+	}, nil
+}
+
+func insertRuneEvent(ctx context.Context, tx *sql.Tx, key string, revision int64, action, actor string, payload map[string]any, now time.Time) error {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO events (subject_kind, subject_key, revision, action, actor, payload_json, created_at)
+		VALUES ('rune', ?, ?, ?, ?, ?, ?)`,
+		key, revision, action, actor, string(b), now.Format(time.RFC3339Nano))
+	return err
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // GetRune returns the complete rune for key, or ErrNotFound.
 func (db *DB) GetRune(ctx context.Context, key string) (*Rune, error) {
-	return nil, errNotImplemented
+	if err := db.requireReady(); err != nil {
+		return nil, err
+	}
+	return getRuneTx(ctx, db.sql, key)
+}
+
+// runeQuerier is satisfied by both *sql.DB and *sql.Tx.
+type runeQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func getRuneTx(ctx context.Context, q runeQuerier, key string) (*Rune, error) {
+	row := q.QueryRowContext(ctx, `
+		SELECT key, kind, title, body, metadata_json, enabled, protected, created_by, updated_by, created_at, updated_at, revision
+		FROM runes WHERE key = ?`, key)
+	return scanRune(row)
+}
+
+func scanRune(row *sql.Row) (*Rune, error) {
+	var (
+		r                    Rune
+		enabled, protected   int
+		createdBy, updatedBy sql.NullString
+		createdAt, updatedAt string
+	)
+	err := row.Scan(&r.Key, &r.Kind, &r.Title, &r.Body, &r.Metadata, &enabled, &protected, &createdBy, &updatedBy, &createdAt, &updatedAt, &r.Revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	r.Enabled = enabled != 0
+	r.Protected = protected != 0
+	r.CreatedBy = createdBy.String
+	r.UpdatedBy = updatedBy.String
+
+	r.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("bdd: parsing rune created_at: %w", err)
+	}
+	r.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("bdd: parsing rune updated_at: %w", err)
+	}
+	return &r, nil
 }
 
 // ListRunes returns rune summaries matching q.
 func (db *DB) ListRunes(ctx context.Context, q RuneQuery) ([]RuneSummary, error) {
-	return nil, errNotImplemented
+	if err := db.requireReady(); err != nil {
+		return nil, err
+	}
+	return listOrSearchRunes(ctx, db.sql, q, false)
 }
 
 // SearchRunes returns rune summaries matching q.Text (and q.Kind, if set).
 func (db *DB) SearchRunes(ctx context.Context, q RuneQuery) ([]RuneSummary, error) {
-	return nil, errNotImplemented
+	if err := db.requireReady(); err != nil {
+		return nil, err
+	}
+	return listOrSearchRunes(ctx, db.sql, q, true)
+}
+
+func listOrSearchRunes(ctx context.Context, sqlDB *sql.DB, q RuneQuery, search bool) ([]RuneSummary, error) {
+	var (
+		conds []string
+		args  []any
+	)
+
+	if !q.All {
+		conds = append(conds, "enabled = 1")
+	}
+	if q.Kind != "" {
+		conds = append(conds, "kind = ?")
+		args = append(args, q.Kind)
+	}
+	if search && q.Text != "" {
+		like := "%" + strings.ToLower(q.Text) + "%"
+		conds = append(conds, "(lower(key) LIKE ? OR lower(kind) LIKE ? OR lower(title) LIKE ? OR lower(body) LIKE ? OR lower(metadata_json) LIKE ?)")
+		args = append(args, like, like, like, like, like)
+	}
+
+	query := "SELECT key, kind, title, enabled, protected, revision FROM runes"
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	query += " ORDER BY key ASC"
+	if q.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", q.Limit)
+	}
+
+	rows, err := sqlDB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []RuneSummary
+	for rows.Next() {
+		var (
+			s                  RuneSummary
+			enabled, protected int
+		)
+		if err := rows.Scan(&s.Key, &s.Kind, &s.Title, &enabled, &protected, &s.Revision); err != nil {
+			return nil, err
+		}
+		s.Enabled = enabled != 0
+		s.Protected = protected != 0
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // SetRuneEnabled reversibly enables or disables the rune identified by key.
@@ -104,23 +414,181 @@ func (db *DB) SearchRunes(ctx context.Context, q RuneQuery) ([]RuneSummary, erro
 // ListRunes/SearchRunes only when RuneQuery.All is set. Force is required
 // when the rune is Protected.
 func (db *DB) SetRuneEnabled(ctx context.Context, key string, enabled bool, actor string, force bool) (*Rune, error) {
-	return nil, errNotImplemented
+	if err := db.requireReady(); err != nil {
+		return nil, err
+	}
+	if db.opts.ReadOnly {
+		return nil, fmt.Errorf("bdd: set rune enabled: database is read-only: %w", ErrInvalidArgument)
+	}
+
+	var result *Rune
+	err := sqlite.Retry(ctx, func() error {
+		tx, err := db.sql.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		existing, err := getRuneTx(ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		if existing.Protected && !force {
+			return fmt.Errorf("bdd: set rune enabled: %s is protected, Force required: %w", key, ErrInvalidArgument)
+		}
+
+		now := time.Now().UTC()
+		revision := existing.Revision + 1
+		_, err = tx.ExecContext(ctx, `
+			UPDATE runes SET enabled = ?, updated_by = ?, updated_at = ?, revision = ?
+			WHERE key = ?`,
+			boolToInt(enabled), actor, now.Format(time.RFC3339Nano), revision, key)
+		if err != nil {
+			return err
+		}
+
+		action := "rune.disable"
+		if enabled {
+			action = "rune.enable"
+		}
+		if err := insertRuneEvent(ctx, tx, key, revision, action, actor, map[string]any{"kind": existing.Kind}, now); err != nil {
+			return err
+		}
+
+		existing.Enabled = enabled
+		existing.UpdatedBy = actor
+		existing.UpdatedAt = now
+		existing.Revision = revision
+		result = existing
+
+		return tx.Commit()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // RemoveRune permanently deletes the rune identified by key, leaving a
 // tombstone audit event. Force is required when the rune is Protected.
 func (db *DB) RemoveRune(ctx context.Context, key string, actor string, force bool) error {
-	return errNotImplemented
+	if err := db.requireReady(); err != nil {
+		return err
+	}
+	if db.opts.ReadOnly {
+		return fmt.Errorf("bdd: remove rune: database is read-only: %w", ErrInvalidArgument)
+	}
+
+	return sqlite.Retry(ctx, func() error {
+		tx, err := db.sql.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		existing, err := getRuneTx(ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		if existing.Protected && !force {
+			return fmt.Errorf("bdd: remove rune: %s is protected, Force required: %w", key, ErrInvalidArgument)
+		}
+
+		if _, err := tx.ExecContext(ctx, "DELETE FROM runes WHERE key = ?", key); err != nil {
+			return err
+		}
+
+		now := time.Now().UTC()
+		if err := insertRuneEvent(ctx, tx, key, existing.Revision+1, "rune.remove", actor, map[string]any{"kind": existing.Kind}, now); err != nil {
+			return err
+		}
+
+		return tx.Commit()
+	})
 }
 
 // ExportRune renders a single rune as stable Markdown ("markdown") or
 // ("json") output.
 func (db *DB) ExportRune(ctx context.Context, key string, format string) ([]byte, error) {
-	return nil, errNotImplemented
+	return db.ExportRunes(ctx, []string{key}, format)
 }
 
 // ExportRunes renders one or more runes as stable Markdown ("markdown") or
 // ("json") output.
 func (db *DB) ExportRunes(ctx context.Context, keys []string, format string) ([]byte, error) {
-	return nil, errNotImplemented
+	if err := db.requireReady(); err != nil {
+		return nil, err
+	}
+	if format != "markdown" && format != "json" {
+		return nil, &ValidationError{Fields: []string{"format"}}
+	}
+
+	runes := make([]*Rune, 0, len(keys))
+	for _, key := range keys {
+		r, err := getRuneTx(ctx, db.sql, key)
+		if err != nil {
+			return nil, err
+		}
+		runes = append(runes, r)
+	}
+
+	if format == "json" {
+		return exportRunesJSON(runes)
+	}
+	return exportRunesMarkdown(runes), nil
+}
+
+type runeExport struct {
+	Key       string `json:"key"`
+	Kind      string `json:"kind"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	Metadata  string `json:"metadata"`
+	Enabled   bool   `json:"enabled"`
+	Protected bool   `json:"protected"`
+	Revision  int64  `json:"revision"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func toRuneExport(r *Rune) runeExport {
+	return runeExport{
+		Key: r.Key, Kind: r.Kind, Title: r.Title, Body: r.Body, Metadata: r.Metadata,
+		Enabled: r.Enabled, Protected: r.Protected, Revision: r.Revision,
+		CreatedAt: r.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt: r.UpdatedAt.Format(time.RFC3339Nano),
+	}
+}
+
+func exportRunesJSON(runes []*Rune) ([]byte, error) {
+	if len(runes) == 1 {
+		return json.MarshalIndent(toRuneExport(runes[0]), "", "  ")
+	}
+	out := make([]runeExport, len(runes))
+	for i, r := range runes {
+		out[i] = toRuneExport(r)
+	}
+	return json.MarshalIndent(out, "", "  ")
+}
+
+func exportRunesMarkdown(runes []*Rune) []byte {
+	var sb strings.Builder
+	for i, r := range runes {
+		if i > 0 {
+			sb.WriteString("\n---\n\n")
+		}
+		fmt.Fprintf(&sb, "# %s\n\n", r.Title)
+		fmt.Fprintf(&sb, "- Key: %s\n", r.Key)
+		fmt.Fprintf(&sb, "- Kind: %s\n", r.Kind)
+		fmt.Fprintf(&sb, "- Enabled: %t\n", r.Enabled)
+		fmt.Fprintf(&sb, "- Protected: %t\n", r.Protected)
+		fmt.Fprintf(&sb, "- Revision: %d\n", r.Revision)
+		if r.Metadata != "" && r.Metadata != "{}" {
+			fmt.Fprintf(&sb, "- Metadata: %s\n", r.Metadata)
+		}
+		sb.WriteString("\n")
+		sb.WriteString(r.Body)
+		sb.WriteString("\n")
+	}
+	return []byte(sb.String())
 }
