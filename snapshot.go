@@ -21,6 +21,13 @@ import (
 // alongside the live database, when the caller does not supply one.
 const DefaultSnapshotName = "backup.sqlite"
 
+// restoreHandoffHook, when non-nil, is called by Restore once it has
+// acquired exclusive access to an existing target and cleared its WAL/SHM
+// sidecars, but before the replacement file is installed. Production code
+// never sets it; tests use it to probe that the handoff window really does
+// reject concurrent opens of target.
+var restoreHandoffHook func(target string)
+
 // SnapshotOptions configures Snapshot.
 type SnapshotOptions struct {
 	// Output is the destination path for the snapshot file. Empty defaults
@@ -150,10 +157,17 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 
 	var backupPath string
 	if targetExists {
+		// Hold the exclusive lock for the rest of Restore, not just the
+		// backup: releasing it any earlier reopens the handoff window this
+		// function exists to close, letting a second process open or write
+		// the target before the replacement is installed. Any opener of
+		// target fails with SQLITE_BUSY until this connection closes, which
+		// happens on return, after the atomic rename below has landed.
 		locked, err := acquireExclusive(ctx, target)
 		if err != nil {
 			return nil, fmt.Errorf("bdd: restore: acquiring exclusive access to %s: %w", target, err)
 		}
+		defer locked.Close()
 
 		if !opts.SkipBackup {
 			backupPath = opts.BackupPath
@@ -162,20 +176,23 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 			}
 			backupPath, err = filepath.Abs(backupPath)
 			if err != nil {
-				locked.Close()
 				return nil, fmt.Errorf("bdd: restore: %w", err)
 			}
 			if _, err := snapshotInto(ctx, locked, backupPath); err != nil {
-				locked.Close()
 				return nil, fmt.Errorf("bdd: restore: backing up %s: %w", target, err)
 			}
 		}
 
-		locked.Close()
-		// The old database's WAL/SHM sidecars belong to the file being
-		// replaced; leaving them behind risks confusing the next opener.
-		os.Remove(target + "-wal")
-		os.Remove(target + "-shm")
+		if restoreHandoffHook != nil {
+			restoreHandoffHook(target)
+		}
+
+		// Do not remove target's WAL/SHM sidecars here: doing so while
+		// locked is still open would let a concurrent WAL-mode opener
+		// materialize a brand new -shm file that has no record of locked's
+		// lock, bypassing the exclusivity this function is supposed to
+		// guarantee. Their cleanup happens below, after the install, where
+		// it's cosmetic rather than load-bearing.
 	}
 
 	tmpPath, err := reserveTempPath(targetDir, "bdd-restore-*.sqlite.tmp")
@@ -196,6 +213,14 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 	if err := fsyncPath(targetDir); err != nil {
 		return nil, fmt.Errorf("bdd: restore: %w", err)
 	}
+
+	// The old database's WAL/SHM sidecars belong to the file that install
+	// just replaced; leaving them behind under the new file's name risks
+	// confusing the next opener. Safe to remove now that the rename above
+	// has landed: the new file's own WAL, if any, is created fresh on
+	// demand and doesn't depend on these.
+	os.Remove(target + "-wal")
+	os.Remove(target + "-shm")
 
 	return &RestoreResult{Path: target, BackupPath: backupPath, SchemaVersion: version}, nil
 }
@@ -236,14 +261,29 @@ func resolveRestoreTarget(opts RestoreOptions) (string, error) {
 // reading or writing, fails with SQLITE_BUSY once busy_timeout elapses,
 // which this maps to ErrBusy. The caller must Close the returned handle to
 // release the lock.
+//
+// This opens the connection directly rather than through sqlite.Open:
+// SQLite only disables the WAL shared-memory index — the mechanism that
+// actually blocks other readers, not just other writers — if EXCLUSIVE
+// locking mode is requested before the connection's first access to the
+// database file. sqlite.Open's standard pragmas (foreign_keys, synchronous,
+// busy_timeout) each touch the file, so applying any of them before
+// locking_mode silently downgrades this to an ordinary, non-blocking lock
+// that a concurrent reader can still attach past.
 func acquireExclusive(ctx context.Context, path string) (*sql.DB, error) {
 	var conn *sql.DB
 	err := sqlite.Retry(ctx, func() error {
-		c, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot, SkipJournalMode: true})
+		c, err := sql.Open(sqlite.DriverName, path)
 		if err != nil {
 			return err
 		}
+		c.SetMaxOpenConns(1)
+		c.SetMaxIdleConns(1)
 		if _, err := c.ExecContext(ctx, "PRAGMA locking_mode = EXCLUSIVE"); err != nil {
+			c.Close()
+			return err
+		}
+		if _, err := c.ExecContext(ctx, "PRAGMA busy_timeout = 5000"); err != nil {
 			c.Close()
 			return err
 		}

@@ -358,3 +358,69 @@ func TestRestoreFailsWhenTargetIsOpenElsewhere(t *testing.T) {
 		t.Fatalf("Restore() error = %v, want ErrBusy", err)
 	}
 }
+
+// TestRestoreRejectsConcurrentOpenDuringHandoffWindow guards against the
+// regression where Restore released its exclusive lock on target
+// immediately after the pre-restore backup, before clearing target's
+// WAL/SHM sidecars and atomically installing the replacement. That gap let
+// a second process open (and write to) target while Restore was still
+// mid-install. restoreHandoffHook fires in that exact window, still inside
+// Restore's exclusive hold, and attempts a concurrent open with
+// busy_timeout disabled so any lock gap surfaces immediately rather than
+// after a multi-second wait.
+func TestRestoreRejectsConcurrentOpenDuringHandoffWindow(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	db, err := Init(ctx, InitOptions{Workspace: dir, Prefix: "bdd"})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("Remember() error = %v", err)
+	}
+
+	snapPath := filepath.Join(dir, "snap.sqlite")
+	if _, err := db.Snapshot(ctx, SnapshotOptions{Output: snapPath}); err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	db.Close()
+
+	dbPath := filepath.Join(dir, ".bdd", "bdd.sqlite")
+
+	var hookRan bool
+	var concurrentErr error
+	restoreHandoffHook = func(target string) {
+		hookRan = true
+		if target != dbPath {
+			t.Fatalf("restoreHandoffHook target = %q, want %q", target, dbPath)
+		}
+
+		conn, err := sql.Open(sqlite.DriverName, target)
+		if err != nil {
+			t.Fatalf("sql.Open() during handoff window error = %v", err)
+		}
+		defer conn.Close()
+		conn.SetMaxOpenConns(1)
+		if _, err := conn.ExecContext(ctx, "PRAGMA busy_timeout = 0"); err != nil {
+			t.Fatalf("set busy_timeout: %v", err)
+		}
+
+		_, concurrentErr = conn.ExecContext(ctx, "SELECT 1 FROM sqlite_master LIMIT 1")
+	}
+	defer func() { restoreHandoffHook = nil }()
+
+	if _, err := Restore(ctx, RestoreOptions{Path: dbPath, Source: snapPath}); err != nil {
+		t.Fatalf("Restore() error = %v", err)
+	}
+
+	if !hookRan {
+		t.Fatal("restoreHandoffHook did not run; test did not exercise the handoff window")
+	}
+	if concurrentErr == nil {
+		t.Fatal("concurrent open during Restore's handoff window succeeded, want it rejected while exclusive access is held")
+	}
+	if !sqlite.IsBusy(concurrentErr) {
+		t.Fatalf("concurrent open during handoff window error = %v, want SQLITE_BUSY", concurrentErr)
+	}
+}
