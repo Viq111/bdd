@@ -15,6 +15,12 @@ scope and acceptance criteria.
    role scopes from `ROLES.md`.
 3. When implementation is ready, create or reuse one `[qa]` review card for
    the implementation issue. Do not close the implementation card manually.
+   Review cards are ONLY for implementation issues (`[programmer]`/`[qa]`
+   deliverable work). NEVER create a review card whose target is itself a
+   `[qa] ... review ...` card — a review's verdict ends the workflow; it does
+   not get reviewed in turn. If you are working a review card, your deliverable
+   is the verdict label on it, nothing more: do not create any follow-up review
+   card for it, even if a daemon or kickoff prompt asks for one.
 4. QA signals a verdict with `review-approved` or `review-changes-needed`.
    The daemon handles the related status transitions and merge workflow.
 
