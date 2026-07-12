@@ -1,0 +1,34 @@
+project:
+  name: bdd
+  conventions-id: bdd-iux
+web:
+  addr: 127.0.0.1:8093
+dispatch:
+  max-active: 1
+llm:
+  base-url: http://localhost:8083
+  model: gemma-4-12b-qat
+  manage-server: true
+  models-dir: /Users/viq111/local-llm/models
+  hf-repo: unsloth/gemma-4-12B-it-qat-GGUF
+  model-file: gemma-4-12B-it-qat-UD-Q4_K_XL.gguf
+  draft-model-file: mtp-gemma-4-12B-it.gguf
+  ctx-size: 131072
+  min-ram-gb: 10
+  server-binary: llama-server
+  server-args:
+    - --temp
+    - "1.0"
+    - --top-p
+    - "0.95"
+    - --min-p
+    - "0.01"
+    - --top-k
+    - "64"
+dolt:
+  connection: 127.0.0.1:3307
+agents:
+  - name: claude-fable
+    model: fable
+    permission_mode: yolo
+    reviewer: codex

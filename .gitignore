@@ -1,0 +1,10 @@
+
+# Beads / Dolt files (added by bd init)
+.beads/
+.dolt/
+*.db
+.beads-credential-key
+.worktrees/
+
+# Personal Claude Code settings (per-machine, not committed)
+.claude/

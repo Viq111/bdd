@@ -1,0 +1,6 @@
+active-assignments.json
+worktrees/
+llama-server.log
+llama-server.pid
+conversation_history/
+director_sessions/
