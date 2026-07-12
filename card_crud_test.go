@@ -17,8 +17,6 @@ func newTestDB(t *testing.T) *DB {
 	return db
 }
 
-func ptr(s string) *string { return &s }
-
 func TestCreateCardChoreNeedsOnlyTitle(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

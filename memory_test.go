@@ -6,17 +6,6 @@ import (
 	"testing"
 )
 
-func newTestDB(t *testing.T) *DB {
-	t.Helper()
-	dir := t.TempDir()
-	db, err := Init(context.Background(), InitOptions{Workspace: dir, Prefix: "bdd"})
-	if err != nil {
-		t.Fatalf("Init() error = %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 func TestRememberCreatesWithExplicitKey(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
