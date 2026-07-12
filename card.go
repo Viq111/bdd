@@ -336,12 +336,22 @@ func dedupe(items []string) []string {
 	return out
 }
 
-// Parents returns every card that blocks id, in deterministic order.
+// Parents returns every card that blocks id, ordered by ID ascending. It
+// returns an empty (not nil) slice when id has no parents, and ErrNotFound
+// when id does not exist.
 func (db *DB) Parents(ctx context.Context, id string) ([]CardRef, error) {
-	return nil, errNotImplemented
+	const query = `SELECT c.id, c.title, c.card_type, c.status
+FROM card_edges ce JOIN cards c ON c.id = ce.parent_id
+WHERE ce.child_id = ? ORDER BY c.id ASC`
+	return db.edgeRefs(ctx, id, query)
 }
 
-// Children returns every card blocked by id, in deterministic order.
+// Children returns every card blocked by id, ordered by ID ascending. It
+// returns an empty (not nil) slice when id has no children, and ErrNotFound
+// when id does not exist.
 func (db *DB) Children(ctx context.Context, id string) ([]CardRef, error) {
-	return nil, errNotImplemented
+	const query = `SELECT c.id, c.title, c.card_type, c.status
+FROM card_edges ce JOIN cards c ON c.id = ce.child_id
+WHERE ce.parent_id = ? ORDER BY c.id ASC`
+	return db.edgeRefs(ctx, id, query)
 }

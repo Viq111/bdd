@@ -555,12 +555,61 @@ func TestNotesOnMissingCardReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestCreateCardRejectsParentsForNow(t *testing.T) {
+func TestCreateCardRejectsMissingParent(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
 	_, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore, Parents: []string{"bdd-abc123"}})
-	if !errors.Is(err, ErrInvalidArgument) {
-		t.Fatalf("CreateCard() error = %v, want ErrInvalidArgument", err)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CreateCard() error = %v, want ErrNotFound", err)
+	}
+
+	rows, err := db.sql.QueryContext(ctx, "SELECT COUNT(*) FROM cards")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var n int
+	for rows.Next() {
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n != 0 {
+		t.Fatalf("cards table has %d rows after a rejected create with a missing parent, want 0", n)
+	}
+}
+
+func TestCreateCardWithParentsAttachesEdges(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	p1, err := db.CreateCard(ctx, CreateCard{Title: "p1", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	p2, err := db.CreateCard(ctx, CreateCard{Title: "p2", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	child, err := db.CreateCard(ctx, CreateCard{Title: "child", Type: CardTypeChore, Parents: []string{p1.ID, p2.ID, p1.ID}})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	parents, err := db.Parents(ctx, child.ID)
+	if err != nil {
+		t.Fatalf("Parents() error = %v", err)
+	}
+	if len(parents) != 2 {
+		t.Fatalf("Parents() = %v, want 2 deduped parents", parents)
+	}
+	got := map[string]bool{parents[0].ID: true, parents[1].ID: true}
+	if !got[p1.ID] || !got[p2.ID] {
+		t.Fatalf("Parents() = %v, want %s and %s", parents, p1.ID, p2.ID)
+	}
+	if parents[0].ID >= parents[1].ID {
+		t.Fatalf("Parents() = %v, want ascending ID order", parents)
 	}
 }
