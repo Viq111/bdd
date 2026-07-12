@@ -16,6 +16,7 @@ import (
 type Streams struct {
 	Stdout io.Writer
 	Stderr io.Writer
+	Stdin  io.Reader
 	JSON   bool
 	Silent bool
 }

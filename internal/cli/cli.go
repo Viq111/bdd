@@ -7,6 +7,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 )
 
 const helpText = `bdd is a CLI for tracking small cards.
@@ -24,6 +25,14 @@ Global flags:
 Commands:
   init [--prefix <prefix>] [path]   Create a new workspace database
   status [--upgrade]                Show the resolved workspace, database, and schema state
+  config get|set|unset|list         Read or write workspace configuration
+  statuses                          List built-in and custom statuses
+  types                             List built-in and custom card types
+  remember [body] [--key <key>] [--stdin]   Create or update a memory
+  memories [query]                  List memories, optionally filtered by text
+  recall <key>                      Show a memory's full record
+  forget <key>                      Delete a memory
+  rune put|show|list|search|enable|disable|remove|export   Manage rune records
   version                           Print the bdd version
   help                              Show this help text
 
@@ -59,13 +68,29 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 		return ExitSuccess
 	}
 
-	streams := &Streams{Stdout: stdout, Stderr: stderr, JSON: global.JSON, Silent: global.Silent}
+	streams := &Streams{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, JSON: global.JSON, Silent: global.Silent}
 
 	switch cmd {
 	case "init":
 		return runInit(global, cmdArgs, streams)
 	case "status":
 		return runStatus(global, cmdArgs, streams)
+	case "config":
+		return runConfig(global, cmdArgs, streams)
+	case "statuses":
+		return runStatuses(global, cmdArgs, streams)
+	case "types":
+		return runTypes(global, cmdArgs, streams)
+	case "remember":
+		return runRemember(global, cmdArgs, streams)
+	case "memories":
+		return runMemories(global, cmdArgs, streams)
+	case "recall":
+		return runRecall(global, cmdArgs, streams)
+	case "forget":
+		return runForget(global, cmdArgs, streams)
+	case "rune":
+		return runRune(global, cmdArgs, streams)
 	default:
 		fmt.Fprintf(stderr, "bdd: unknown command %q\n", cmd)
 		fmt.Fprint(stderr, helpText)
