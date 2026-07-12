@@ -21,8 +21,25 @@ safe to commit (plan section 21).
   `ErrBusy` if another process has it open), saves the current database to
   a backup unless `SkipBackup` is set, and installs the snapshot atomically.
 
-These are the primitives the CLI ops card wraps as `bdd snapshot [--output]`
-and `bdd restore <file> [--force]`.
+These are the primitives the CLI wraps as `bdd snapshot [--output <path>]`
+and `bdd restore <snapshot.sqlite> --force`.
+
+## CLI usage
+
+```sh
+# Write .bdd/backup.sqlite (default), or an explicit path:
+bdd snapshot
+bdd snapshot --output /path/to/backup.sqlite
+
+# Install a snapshot as the workspace database. Like `bdd delete`, the
+# destructive install is refused without --force. The current target (if
+# any) is backed up first unless it doesn't exist yet.
+bdd restore .bdd/backup.sqlite --force
+```
+
+`bdd prime` (bd bdd-0zmi) echoes the recommended `.gitignore` entries below
+in its own output, so an agent priming a session sees them without having
+to read this file.
 
 ## Recommended `.gitignore` entries for a bdd workspace
 

@@ -10,20 +10,12 @@ import (
 	"os"
 )
 
-const helpText = `bdd is a CLI for tracking small cards.
-
-Usage:
-  bdd [global flags] <command> [flags]
-
-Global flags:
-  --workspace, -C <dir>  Resolve the workspace starting from <dir> (default: cwd)
-  --db <path>             Use this database file instead of workspace discovery
-  --actor <name>          Actor recorded against mutations (see BDD_ACTOR)
-  --json                  Emit machine-readable JSON instead of human output
-  --silent                Emit minimal output and suppress incidental diagnostics
-
-Commands:
-  init [--prefix <prefix>] [path]   Create a new workspace database
+// commandsReference is the single source of truth for the CLI's supported
+// command set: helpText renders it verbatim, and `bdd prime` (internal/cli/
+// prime.go) derives its command-set section from it, so the two can never
+// drift apart into `prime` advertising a command Run's switch below does
+// not actually implement (plan section 19).
+const commandsReference = `  init [--prefix <prefix>] [path]   Create a new workspace database
   status [--upgrade]                Show the resolved workspace, database, and schema state
   config get|set|unset|list         Read or write workspace configuration
   statuses                          List built-in and custom statuses
@@ -48,9 +40,27 @@ Commands:
   children <id>                     List a card's blocked children
   label add|remove|list <id> [l]    Manage a card's labels
   delete <id> --force               Hard-delete a card and its edges
+  snapshot [--output <path>]        Write an integrity-checked backup of the live database
+  restore <snapshot.sqlite> --force   Install a snapshot as the workspace database
+  prime [--memory-limit <n>] [--no-memories]   Print the workspace contract and memories for session start
   version                           Print the bdd version
   help                              Show this help text
+`
 
+const helpText = `bdd is a CLI for tracking small cards.
+
+Usage:
+  bdd [global flags] <command> [flags]
+
+Global flags:
+  --workspace, -C <dir>  Resolve the workspace starting from <dir> (default: cwd)
+  --db <path>             Use this database file instead of workspace discovery
+  --actor <name>          Actor recorded against mutations (see BDD_ACTOR)
+  --json                  Emit machine-readable JSON instead of human output
+  --silent                Emit minimal output and suppress incidental diagnostics
+
+Commands:
+` + commandsReference + `
 Run 'bdd help' or 'bdd version' at any time: neither command touches a
 workspace or database.
 `
@@ -136,6 +146,12 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 		return runCardLabel(global, cmdArgs, streams)
 	case "delete":
 		return runCardDelete(global, cmdArgs, streams)
+	case "snapshot":
+		return runSnapshot(global, cmdArgs, streams)
+	case "restore":
+		return runRestore(global, cmdArgs, streams)
+	case "prime":
+		return runPrime(global, cmdArgs, streams)
 	default:
 		fmt.Fprintf(stderr, "bdd: unknown command %q\n", cmd)
 		fmt.Fprint(stderr, helpText)
