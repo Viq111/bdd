@@ -33,6 +33,21 @@ Commands:
   recall <key>                      Show a memory's full record
   forget <key>                      Delete a memory
   rune put|show|list|search|enable|disable|remove|export   Manage rune records
+  create [title] [flags]            Create a new card
+  show <id>                         Show a card's full record
+  list [flags]                      List cards matching filters
+  search <query> [flags]            Search cards by text
+  ready [flags]                     List dispatchable cards; --explain [id] to see exclusions
+  update <id> [flags]               Update a card's fields, status, labels, or edges
+  note <id> [body] [--stdin]        Append a note to a card
+  close <id> [reason]               Close a card
+  reopen <id>                       Reopen a done-category card
+  defer <id> [--until <time>]       Defer a card
+  human <id> [reason]               Flag a card as needing human attention
+  parents <id>                      List a card's blocking parents
+  children <id>                     List a card's blocked children
+  label add|remove|list <id> [l]    Manage a card's labels
+  delete <id> --force               Hard-delete a card and its edges
   version                           Print the bdd version
   help                              Show this help text
 
@@ -91,6 +106,36 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 		return runForget(global, cmdArgs, streams)
 	case "rune":
 		return runRune(global, cmdArgs, streams)
+	case "create":
+		return runCardCreate(global, cmdArgs, streams)
+	case "show":
+		return runCardShow(global, cmdArgs, streams)
+	case "list":
+		return runCardList(global, cmdArgs, streams)
+	case "search":
+		return runCardSearch(global, cmdArgs, streams)
+	case "ready":
+		return runCardReady(global, cmdArgs, streams)
+	case "update":
+		return runCardUpdate(global, cmdArgs, streams)
+	case "note":
+		return runCardNote(global, cmdArgs, streams)
+	case "close":
+		return runCardClose(global, cmdArgs, streams)
+	case "reopen":
+		return runCardReopen(global, cmdArgs, streams)
+	case "defer":
+		return runCardDefer(global, cmdArgs, streams)
+	case "human":
+		return runCardHuman(global, cmdArgs, streams)
+	case "parents":
+		return runCardParents(global, cmdArgs, streams)
+	case "children":
+		return runCardChildren(global, cmdArgs, streams)
+	case "label":
+		return runCardLabel(global, cmdArgs, streams)
+	case "delete":
+		return runCardDelete(global, cmdArgs, streams)
 	default:
 		fmt.Fprintf(stderr, "bdd: unknown command %q\n", cmd)
 		fmt.Fprint(stderr, helpText)

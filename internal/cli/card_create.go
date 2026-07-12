@@ -1,0 +1,303 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"github.com/viq111/bdd"
+)
+
+// createTextField describes one of CreateCard's optional pointer-typed text
+// fields and the CLI flag names that populate it: --<flag>, --<flag>-file,
+// and (when unambiguous) --stdin.
+type createTextField struct {
+	field string // CreateCard struct field name (also the ValidationError field name)
+	flag  string // CLI flag name
+}
+
+var createTextFields = []createTextField{
+	{"description", "description"},
+	{"reproduction", "reproduce"},
+	{"design", "design"},
+	{"acceptance", "acceptance"},
+}
+
+// runCardCreate implements `bdd create [title] [--title <title>] --type
+// <type> [--priority <n|Pn>] [--description <text>|--description-file
+// <path>] [--reproduce ...] [--design ...] [--acceptance ...] [--worktree
+// <path>] [--label <label>]... [--parent <id>]... [--notes <text>]
+// [--stdin]`.
+func runCardCreate(g GlobalFlags, args []string, s *Streams) int {
+	var titleFlag, titlePositional string
+	var haveTitleFlag, haveTitlePositional bool
+	var typ, priorityRaw, worktree, notes string
+	var havePriority, haveNotes bool
+	var labels, parents []string
+	var stdin bool
+
+	values := map[string]string{}
+	haveValue := map[string]bool{}
+	files := map[string]string{}
+	haveFile := map[string]bool{}
+
+	fieldByFlag := map[string]string{}
+	for _, tf := range createTextFields {
+		fieldByFlag[tf.flag] = tf.field
+	}
+
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		name, inline, hasInline := cutFlagValue(arg)
+
+		switch name {
+		case "--title":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			titleFlag, haveTitleFlag = val, true
+			i += consumed
+			continue
+		case "--type":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			typ = val
+			i += consumed
+			continue
+		case "--priority":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			priorityRaw, havePriority = val, true
+			i += consumed
+			continue
+		case "--worktree":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			worktree = val
+			i += consumed
+			continue
+		case "--notes":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			notes, haveNotes = val, true
+			i += consumed
+			continue
+		case "--label":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			labels = append(labels, val)
+			i += consumed
+			continue
+		case "--parent":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			parents = append(parents, val)
+			i += consumed
+			continue
+		case "--stdin":
+			stdin = true
+			i++
+			continue
+		}
+
+		if field, ok := fieldByFlag[strings.TrimPrefix(name, "--")]; ok {
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: create: %v\n", err)
+				return ExitUsage
+			}
+			values[field] = val
+			haveValue[field] = true
+			i += consumed
+			continue
+		}
+		if strings.HasPrefix(name, "--") && strings.HasSuffix(name, "-file") {
+			base := strings.TrimSuffix(strings.TrimPrefix(name, "--"), "-file")
+			if field, ok := fieldByFlag[base]; ok {
+				val, consumed, err := flagValue(name, inline, hasInline, args, i)
+				if err != nil {
+					s.Errorf("bdd: create: %v\n", err)
+					return ExitUsage
+				}
+				files[field] = val
+				haveFile[field] = true
+				i += consumed
+				continue
+			}
+		}
+
+		if strings.HasPrefix(arg, "-") {
+			s.Errorf("bdd: create: unknown flag %q\n", arg)
+			return ExitUsage
+		}
+		if haveTitlePositional {
+			s.Errorf("bdd: create: unexpected argument %q\n", arg)
+			return ExitUsage
+		}
+		titlePositional, haveTitlePositional = arg, true
+		i++
+	}
+
+	if haveTitleFlag && haveTitlePositional {
+		s.Errorf("bdd: create: cannot combine a positional title and --title\n")
+		return ExitUsage
+	}
+	title := titleFlag
+	if haveTitlePositional {
+		title = titlePositional
+	}
+
+	fieldText := map[string]string{}
+	for _, tf := range createTextFields {
+		if haveValue[tf.field] && haveFile[tf.field] {
+			s.Errorf("bdd: create: cannot combine --%s and --%s-file\n", tf.flag, tf.flag)
+			return ExitUsage
+		}
+		if haveFile[tf.field] {
+			data, err := os.ReadFile(files[tf.field])
+			if err != nil {
+				s.Errorf("bdd: create: reading %s: %v\n", files[tf.field], err)
+				return ExitOther
+			}
+			fieldText[tf.field] = string(data)
+		} else if haveValue[tf.field] {
+			fieldText[tf.field] = values[tf.field]
+		}
+	}
+
+	if stdin {
+		var unset []string
+		for _, f := range requiredTextFieldsForType(typ) {
+			if _, ok := fieldText[f]; !ok {
+				unset = append(unset, f)
+			}
+		}
+		if len(unset) != 1 {
+			s.Errorf("bdd: create: --stdin is ambiguous for type %q: %d required text field(s) still unset; supply --description/--reproduce/--design/--acceptance directly\n", typ, len(unset))
+			return ExitUsage
+		}
+		data, err := io.ReadAll(s.Stdin)
+		if err != nil {
+			s.Errorf("bdd: create: reading stdin: %v\n", err)
+			return ExitOther
+		}
+		fieldText[unset[0]] = string(data)
+	}
+
+	ctx := context.Background()
+	db, code := openDB(ctx, g, "create", s)
+	if db == nil {
+		return code
+	}
+	defer db.Close()
+
+	in := bdd.CreateCard{
+		Title:     title,
+		Type:      bdd.CardType(typ),
+		Labels:    labels,
+		Parents:   parents,
+		CreatedBy: ResolveActor(g.Actor),
+	}
+	if havePriority {
+		p, err := parsePriority(priorityRaw)
+		if err != nil {
+			s.Errorf("bdd: create: %v\n", err)
+			return ExitUsage
+		}
+		in.Priority = &p
+	}
+	if worktree != "" {
+		in.Worktree = &worktree
+	}
+	if haveNotes {
+		in.Notes = &notes
+	}
+	for field, text := range fieldText {
+		text := text
+		switch field {
+		case "description":
+			in.Description = &text
+		case "reproduction":
+			in.Reproduction = &text
+		case "design":
+			in.Design = &text
+		case "acceptance":
+			in.Acceptance = &text
+		}
+	}
+
+	card, err := db.CreateCard(ctx, in)
+	if err != nil {
+		var verr *bdd.ValidationError
+		if errors.As(err, &verr) {
+			s.Errorf("bdd: create: missing required field(s): %s\n", strings.Join(verr.Fields, ", "))
+			if hint := bypassHint(verr.Fields); hint != "" {
+				s.Errorf("bdd: create: explicitly pass %s to acknowledge\n", hint)
+			}
+			return ExitUsage
+		}
+		s.Errorf("bdd: create: %v\n", err)
+		return ExitCode(err)
+	}
+
+	return emitCard(s, "create", toCardResult(card))
+}
+
+// requiredTextFieldsForType mirrors CreateCard's required-field matrix
+// (mutation.go) for the pointer-typed text fields only, so --stdin can tell
+// whether exactly one of them is still missing for typ.
+func requiredTextFieldsForType(typ string) []string {
+	switch bdd.CardType(typ) {
+	case bdd.CardTypeBug:
+		return []string{"reproduction", "acceptance"}
+	case bdd.CardTypeTask, bdd.CardTypeFeature, bdd.CardTypeEpic:
+		return []string{"acceptance"}
+	case bdd.CardTypeDecision:
+		return []string{"description", "design"}
+	default:
+		return nil
+	}
+}
+
+// bypassHint renders the "pass --reproduce \"\" to acknowledge" hint for
+// every missing pointer-typed field in fields (title/type have no such
+// bypass, since they cannot be satisfied by an explicitly empty value).
+func bypassHint(fields []string) string {
+	flagFor := map[string]string{
+		"description":  "--description",
+		"reproduction": "--reproduce",
+		"design":       "--design",
+		"acceptance":   "--acceptance",
+	}
+	var hints []string
+	for _, f := range fields {
+		if flag, ok := flagFor[f]; ok {
+			hints = append(hints, fmt.Sprintf(`%s ""`, flag))
+		}
+	}
+	return strings.Join(hints, " and ")
+}
