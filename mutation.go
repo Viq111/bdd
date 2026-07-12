@@ -383,7 +383,7 @@ func validateUpdateCard(in UpdateCard) error {
 	if in.ClearWorktree && in.Worktree != nil {
 		return fmt.Errorf("bdd: update card: cannot set Worktree and ClearWorktree together: %w", ErrInvalidArgument)
 	}
-	if !validateLabels(in.AddLabels) {
+	if !validateLabels(in.AddLabels) || !validateLabels(in.RemoveLabels) {
 		return fmt.Errorf("bdd: update card: labels must be non-empty, valid UTF-8, and at most %d bytes: %w", MaxLabelBytes, ErrInvalidArgument)
 	}
 	return nil

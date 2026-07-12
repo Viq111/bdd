@@ -416,6 +416,34 @@ func TestUpdateCardLabelsIdempotentAddRemove(t *testing.T) {
 	}
 }
 
+func TestUpdateCardRejectsInvalidRemoveLabel(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	_, err = db.UpdateCard(ctx, created.ID, UpdateCard{RemoveLabels: []string{""}})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("UpdateCard() error = %v, want ErrInvalidArgument for empty remove label", err)
+	}
+
+	_, err = db.UpdateCard(ctx, created.ID, UpdateCard{RemoveLabels: []string{"\xff\xfe"}})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("UpdateCard() error = %v, want ErrInvalidArgument for invalid UTF-8 remove label", err)
+	}
+
+	unchanged, err := db.GetCard(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if unchanged.Revision != created.Revision {
+		t.Fatalf("Revision = %d, want unchanged %d after rejected UpdateCard", unchanged.Revision, created.Revision)
+	}
+}
+
 func TestUpdateCardNotFound(t *testing.T) {
 	db := newTestDB(t)
 	_, err := db.UpdateCard(context.Background(), "bdd-missing", UpdateCard{Title: ptr("x")})
