@@ -56,6 +56,36 @@ type DB struct {
 	mu           sync.Mutex
 	closed       bool
 	schemaTooOld bool
+
+	prefixOnce sync.Once
+	prefix     string
+	prefixErr  error
+}
+
+// ready reports whether db can serve a card mutation/read: not closed, and
+// not waiting on a pending schema Upgrade.
+func (db *DB) ready() error {
+	db.mu.Lock()
+	closed := db.closed
+	tooOld := db.schemaTooOld
+	db.mu.Unlock()
+
+	if closed {
+		return fmt.Errorf("bdd: database is closed: %w", ErrInvalidArgument)
+	}
+	if tooOld {
+		return fmt.Errorf("bdd: %w", ErrSchemaTooOld)
+	}
+	return nil
+}
+
+// workspacePrefix returns the workspace's card ID prefix, read once from the
+// workspace table and cached for the life of the DB handle.
+func (db *DB) workspacePrefix(ctx context.Context) (string, error) {
+	db.prefixOnce.Do(func() {
+		db.prefixErr = db.sql.QueryRowContext(ctx, "SELECT prefix FROM workspace WHERE singleton = 1").Scan(&db.prefix)
+	})
+	return db.prefix, db.prefixErr
 }
 
 // Open resolves a bdd workspace database per opts and opens it. A normal

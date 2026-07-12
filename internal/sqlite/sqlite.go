@@ -146,3 +146,15 @@ func IsBusy(err error) bool {
 	}
 	return false
 }
+
+// IsUniqueViolation reports whether err is a SQLITE_CONSTRAINT_UNIQUE or
+// SQLITE_CONSTRAINT_PRIMARYKEY error, used to retry ID generation on
+// collision.
+func IsUniqueViolation(err error) bool {
+	var sqliteErr *modernc.Error
+	if errors.As(err, &sqliteErr) {
+		code := sqliteErr.Code()
+		return code == sqlite3.SQLITE_CONSTRAINT_UNIQUE || code == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY
+	}
+	return false
+}
