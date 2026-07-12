@@ -613,3 +613,55 @@ func TestCreateCardWithParentsAttachesEdges(t *testing.T) {
 		t.Fatalf("Parents() = %v, want ascending ID order", parents)
 	}
 }
+
+// TestGetCardExposesParentLinks covers bdd-otzf's acceptance criterion "A
+// card created with multiple parents shows them all in GetCard" (bdd-ej0):
+// GetCard must expand parent edges itself rather than requiring a separate
+// Parents() call.
+func TestGetCardExposesParentLinks(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	p1, err := db.CreateCard(ctx, CreateCard{Title: "p1", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	p2, err := db.CreateCard(ctx, CreateCard{Title: "p2", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	child, err := db.CreateCard(ctx, CreateCard{Title: "child", Type: CardTypeChore, Parents: []string{p1.ID, p2.ID}})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	// CreateCard's own returned card should already reflect the attached
+	// parents, since it loads the card the same way GetCard does.
+	if len(child.Parents) != 2 {
+		t.Fatalf("CreateCard() result Parents = %v, want 2 parents", child.Parents)
+	}
+
+	got, err := db.GetCard(ctx, child.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if len(got.Parents) != 2 {
+		t.Fatalf("GetCard() Parents = %v, want 2 parents", got.Parents)
+	}
+	seen := map[string]bool{got.Parents[0].ID: true, got.Parents[1].ID: true}
+	if !seen[p1.ID] || !seen[p2.ID] {
+		t.Fatalf("GetCard() Parents = %v, want %s and %s", got.Parents, p1.ID, p2.ID)
+	}
+	if got.Parents[0].ID >= got.Parents[1].ID {
+		t.Fatalf("GetCard() Parents = %v, want ascending ID order", got.Parents)
+	}
+	if got.Parents[0].Title == "" || got.Parents[0].Type == "" || got.Parents[0].Status == "" {
+		t.Fatalf("GetCard() Parents = %+v, want title/type/status populated on each CardRef", got.Parents)
+	}
+
+	// A card with no parents gets an empty (not nil) slice.
+	if got := p1; got.Parents == nil || len(got.Parents) != 0 {
+		t.Fatalf("GetCard() Parents = %v, want empty non-nil slice for a parentless card", got.Parents)
+	}
+}

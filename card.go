@@ -98,6 +98,7 @@ type Card struct {
 	Assignee     string
 	Dispatchable bool
 	Labels       []string
+	Parents      []CardRef
 
 	CreatedBy string
 	CreatedAt time.Time
@@ -129,9 +130,9 @@ type Note struct {
 	CreatedAt time.Time
 }
 
-// GetCard returns the full record for id, including labels. Use ListCards,
-// SearchCards, or ReadyCards for bulk reads that do not need the full-fat
-// projection.
+// GetCard returns the full record for id, including labels and parent links.
+// Use ListCards, SearchCards, or ReadyCards for bulk reads that do not need
+// the full-fat projection.
 func (db *DB) GetCard(ctx context.Context, id string) (*Card, error) {
 	if err := db.ready(); err != nil {
 		return nil, err
@@ -203,8 +204,8 @@ const cardColumns = `id, title, worktree, description, reproduction, design, acc
 
 const cardSelectSQL = `SELECT ` + cardColumns + ` FROM cards WHERE id = ?`
 
-// loadCard reads a card row plus its labels via q, wrapping a missing row in
-// ErrNotFound.
+// loadCard reads a card row plus its labels and parent links via q, wrapping
+// a missing row in ErrNotFound.
 func loadCard(ctx context.Context, q execer, id string) (*Card, error) {
 	c, err := scanCard(q.QueryRowContext(ctx, cardSelectSQL, id))
 	if err != nil {
@@ -219,6 +220,13 @@ func loadCard(ctx context.Context, q execer, id string) (*Card, error) {
 		return nil, fmt.Errorf("bdd: get card: %w", err)
 	}
 	c.Labels = labels
+
+	parents, err := loadParentRefs(ctx, q, id)
+	if err != nil {
+		return nil, fmt.Errorf("bdd: get card: %w", err)
+	}
+	c.Parents = parents
+
 	return c, nil
 }
 
@@ -236,6 +244,39 @@ func loadLabels(ctx context.Context, q execer, id string) ([]string, error) {
 			return nil, err
 		}
 		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// parentRefsSQL selects the CardRef columns (id, title, card_type, status)
+// for every card that blocks a given child_id, ordered by id ascending. It
+// backs both loadParentRefs (single-card read expansion) and Parents (the
+// standalone edge-read API), so GetCard and Parents agree on ordering.
+const parentRefsSQL = `SELECT c.id, c.title, c.card_type, c.status
+FROM card_edges ce JOIN cards c ON c.id = ce.parent_id
+WHERE ce.child_id = ? ORDER BY c.id ASC`
+
+// loadParentRefs returns every card that blocks id via q, or an empty
+// (non-nil) slice if id has no parents. Unlike Parents, it does not itself
+// verify id exists: callers (loadCard) already have that guarantee from the
+// card row scan.
+func loadParentRefs(ctx context.Context, q execer, id string) ([]CardRef, error) {
+	rows, err := q.QueryContext(ctx, parentRefsSQL, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []CardRef{}
+	for rows.Next() {
+		var r CardRef
+		var typ, status string
+		if err := rows.Scan(&r.ID, &r.Title, &typ, &status); err != nil {
+			return nil, err
+		}
+		r.Type = CardType(typ)
+		r.Status = Status(status)
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }
@@ -340,10 +381,7 @@ func dedupe(items []string) []string {
 // returns an empty (not nil) slice when id has no parents, and ErrNotFound
 // when id does not exist.
 func (db *DB) Parents(ctx context.Context, id string) ([]CardRef, error) {
-	const query = `SELECT c.id, c.title, c.card_type, c.status
-FROM card_edges ce JOIN cards c ON c.id = ce.parent_id
-WHERE ce.child_id = ? ORDER BY c.id ASC`
-	return db.edgeRefs(ctx, id, query)
+	return db.edgeRefs(ctx, id, parentRefsSQL)
 }
 
 // Children returns every card blocked by id, ordered by ID ascending. It
