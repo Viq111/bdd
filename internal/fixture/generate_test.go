@@ -1,10 +1,13 @@
 package fixture
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/viq111/bdd"
 
 	_ "modernc.org/sqlite"
 )
@@ -113,6 +116,27 @@ func TestGenerateRefusesExistingFile(t *testing.T) {
 	if _, err := Generate(Options{Path: path, Cards: 10, Seed: 1}); err == nil {
 		t.Fatal("Generate did not fail for an existing path")
 	}
+}
+
+// TestGenerateOpensViaRealStorageLayer guards against the fixture schema
+// drifting from internal/schema's migrations: a fixture is only useful for
+// benchmarking if bdd.Open accepts it as a normal, up-to-date workspace.
+func TestGenerateOpensViaRealStorageLayer(t *testing.T) {
+	dir := t.TempDir()
+	dbDir := filepath.Join(dir, ".bdd")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dbDir, "bdd.sqlite")
+	if _, err := Generate(Options{Path: path, Cards: 50, Seed: 1}); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	db, err := bdd.Open(context.Background(), bdd.OpenOptions{Workspace: dir})
+	if err != nil {
+		t.Fatalf("bdd.Open: %v", err)
+	}
+	defer db.Close()
 }
 
 func TestGenerateNoWALSidecars(t *testing.T) {

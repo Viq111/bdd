@@ -1,11 +1,14 @@
 package fixture
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math/rand"
 	"os"
 	"time"
+
+	"github.com/viq111/bdd/internal/schema"
 
 	_ "modernc.org/sqlite"
 )
@@ -97,6 +100,8 @@ func Generate(opts Options) (*Manifest, error) {
 		return nil, fmt.Errorf("fixture: %s already exists", opts.Path)
 	}
 
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+
 	db, err := sql.Open("sqlite", opts.Path)
 	if err != nil {
 		return nil, fmt.Errorf("fixture: open: %w", err)
@@ -109,8 +114,22 @@ func Generate(opts Options) (*Manifest, error) {
 	if _, err := db.Exec("PRAGMA foreign_keys=ON;"); err != nil {
 		return nil, fmt.Errorf("fixture: enable foreign_keys: %w", err)
 	}
-	if _, err := db.Exec(schemaDDL); err != nil {
-		return nil, fmt.Errorf("fixture: create schema: %w", err)
+	// Apply the same embedded migrations the real bdd storage layer uses, so
+	// the fixture's schema (tables, columns, seeded statuses/types) can never
+	// drift from what Open expects. schema_versions and PRAGMA user_version
+	// are recorded here (rather than via schema.Upgrade, which stamps
+	// applied_at with the wall clock) so fixtures stay byte-for-byte
+	// deterministic in opts.Seed.
+	for _, m := range schema.Migrations() {
+		if _, err := db.ExecContext(context.Background(), m.SQL); err != nil {
+			return nil, fmt.Errorf("fixture: applying migration %d (%s): %w", m.Version, m.Name, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_versions (version, applied_at) VALUES (?, ?)`, m.Version, rfc3339(now)); err != nil {
+			return nil, fmt.Errorf("fixture: recording migration %d: %w", m.Version, err)
+		}
+	}
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schema.CurrentVersion())); err != nil {
+		return nil, fmt.Errorf("fixture: setting user_version: %w", err)
 	}
 
 	tx, err := db.Begin()
@@ -119,18 +138,7 @@ func Generate(opts Options) (*Manifest, error) {
 	}
 	defer tx.Rollback()
 
-	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
-
-	// Mirrors schema.Upgrade's bookkeeping for migration 0001: record the
-	// applied version and set PRAGMA user_version so the fixture reads back
-	// as already-migrated to the real bdd binary.
-	if _, err := tx.Exec(`INSERT INTO schema_versions(version, applied_at) VALUES (?, ?)`, schemaVersion, rfc3339(now)); err != nil {
-		return nil, err
-	}
 	if _, err := tx.Exec(`INSERT INTO workspace(singleton, prefix, created_at) VALUES (1, ?, ?)`, opts.IDPrefix, rfc3339(now)); err != nil {
-		return nil, err
-	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return nil, err
 	}
 
@@ -148,9 +156,9 @@ func Generate(opts Options) (*Manifest, error) {
 
 	insertCard, err := tx.Prepare(`
 		INSERT INTO cards (
-			id, title, card_type, status, priority, description, reproduction,
-			design, acceptance, external_ref, worktree, assignee,
-			dispatchable, created_by, created_at, updated_at, started_at,
+			id, title, worktree, description, reproduction, design,
+			acceptance, status, priority, card_type, external_ref, assignee,
+			created_by, dispatchable, created_at, updated_at, started_at,
 			closed_at, defer_until, revision
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
@@ -164,7 +172,7 @@ func Generate(opts Options) (*Manifest, error) {
 	}
 	defer insertLabel.Close()
 
-	insertEdge, err := tx.Prepare(`INSERT INTO card_edges(parent_id, child_id, created_at, created_by) VALUES (?, ?, ?, ?)`)
+	insertEdge, err := tx.Prepare(`INSERT INTO card_edges(parent_id, child_id, created_at) VALUES (?, ?, ?)`)
 	if err != nil {
 		return nil, err
 	}
@@ -243,9 +251,9 @@ func Generate(opts Options) (*Manifest, error) {
 		title := fmt.Sprintf("%s #%d: %s", capitalize(typ), i, word)
 
 		_, err = insertCard.Exec(
-			id, title, typ, status, priority, description, reproduction,
-			design, acceptance, externalRef, worktree, assignee,
-			dispatchable, actorPool[rng.Intn(len(actorPool))], rfc3339(createdAt),
+			id, title, worktree, description, reproduction, design,
+			acceptance, status, priority, typ, externalRef, assignee,
+			actorPool[rng.Intn(len(actorPool))], dispatchable, rfc3339(createdAt),
 			rfc3339(updatedAt), startedAt, closedAt, deferUntil, 1,
 		)
 		if err != nil {
@@ -276,7 +284,7 @@ func Generate(opts Options) (*Manifest, error) {
 					continue
 				}
 				usedParents[parent] = true
-				if _, err := insertEdge.Exec(parent, id, rfc3339(createdAt), actorPool[rng.Intn(len(actorPool))]); err != nil {
+				if _, err := insertEdge.Exec(parent, id, rfc3339(createdAt)); err != nil {
 					return nil, err
 				}
 			}
