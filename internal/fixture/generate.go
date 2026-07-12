@@ -121,21 +121,17 @@ func Generate(opts Options) (*Manifest, error) {
 
 	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
 
-	if _, err := tx.Exec(`INSERT INTO schema_versions(version, applied_at) VALUES (1, ?)`, rfc3339(now)); err != nil {
+	// Mirrors schema.Upgrade's bookkeeping for migration 0001: record the
+	// applied version and set PRAGMA user_version so the fixture reads back
+	// as already-migrated to the real bdd binary.
+	if _, err := tx.Exec(`INSERT INTO schema_versions(version, applied_at) VALUES (?, ?)`, schemaVersion, rfc3339(now)); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`INSERT INTO workspace(id_prefix, created_at) VALUES (?, ?)`, opts.IDPrefix, rfc3339(now)); err != nil {
+	if _, err := tx.Exec(`INSERT INTO workspace(singleton, prefix, created_at) VALUES (1, ?, ?)`, opts.IDPrefix, rfc3339(now)); err != nil {
 		return nil, err
 	}
-	for _, s := range builtinStatuses {
-		if _, err := tx.Exec(`INSERT INTO status_definitions(status, category) VALUES (?, ?)`, s.status, s.category); err != nil {
-			return nil, err
-		}
-	}
-	for _, t := range builtinTypes {
-		if _, err := tx.Exec(`INSERT INTO type_definitions(type) VALUES (?)`, t); err != nil {
-			return nil, err
-		}
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+		return nil, err
 	}
 
 	rng := rand.New(rand.NewSource(opts.Seed))
@@ -152,7 +148,7 @@ func Generate(opts Options) (*Manifest, error) {
 
 	insertCard, err := tx.Prepare(`
 		INSERT INTO cards (
-			id, title, type, status, priority, description, reproduction,
+			id, title, card_type, status, priority, description, reproduction,
 			design, acceptance, external_ref, worktree, assignee,
 			dispatchable, created_by, created_at, updated_at, started_at,
 			closed_at, defer_until, revision
@@ -168,7 +164,7 @@ func Generate(opts Options) (*Manifest, error) {
 	}
 	defer insertLabel.Close()
 
-	insertEdge, err := tx.Prepare(`INSERT INTO card_edges(parent_id, child_id) VALUES (?, ?)`)
+	insertEdge, err := tx.Prepare(`INSERT INTO card_edges(parent_id, child_id, created_at, created_by) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +276,7 @@ func Generate(opts Options) (*Manifest, error) {
 					continue
 				}
 				usedParents[parent] = true
-				if _, err := insertEdge.Exec(parent, id); err != nil {
+				if _, err := insertEdge.Exec(parent, id, rfc3339(createdAt), actorPool[rng.Intn(len(actorPool))]); err != nil {
 					return nil, err
 				}
 			}
