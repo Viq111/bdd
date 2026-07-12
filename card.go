@@ -194,11 +194,14 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-const cardSelectSQL = `SELECT
-	id, title, worktree, description, reproduction, design, acceptance,
+// cardColumns is the column list shared by every query that scans full card
+// rows with scanCard: single-card reads (cardSelectSQL) and the bulk
+// ListCards/SearchCards queries in query.go.
+const cardColumns = `id, title, worktree, description, reproduction, design, acceptance,
 	status, priority, card_type, external_ref, assignee, created_by,
-	dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision
-FROM cards WHERE id = ?`
+	dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision`
+
+const cardSelectSQL = `SELECT ` + cardColumns + ` FROM cards WHERE id = ?`
 
 // loadCard reads a card row plus its labels via q, wrapping a missing row in
 // ErrNotFound.
