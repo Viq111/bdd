@@ -265,7 +265,8 @@ func parseStatusCustom(value string) ([]customStatusEntry, error) {
 // applyStatusCustom parses value and synchronizes status_definitions:
 // custom statuses no longer present are deleted (failing the whole write if
 // any card still uses one), and the rest are inserted or have their
-// category updated.
+// category updated (also failing if a card in use would have its status
+// reclassified to a different category).
 func applyStatusCustom(ctx context.Context, tx *sql.Tx, value string) error {
 	entries, err := parseStatusCustom(value)
 	if err != nil {
@@ -277,11 +278,11 @@ func applyStatusCustom(ctx context.Context, tx *sql.Tx, value string) error {
 		keep[e.Name] = true
 	}
 
-	current, err := customDefinitionNames(ctx, tx, "status_definitions")
+	currentCategories, err := customDefinitionCategories(ctx, tx, "status_definitions")
 	if err != nil {
 		return err
 	}
-	for _, name := range current {
+	for name := range currentCategories {
 		if keep[name] {
 			continue
 		}
@@ -298,6 +299,15 @@ func applyStatusCustom(ctx context.Context, tx *sql.Tx, value string) error {
 	}
 
 	for _, e := range entries {
+		if prevCategory, existed := currentCategories[e.Name]; existed && prevCategory != e.Category {
+			inUse, err := definitionInUse(ctx, tx, "cards", "status", e.Name)
+			if err != nil {
+				return err
+			}
+			if inUse {
+				return fmt.Errorf("bdd: status.custom: cannot change category of status %q: still used by one or more cards: %w", e.Name, ErrInvalidArgument)
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO status_definitions (name, category, built_in) VALUES (?, ?, 0)
 			ON CONFLICT(name) DO UPDATE SET category = excluded.category`,
@@ -399,6 +409,26 @@ func customDefinitionNames(ctx context.Context, tx *sql.Tx, table string) ([]str
 			return nil, err
 		}
 		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// customDefinitionCategories returns the category of every non-built-in row
+// in status_definitions, keyed by name.
+func customDefinitionCategories(ctx context.Context, tx *sql.Tx, table string) (map[string]StatusCategory, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT name, category FROM `+table+` WHERE built_in = 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]StatusCategory)
+	for rows.Next() {
+		var name, category string
+		if err := rows.Scan(&name, &category); err != nil {
+			return nil, err
+		}
+		out[name] = StatusCategory(category)
 	}
 	return out, rows.Err()
 }

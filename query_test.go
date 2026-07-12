@@ -2,7 +2,10 @@ package bdd
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -294,6 +297,86 @@ func TestSearchCardsMatchesAcrossFields(t *testing.T) {
 		if len(got) != 1 || got[0].ID != tt.want {
 			t.Fatalf("SearchCards(%q) = %v, want [%s]", tt.query, cardIDs(got), tt.want)
 		}
+	}
+}
+
+func TestSearchCardsMatchesIDPrefixAndSubstring(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	card := mustCreateChore(t, db, "prefix search target")
+
+	// A prefix of the ID (e.g. what a user would type) must match via the
+	// indexed prefix branch.
+	got, err := db.SearchCards(ctx, SearchOptions{Query: card.ID[:len(card.ID)-2]})
+	if err != nil {
+		t.Fatalf("SearchCards(id prefix) error = %v", err)
+	}
+	if !containsID(got, card.ID) {
+		t.Fatalf("SearchCards(id prefix) = %v, want to include %s", cardIDs(got), card.ID)
+	}
+
+	// A substring in the middle of the ID must still match via the
+	// substring fallback branch, not just a prefix.
+	mid := card.ID[len(card.ID)/2 : len(card.ID)/2+2]
+	got, err = db.SearchCards(ctx, SearchOptions{Query: mid})
+	if err != nil {
+		t.Fatalf("SearchCards(id substring) error = %v", err)
+	}
+	if !containsID(got, card.ID) {
+		t.Fatalf("SearchCards(id substring %q) = %v, want to include %s", mid, cardIDs(got), card.ID)
+	}
+}
+
+// TestSearchQueryUsesIndexedPrefixScan is a query-plan regression test for
+// bdd-upb: SearchCards' Query text must include a prefix-anchored predicate
+// that SQLite's LIKE optimizer can satisfy with an index range scan, not
+// just an unanchored substring scan across every text column.
+func TestSearchQueryUsesIndexedPrefixScan(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// SQLite's query planner only prefers an index range scan over a full
+	// table scan once the table is large enough for the cost estimate to
+	// favor it, so seed enough rows to make that choice observable.
+	for i := 0; i < 2000; i++ {
+		mustCreateChore(t, db, fmt.Sprintf("card %d", i))
+	}
+
+	cond, args := searchMatchCondition("marker")
+	prefixSubquery := strings.TrimPrefix(strings.SplitN(cond, " UNION ", 2)[0], "id IN (")
+
+	rows, err := db.sql.QueryContext(ctx, "EXPLAIN QUERY PLAN "+prefixSubquery, args[:1]...)
+	if err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		t.Fatalf("rows.Columns() error = %v", err)
+	}
+	var usedIndex bool
+	for rows.Next() {
+		scan := make([]any, len(cols))
+		vals := make([]sql.NullString, len(cols))
+		for i := range scan {
+			scan[i] = &vals[i]
+		}
+		if err := rows.Scan(scan...); err != nil {
+			t.Fatalf("rows.Scan() error = %v", err)
+		}
+		for _, v := range vals {
+			if strings.Contains(v.String, "idx_cards_id_nocase") || strings.Contains(v.String, "idx_cards_title_nocase") {
+				usedIndex = true
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err() = %v", err)
+	}
+	if !usedIndex {
+		t.Fatalf("SearchCards prefix branch query plan did not use idx_cards_id_nocase or idx_cards_title_nocase")
 	}
 }
 

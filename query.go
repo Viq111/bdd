@@ -192,19 +192,9 @@ func (db *DB) SearchCards(ctx context.Context, opts SearchOptions) ([]Card, erro
 	var args []any
 
 	if opts.Query != "" {
-		pattern := likePattern(opts.Query)
-		textColumns := []string{
-			"id", "title", "description", "reproduction", "design",
-			"acceptance", "external_ref", "worktree",
-		}
-		ors := make([]string, 0, len(textColumns)+1)
-		for _, col := range textColumns {
-			ors = append(ors, col+" LIKE ? ESCAPE '\\' COLLATE NOCASE")
-			args = append(args, pattern)
-		}
-		ors = append(ors, "EXISTS (SELECT 1 FROM notes WHERE notes.card_id = cards.id AND notes.body LIKE ? ESCAPE '\\' COLLATE NOCASE)")
-		args = append(args, pattern)
-		conds = append(conds, "("+strings.Join(ors, " OR ")+")")
+		matchCond, matchArgs := searchMatchCondition(opts.Query)
+		conds = append(conds, matchCond)
+		args = append(args, matchArgs...)
 	}
 
 	switch {
@@ -336,6 +326,72 @@ func toAnySlice[T ~string](items []T) []any {
 // ('%', '_') and the escape character itself so substring search treats s
 // literally.
 func likePattern(s string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return "%" + replacer.Replace(s) + "%"
+	return "%" + escapeLike(s) + "%"
+}
+
+// needsLikeEscape reports whether s contains a LIKE metacharacter or the
+// escape character, i.e. whether a literal match against s requires an
+// ESCAPE clause.
+func needsLikeEscape(s string) bool {
+	return strings.ContainsAny(s, `\%_`)
+}
+
+// searchQueryTextColumns lists every card column SearchCards matches Query
+// against, case-insensitively.
+var searchQueryTextColumns = []string{
+	"id", "title", "description", "reproduction", "design",
+	"acceptance", "external_ref", "worktree",
+}
+
+// searchIndexedPrefixColumns lists the columns backed by a NOCASE index
+// (see migration 0002_search_prefix_indexes.sql), so a "query%" LIKE
+// predicate against them can be satisfied with an index range scan rather
+// than a full table scan.
+var searchIndexedPrefixColumns = []string{"id", "title"}
+
+// searchMatchCondition builds the "id IN (...)" WHERE condition and its args
+// for SearchCards' Query text, as a UNION of independently-planned
+// subqueries:
+//
+//  1. one indexed prefix range scan ("query%") per column in
+//     searchIndexedPrefixColumns, which SQLite's LIKE optimizer can satisfy
+//     against the NOCASE indexes from migration 0002_search_prefix_indexes.sql
+//     instead of a full table scan;
+//  2. a case-insensitive substring scan ("%query%") across every searched
+//     column and note body, preserving the full-text match semantics the
+//     plan requires.
+//
+// Each prefix branch is its own single-column, single-predicate SELECT (not
+// OR'd with anything) because that is the only shape SQLite's LIKE
+// optimizer will rewrite into an indexed range scan: an OR'd predicate that
+// mixes columns, or that carries an ESCAPE clause on a bound parameter,
+// forces a full table scan for the whole expression instead. Branch 1 is
+// therefore only emitted when query needs no ESCAPE clause (i.e. contains no
+// '%', '_', or '\'); an escaped query still gets exact substring semantics
+// from branch 2. This is the initial (pre-FTS5) search strategy (plan
+// section 18).
+func searchMatchCondition(query string) (string, []any) {
+	var branches []string
+	var args []any
+
+	if !needsLikeEscape(query) {
+		prefixPattern := query + "%"
+		for _, col := range searchIndexedPrefixColumns {
+			branches = append(branches, "SELECT id FROM cards WHERE "+col+" LIKE ? COLLATE NOCASE")
+			args = append(args, prefixPattern)
+		}
+	}
+
+	substringPattern := likePattern(query)
+	substringOrs := make([]string, 0, len(searchQueryTextColumns)+1)
+	for _, col := range searchQueryTextColumns {
+		substringOrs = append(substringOrs, col+" LIKE ? ESCAPE '\\' COLLATE NOCASE")
+		args = append(args, substringPattern)
+	}
+	substringOrs = append(substringOrs, "EXISTS (SELECT 1 FROM notes WHERE notes.card_id = cards.id AND notes.body LIKE ? ESCAPE '\\' COLLATE NOCASE)")
+	args = append(args, substringPattern)
+	branches = append(branches, "SELECT id FROM cards WHERE "+strings.Join(substringOrs, " OR "))
+
+	cond := "id IN (" + strings.Join(branches, " UNION ") + ")"
+	return cond, args
 }

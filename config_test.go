@@ -161,6 +161,43 @@ func TestStatusCustomRemovalBlockedWhenInUse(t *testing.T) {
 	}
 }
 
+func TestStatusCustomCategoryChangeBlockedWhenInUse(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	if err := db.ConfigSet(ctx, ConfigKeyStatusCustom, "qa_testing:wip", "alice"); err != nil {
+		t.Fatalf("ConfigSet(status.custom) error = %v", err)
+	}
+
+	card, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore, CreatedBy: "alice"})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	qaTesting := Status("qa_testing")
+	if _, err := db.UpdateCard(ctx, card.ID, UpdateCard{Status: &qaTesting, Actor: "alice"}); err != nil {
+		t.Fatalf("UpdateCard(status=qa_testing) error = %v", err)
+	}
+
+	if err := db.ConfigSet(ctx, ConfigKeyStatusCustom, "qa_testing:done", "alice"); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("ConfigSet(status.custom) reclassifying in-use status error = %v, want ErrInvalidArgument", err)
+	}
+
+	// The rejected write must not have touched status_definitions or config.
+	got, err := db.ConfigGet(ctx, ConfigKeyStatusCustom)
+	if err != nil || got != "qa_testing:wip" {
+		t.Fatalf("ConfigGet(status.custom) after rejected category change = (%q, %v), want (qa_testing:wip, nil)", got, err)
+	}
+	statuses, err := db.Statuses(ctx)
+	if err != nil {
+		t.Fatalf("Statuses() error = %v", err)
+	}
+	for _, s := range statuses {
+		if s.Name == "qa_testing" && s.Category != StatusCategoryWIP {
+			t.Fatalf("qa_testing category = %q, want wip (unchanged)", s.Category)
+		}
+	}
+}
+
 func TestTypesCustomAddsToTypes(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
