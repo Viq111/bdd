@@ -114,6 +114,53 @@ func TestOpenWithExplicitPath(t *testing.T) {
 	}
 }
 
+func TestOpenDoesNotMutateJournalMode(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	init, err := Init(ctx, InitOptions{Workspace: dir, Prefix: "bdd"})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	init.Close()
+
+	dbPath := filepath.Join(dir, ".bdd", "bdd.sqlite")
+
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	if _, err := raw.ExecContext(ctx, "PRAGMA journal_mode = DELETE"); err != nil {
+		raw.Close()
+		t.Fatalf("PRAGMA journal_mode = DELETE: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	db, err := Open(ctx, OpenOptions{Path: dbPath})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	verify, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open(verify) error = %v", err)
+	}
+	defer verify.Close()
+
+	var mode string
+	if err := verify.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		t.Fatalf("PRAGMA journal_mode: %v", err)
+	}
+	if mode != "delete" {
+		t.Fatalf("journal_mode = %q, want %q (normal Open must not rewrite it)", mode, "delete")
+	}
+}
+
 func TestOpenWithExplicitPathMissingReturnsNotFound(t *testing.T) {
 	dir := t.TempDir()
 	_, err := Open(context.Background(), OpenOptions{Path: filepath.Join(dir, "missing.sqlite")})

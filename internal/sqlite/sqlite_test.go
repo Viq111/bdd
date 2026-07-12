@@ -36,6 +36,37 @@ func TestOpenAppliesPragmas(t *testing.T) {
 	}
 }
 
+func TestOpenSkipJournalModeLeavesExistingModeUntouched(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bdd.sqlite")
+
+	setup, err := Open(ctx, path, Options{})
+	if err != nil {
+		t.Fatalf("Open(setup) error = %v", err)
+	}
+	if _, err := setup.ExecContext(ctx, "PRAGMA journal_mode = DELETE"); err != nil {
+		setup.Close()
+		t.Fatalf("PRAGMA journal_mode = DELETE: %v", err)
+	}
+	if err := setup.Close(); err != nil {
+		t.Fatalf("close setup: %v", err)
+	}
+
+	db, err := Open(ctx, path, Options{SkipJournalMode: true})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+
+	var mode string
+	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		t.Fatalf("PRAGMA journal_mode: %v", err)
+	}
+	if mode != "delete" {
+		t.Fatalf("journal_mode = %q, want %q (SkipJournalMode must not rewrite it)", mode, "delete")
+	}
+}
+
 func TestOpenOneShotPoolIsSingleConnection(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "bdd.sqlite")

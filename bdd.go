@@ -83,7 +83,7 @@ func Open(ctx context.Context, opts OpenOptions) (*DB, error) {
 		path = discovered
 	}
 
-	sqlDB, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot, ReadOnly: opts.ReadOnly})
+	sqlDB, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot, ReadOnly: opts.ReadOnly, SkipJournalMode: true})
 	if err != nil {
 		return nil, fmt.Errorf("bdd: open %s: %w", path, err)
 	}

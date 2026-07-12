@@ -33,6 +33,14 @@ type Options struct {
 	Pool Pool
 	// ReadOnly opens the database file in read-only mode.
 	ReadOnly bool
+	// SkipJournalMode leaves the database's on-disk journal mode
+	// untouched. journal_mode is persisted in the database file itself,
+	// so issuing "PRAGMA journal_mode = WAL" can rewrite the file even
+	// when the requested mode already matches. Callers that must not
+	// mutate the database on a normal open (bdd.Open) set this; callers
+	// that are creating or upgrading a database set it false so the
+	// required WAL mode gets established.
+	SkipJournalMode bool
 }
 
 // conservativeMaxOpenConns bounds the pool for long-lived callers. SQLite
@@ -41,11 +49,11 @@ type Options struct {
 const conservativeMaxOpenConns = 4
 
 // Open opens the SQLite database at path, applying the required PRAGMAs
-// (foreign_keys, WAL journal mode, synchronous NORMAL, busy_timeout) on
-// every connection. It does not create the file unless the driver's DSN
-// options say so; callers that need create-if-missing semantics rely on
-// SQLite's default behavior of creating a new file for a path that does not
-// exist yet.
+// (foreign_keys, synchronous NORMAL, busy_timeout, and WAL journal mode
+// unless Options.SkipJournalMode is set) on every connection. It does not
+// create the file unless the driver's DSN options say so; callers that need
+// create-if-missing semantics rely on SQLite's default behavior of creating
+// a new file for a path that does not exist yet.
 func Open(ctx context.Context, path string, opts Options) (*sql.DB, error) {
 	dsn := path
 	if opts.ReadOnly {
@@ -66,7 +74,7 @@ func Open(ctx context.Context, path string, opts Options) (*sql.DB, error) {
 		db.SetMaxIdleConns(1)
 	}
 
-	if err := applyPragmas(ctx, db); err != nil {
+	if err := applyPragmas(ctx, db, opts.SkipJournalMode); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -74,12 +82,14 @@ func Open(ctx context.Context, path string, opts Options) (*sql.DB, error) {
 	return db, nil
 }
 
-func applyPragmas(ctx context.Context, db *sql.DB) error {
+func applyPragmas(ctx context.Context, db *sql.DB, skipJournalMode bool) error {
 	pragmas := []string{
 		"PRAGMA foreign_keys = ON",
-		"PRAGMA journal_mode = WAL",
 		"PRAGMA synchronous = NORMAL",
 		"PRAGMA busy_timeout = 5000",
+	}
+	if !skipJournalMode {
+		pragmas = append(pragmas, "PRAGMA journal_mode = WAL")
 	}
 	for _, p := range pragmas {
 		if _, err := db.ExecContext(ctx, p); err != nil {
