@@ -42,7 +42,11 @@ type CreateCard struct {
 	ExternalRef  *string
 	Worktree     *string
 
-	Labels  []string
+	Labels []string
+	// Parents attaches blocking parent edges at creation time. Every parent
+	// must already exist; if any does not, CreateCard writes nothing and
+	// returns ErrNotFound. A cycle is impossible here since the new card's
+	// ID cannot yet appear as anyone's parent.
 	Parents []string
 	Notes   *string
 
@@ -112,11 +116,6 @@ func (db *DB) CreateCard(ctx context.Context, in CreateCard) (*Card, error) {
 	if in.Priority != nil && *in.Priority < 0 {
 		return nil, fmt.Errorf("bdd: create card: priority must be >= 0: %w", ErrInvalidArgument)
 	}
-	if len(in.Parents) > 0 {
-		// Parent/child edges (including creation-time --parent) are out of
-		// scope for this card; they land with cycle detection separately.
-		return nil, fmt.Errorf("bdd: create card: parent/child edges are not yet supported: %w", ErrInvalidArgument)
-	}
 
 	if err := db.ready(); err != nil {
 		return nil, err
@@ -132,6 +131,7 @@ func (db *DB) CreateCard(ctx context.Context, in CreateCard) (*Card, error) {
 		priority = *in.Priority
 	}
 	labels := dedupe(in.Labels)
+	parents := dedupe(in.Parents)
 
 	var card *Card
 	err = sqlite.Retry(ctx, func() error {
@@ -157,6 +157,33 @@ func (db *DB) CreateCard(ctx context.Context, in CreateCard) (*Card, error) {
 
 		if in.Notes != nil && *in.Notes != "" {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO notes (card_id, author, body, created_at) VALUES (?, ?, ?, ?)`, id, in.CreatedBy, *in.Notes, nowStr); err != nil {
+				return err
+			}
+		}
+
+		// A freshly generated ID cannot already appear as anyone's parent, so
+		// no cycle is possible here; only existence needs checking.
+		for _, p := range parents {
+			var exists int
+			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM cards WHERE id = ?`, p).Scan(&exists); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("bdd: create card: parent %s: %w", p, ErrNotFound)
+				}
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO card_edges (parent_id, child_id, created_at, created_by) VALUES (?, ?, ?, ?)`, p, id, nowStr, in.CreatedBy); err != nil {
+				return err
+			}
+			childPayload, _ := json.Marshal(map[string]any{"parent_id": p})
+			if err := writeEvent(ctx, tx, id, 1, "add_parent", in.CreatedBy, nowStr, childPayload); err != nil {
+				return err
+			}
+			parentRev, err := cardRevision(ctx, tx, p)
+			if err != nil {
+				return err
+			}
+			parentPayload, _ := json.Marshal(map[string]any{"child_id": id})
+			if err := writeEvent(ctx, tx, p, parentRev, "add_child", in.CreatedBy, nowStr, parentPayload); err != nil {
 				return err
 			}
 		}
@@ -462,7 +489,7 @@ func translateWriteErr(err error, op string) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalidArgument) || errors.Is(err, ErrAlreadyExists) {
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalidArgument) || errors.Is(err, ErrAlreadyExists) || errors.Is(err, ErrCycle) {
 		return err
 	}
 	msg := err.Error()
@@ -476,9 +503,59 @@ func translateWriteErr(err error, op string) error {
 // and edges in both directions), leaving a tombstone audit event. force
 // must be true or DeleteCard returns ErrInvalidArgument without deleting
 // anything. Deleting a card never mutates its parents or children beyond
-// removing the edges to id itself.
+// removing the edges to id itself; it never re-evaluates or writes to
+// former parents or children.
 func (db *DB) DeleteCard(ctx context.Context, id string, actor string, force bool) (*DeleteCardResult, error) {
-	return nil, errNotImplemented
+	if !force {
+		return nil, fmt.Errorf("bdd: delete card: force must be true: %w", ErrInvalidArgument)
+	}
+
+	if err := db.ready(); err != nil {
+		return nil, err
+	}
+
+	var result *DeleteCardResult
+	err := sqlite.Retry(ctx, func() error {
+		tx, err := db.sql.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		var revision int64
+		if err := tx.QueryRowContext(ctx, `SELECT revision FROM cards WHERE id = ?`, id).Scan(&revision); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("bdd: card %s: %w", id, ErrNotFound)
+			}
+			return err
+		}
+
+		parents, err := queryEdgeIDs(ctx, tx, `SELECT parent_id FROM card_edges WHERE child_id = ? ORDER BY parent_id ASC`, id)
+		if err != nil {
+			return err
+		}
+		children, err := queryEdgeIDs(ctx, tx, `SELECT child_id FROM card_edges WHERE parent_id = ? ORDER BY child_id ASC`, id)
+		if err != nil {
+			return err
+		}
+
+		if _, err := tx.ExecContext(ctx, `DELETE FROM cards WHERE id = ?`, id); err != nil {
+			return err
+		}
+
+		now := formatTime(time.Now())
+		payload, _ := json.Marshal(map[string]any{"removed_parents": parents, "removed_children": children})
+		if err := writeEvent(ctx, tx, id, revision, "delete", actor, now, payload); err != nil {
+			return err
+		}
+
+		result = &DeleteCardResult{RemovedParents: parents, RemovedChildren: children}
+		return tx.Commit()
+	})
+	if err != nil {
+		return nil, translateWriteErr(err, "delete card")
+	}
+	return result, nil
 }
 
 // AddNote appends a note to a card and returns it.
@@ -580,23 +657,26 @@ func (db *DB) HumanCard(ctx context.Context, id string, actor string, reason str
 
 // AddParent adds a blocking edge: parentID must reach a done-category
 // status before childID is ready. Idempotent; rejects self-edges
-// (ErrInvalidArgument) and edges that would create a cycle (ErrCycle).
+// (ErrInvalidArgument), edges that would create a cycle (ErrCycle), and
+// edges referencing a card that does not exist (ErrNotFound).
 func (db *DB) AddParent(ctx context.Context, childID, parentID, actor string) error {
-	return errNotImplemented
+	return db.addEdge(ctx, parentID, childID, actor)
 }
 
 // RemoveParent idempotently removes the blocking edge added by AddParent.
 func (db *DB) RemoveParent(ctx context.Context, childID, parentID, actor string) error {
-	return errNotImplemented
+	return db.removeEdge(ctx, parentID, childID, actor)
 }
 
 // AddChild adds a blocking edge in the opposite direction of AddParent:
-// parentID must reach a done-category status before childID is ready.
+// parentID must reach a done-category status before childID is ready. It is
+// the same underlying edge as AddParent(childID, parentID, actor) and
+// carries the same idempotency, self-edge, cycle, and existence semantics.
 func (db *DB) AddChild(ctx context.Context, parentID, childID, actor string) error {
-	return errNotImplemented
+	return db.addEdge(ctx, parentID, childID, actor)
 }
 
 // RemoveChild idempotently removes the blocking edge added by AddChild.
 func (db *DB) RemoveChild(ctx context.Context, parentID, childID, actor string) error {
-	return errNotImplemented
+	return db.removeEdge(ctx, parentID, childID, actor)
 }
