@@ -138,6 +138,28 @@ func Open(ctx context.Context, opts OpenOptions) (*DB, error) {
 	}, nil
 }
 
+// Path returns the resolved filesystem path to db's SQLite file.
+func (db *DB) Path() string {
+	return db.path
+}
+
+// Prefix returns the workspace's card ID prefix.
+func (db *DB) Prefix(ctx context.Context) (string, error) {
+	return db.workspacePrefix(ctx)
+}
+
+// SchemaVersions reports the database's on-disk schema version (per PRAGMA
+// user_version) and the version this build of bdd expects
+// (schema.CurrentVersion()). It performs no work beyond the single PRAGMA
+// read: safe to call before Upgrade on a schema-too-old database.
+func (db *DB) SchemaVersions(ctx context.Context) (onDisk, current int, err error) {
+	onDisk, err = schema.ReadVersion(ctx, db.sql)
+	if err != nil {
+		return 0, 0, fmt.Errorf("bdd: %w", err)
+	}
+	return onDisk, schema.CurrentVersion(), nil
+}
+
 // Close releases the underlying database connection(s). Close is safe to
 // call more than once.
 func (db *DB) Close() error {
