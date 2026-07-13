@@ -138,6 +138,9 @@ func (db *DB) ClaimCard(ctx context.Context, id, actor string) (*Card, error) {
 // or a custom done status) leaves its status and ClosedAt untouched. A
 // non-empty Reason is appended as a note on every call, closed or not.
 func (db *DB) CloseCard(ctx context.Context, id string, in CloseCard) (*Card, error) {
+	if !validateUTF8(in.Reason) {
+		return nil, fmt.Errorf("bdd: close card %s: reason must be valid UTF-8: %w", id, ErrInvalidArgument)
+	}
 	if err := db.ready(); err != nil {
 		return nil, err
 	}
@@ -330,6 +333,9 @@ func (db *DB) DeferCard(ctx context.Context, id string, actor string, until *tim
 // attention. It does not change status and carries no transition
 // restriction; adding the label again is a no-op (labels are idempotent).
 func (db *DB) HumanCard(ctx context.Context, id string, actor string, reason string) (*Card, error) {
+	if !validateUTF8(reason) {
+		return nil, fmt.Errorf("bdd: human card %s: reason must be valid UTF-8: %w", id, ErrInvalidArgument)
+	}
 	if err := db.ready(); err != nil {
 		return nil, err
 	}

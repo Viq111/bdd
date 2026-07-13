@@ -139,6 +139,17 @@ func TestCloseCardIdempotent(t *testing.T) {
 	}
 }
 
+func TestCloseCardRejectsInvalidUTF8Reason(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "close me")
+
+	_, err := db.CloseCard(ctx, card.ID, CloseCard{Reason: "bad \xff\xfe", Actor: "alice"})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("CloseCard() error = %v, want ErrInvalidArgument for invalid UTF-8 reason", err)
+	}
+}
+
 func TestCloseCardFromWIPAndFrozen(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -290,6 +301,17 @@ func TestHumanCardAddsLabelAndNote(t *testing.T) {
 	}
 	if len(got2.Labels) != 1 {
 		t.Fatalf("Labels after second HumanCard() = %v, want a single human label", got2.Labels)
+	}
+}
+
+func TestHumanCardRejectsInvalidUTF8Reason(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "needs a human")
+
+	_, err := db.HumanCard(ctx, card.ID, "alice", "bad \xff\xfe")
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("HumanCard() error = %v, want ErrInvalidArgument for invalid UTF-8 reason", err)
 	}
 }
 
