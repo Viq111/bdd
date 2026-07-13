@@ -8,6 +8,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 DIST_DIR="dist"
 MODULE="github.com/viq111/bdd/cmd/bdd"
+MODULE_ARCHIVE="github.com/viq111/bdd/cmd/bddarchive"
 
 # GOOS/GOARCH pairs to build. modernc.org/sqlite is a CGO-free, pure-Go
 # SQLite driver, so CGO_ENABLED=0 cross-compiles cleanly to every target
@@ -23,10 +24,21 @@ PLATFORMS=(
 
 VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 
+# SOURCE_DATE_EPOCH (https://reproducible-builds.org/specs/source-date-epoch/):
+# every archive entry's timestamp is pinned to this value instead of the
+# moment the archive happened to be built, so repeat builds of the same
+# commit produce byte-identical archives. Falls back to the Unix epoch
+# outside a git checkout (e.g. an extracted source tarball).
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/null || echo 0)}"
+
 echo "Releasing bdd $VERSION"
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
+
+archive_bin="$(mktemp -d)/bddarchive"
+trap 'rm -rf "$(dirname "$archive_bin")"' EXIT
+go build -o "$archive_bin" "$MODULE_ARCHIVE"
 
 for platform in "${PLATFORMS[@]}"; do
   read -r os arch <<<"$platform"
@@ -49,14 +61,15 @@ for platform in "${PLATFORMS[@]}"; do
     "$MODULE"
 
   archive_name="bdd-${VERSION}-${os}-${arch}.${archive_ext}"
-  (
-    cd "$DIST_DIR"
-    if [ "$archive_ext" = "zip" ]; then
-      zip -qr "$archive_name" "bdd-${VERSION}-${os}-${arch}"
-    else
-      tar czf "$archive_name" "bdd-${VERSION}-${os}-${arch}"
-    fi
-  )
+  # Archives are built by cmd/bddarchive rather than the system tar/zip so
+  # entry order, timestamps, and (for tar.gz) gzip header metadata are
+  # normalized identically on every platform this script runs on -- GNU
+  # tar, bsdtar, and Info-ZIP disagree on flags and defaults for this.
+  "$archive_bin" \
+    -src "$build_dir" \
+    -out "${DIST_DIR}/${archive_name}" \
+    -format "$archive_ext" \
+    -mtime "$SOURCE_DATE_EPOCH"
   rm -rf "$build_dir"
 done
 

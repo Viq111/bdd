@@ -66,6 +66,16 @@ Byte-identical output depends on using the same Go toolchain version
 Go release is not guaranteed to reproduce exactly, though it will still
 produce a correct, working binary.
 
+The `.tar.gz`/`.zip` archives themselves are also reproducible, not just the
+binaries inside them: `scripts/release.sh` packages each platform's build
+directory with `cmd/bddarchive` instead of the system `tar`/`zip`, which
+normalizes everything a build-time filesystem walk would otherwise leak into
+the archive (entry order, modification times, and gzip header metadata).
+Every entry's timestamp is pinned to `SOURCE_DATE_EPOCH`, which defaults to
+the release commit's committer date, so repeat builds of the same commit and
+version produce byte-identical archives and a byte-identical `SHA256SUMS`.
+This is covered by `TestReleaseArchivesAreReproducible` in `release_test.go`.
+
 ## Cutting a release
 
 1. Confirm `main` is green: `make test` (build, vet, full test suite, and
