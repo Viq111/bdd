@@ -446,62 +446,57 @@ func needsLikeEscape(s string) bool {
 	return strings.ContainsAny(s, `\%_`)
 }
 
-// searchQueryTextColumns lists every card column SearchCards matches Query
-// against, case-insensitively.
+// searchQueryTextColumns lists every cards_fts column SearchCards matches
+// Query against, case-insensitively.
 var searchQueryTextColumns = []string{
 	"id", "title", "description", "reproduction", "design",
 	"acceptance", "external_ref", "worktree",
 }
 
-// searchIndexedPrefixColumns lists the columns backed by a NOCASE index
-// (see migration 0002_search_prefix_indexes.sql), so a "query%" LIKE
-// predicate against them can be satisfied with an index range scan rather
-// than a full table scan.
-var searchIndexedPrefixColumns = []string{"id", "title"}
-
 // searchMatchCondition builds the "id IN (...)" WHERE condition and its args
-// for SearchCards' Query text, as a UNION of independently-planned
-// subqueries:
+// for SearchCards' Query text, as a UNION of two subqueries against the
+// cards_fts/notes_fts trigram-tokenized virtual tables (migration
+// 0003_fts5_search.sql, plan section 7's anticipated fallback: "Add an FTS5
+// table maintained transactionally if the latency benchmark exceeds budget
+// at the target database size"):
 //
-//  1. one indexed prefix range scan ("query%") per column in
-//     searchIndexedPrefixColumns, which SQLite's LIKE optimizer can satisfy
-//     against the NOCASE indexes from migration 0002_search_prefix_indexes.sql
-//     instead of a full table scan;
-//  2. a case-insensitive substring scan ("%query%") across every searched
-//     column and note body, preserving the full-text match semantics the
-//     plan requires.
+//  1. a case-insensitive substring match ("%query%") OR'd across every
+//     searched column of cards_fts;
+//  2. the same substring match against notes_fts's body column, mapped back
+//     to its card_id.
 //
-// Each prefix branch is its own single-column, single-predicate SELECT (not
-// OR'd with anything) because that is the only shape SQLite's LIKE
-// optimizer will rewrite into an indexed range scan: an OR'd predicate that
-// mixes columns, or that carries an ESCAPE clause on a bound parameter,
-// forces a full table scan for the whole expression instead. Branch 1 is
-// therefore only emitted when query needs no ESCAPE clause (i.e. contains no
-// '%', '_', or '\'); an escaped query still gets exact substring semantics
-// from branch 2. This is the initial (pre-FTS5) search strategy (plan
-// section 18).
+// Querying cards_fts/notes_fts instead of cards/notes directly lets
+// SQLite's LIKE optimizer satisfy each OR'd branch with a trigram index
+// lookup (SQLite's MULTI-INDEX OR) instead of a full table scan, while
+// preserving the exact substring-match semantics SearchCards has always had.
+// A query containing a LIKE metacharacter ('%', '_', '\') still gets correct
+// (if unaccelerated) substring semantics: the ESCAPE clause on a bound
+// parameter defeats the trigram optimizer, same as it would for a plain
+// LIKE against a real table, so that case simply falls back to a virtual
+// table scan rather than a scan of cards/notes directly.
 func searchMatchCondition(query string) (string, []any) {
-	var branches []string
 	var args []any
 
-	if !needsLikeEscape(query) {
-		prefixPattern := query + "%"
-		for _, col := range searchIndexedPrefixColumns {
-			branches = append(branches, "SELECT id FROM cards WHERE "+col+" LIKE ? COLLATE NOCASE")
-			args = append(args, prefixPattern)
-		}
-	}
-
 	substringPattern := likePattern(query)
-	substringOrs := make([]string, 0, len(searchQueryTextColumns)+1)
+	needsEscape := needsLikeEscape(query)
+
+	cardOrs := make([]string, 0, len(searchQueryTextColumns))
 	for _, col := range searchQueryTextColumns {
-		substringOrs = append(substringOrs, col+" LIKE ? ESCAPE '\\' COLLATE NOCASE")
+		if needsEscape {
+			cardOrs = append(cardOrs, col+" LIKE ? ESCAPE '\\'")
+		} else {
+			cardOrs = append(cardOrs, col+" LIKE ?")
+		}
 		args = append(args, substringPattern)
 	}
-	substringOrs = append(substringOrs, "EXISTS (SELECT 1 FROM notes WHERE notes.card_id = cards.id AND notes.body LIKE ? ESCAPE '\\' COLLATE NOCASE)")
-	args = append(args, substringPattern)
-	branches = append(branches, "SELECT id FROM cards WHERE "+strings.Join(substringOrs, " OR "))
+	cardsBranch := "SELECT id FROM cards_fts WHERE " + strings.Join(cardOrs, " OR ")
 
-	cond := "id IN (" + strings.Join(branches, " UNION ") + ")"
+	notesBranch := "SELECT card_id FROM notes_fts WHERE body LIKE ?"
+	if needsEscape {
+		notesBranch += " ESCAPE '\\'"
+	}
+	args = append(args, substringPattern)
+
+	cond := "id IN (" + cardsBranch + " UNION " + notesBranch + ")"
 	return cond, args
 }

@@ -73,23 +73,34 @@ func (db *DB) ClaimCard(ctx context.Context, id, actor string) (*Card, error) {
 		}
 		defer tx.Rollback()
 
-		cur, err := loadCard(ctx, tx, id)
-		if err != nil {
+		// A lightweight status+assignee read (not the full loadCard, which
+		// also fetches labels and parent refs the decision below never
+		// needs) keeps the hot path -- an active, unclaimed card -- to a
+		// single round trip before the write, instead of three.
+		var curStatus, curAssignee string
+		if err := tx.QueryRowContext(ctx, `SELECT status, assignee FROM cards WHERE id = ?`, id).Scan(&curStatus, &curAssignee); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("bdd: card %s: %w", id, ErrNotFound)
+			}
 			return err
 		}
 
-		category, err := statusCategory(ctx, tx, cur.Status)
+		category, err := statusCategory(ctx, tx, Status(curStatus))
 		if err != nil {
 			return err
 		}
 
 		if category == StatusCategoryWIP {
-			if cur.Assignee == actor {
+			if curAssignee == actor {
+				cur, err := loadCard(ctx, tx, id)
+				if err != nil {
+					return err
+				}
 				card = cur
 				return tx.Commit()
 			}
-			if cur.Assignee != "" {
-				return fmt.Errorf("bdd: claim card %s: already claimed by %s: %w", id, cur.Assignee, ErrClaimed)
+			if curAssignee != "" {
+				return fmt.Errorf("bdd: claim card %s: already claimed by %s: %w", id, curAssignee, ErrClaimed)
 			}
 			return fmt.Errorf("bdd: claim card %s: cannot claim a %s-category card: %w", id, category, ErrInvalidTransition)
 		}
@@ -108,7 +119,7 @@ func (db *DB) ClaimCard(ctx context.Context, id, actor string) (*Card, error) {
 			return err
 		}
 
-		payload, _ := json.Marshal(map[string]any{"from_status": string(cur.Status), "to_status": string(StatusInProgress)})
+		payload, _ := json.Marshal(map[string]any{"from_status": curStatus, "to_status": string(StatusInProgress)})
 		if err := writeEvent(ctx, tx, id, got.Revision, "claim", actor, now, payload); err != nil {
 			return err
 		}

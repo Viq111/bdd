@@ -328,25 +328,28 @@ func TestSearchCardsMatchesIDPrefixAndSubstring(t *testing.T) {
 	}
 }
 
-// TestSearchQueryUsesIndexedPrefixScan is a query-plan regression test for
-// bdd-upb: SearchCards' Query text must include a prefix-anchored predicate
-// that SQLite's LIKE optimizer can satisfy with an index range scan, not
-// just an unanchored substring scan across every text column.
-func TestSearchQueryUsesIndexedPrefixScan(t *testing.T) {
+// TestSearchQueryUsesFTS5TrigramIndex is a query-plan regression test for
+// bd bdd-cdm: SearchCards' Query text must be satisfied via the cards_fts/
+// notes_fts trigram-tokenized virtual tables (migration
+// 0003_fts5_search.sql), not a full table scan of cards, which was the
+// dominant cost behind SearchCards missing its section 7 latency budget.
+func TestSearchQueryUsesFTS5TrigramIndex(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	// SQLite's query planner only prefers an index range scan over a full
-	// table scan once the table is large enough for the cost estimate to
-	// favor it, so seed enough rows to make that choice observable.
+	// SQLite's query planner only prefers an index lookup over a full
+	// table/vtable scan once the table is large enough for the cost
+	// estimate to favor it, so seed enough rows to make that choice
+	// observable.
 	for i := 0; i < 2000; i++ {
 		mustCreateChore(t, db, fmt.Sprintf("card %d", i))
 	}
 
 	cond, args := searchMatchCondition("marker")
-	prefixSubquery := strings.TrimPrefix(strings.SplitN(cond, " UNION ", 2)[0], "id IN (")
+	cardsSubquery := strings.TrimPrefix(strings.SplitN(cond, " UNION ", 2)[0], "id IN (")
+	cardsArgs := args[:len(searchQueryTextColumns)]
 
-	rows, err := db.sql.QueryContext(ctx, "EXPLAIN QUERY PLAN "+prefixSubquery, args[:1]...)
+	rows, err := db.sql.QueryContext(ctx, "EXPLAIN QUERY PLAN "+cardsSubquery, cardsArgs...)
 	if err != nil {
 		t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
 	}
@@ -356,7 +359,7 @@ func TestSearchQueryUsesIndexedPrefixScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rows.Columns() error = %v", err)
 	}
-	var usedIndex bool
+	var usedVirtualTable, scannedCardsTable bool
 	for rows.Next() {
 		scan := make([]any, len(cols))
 		vals := make([]sql.NullString, len(cols))
@@ -367,16 +370,70 @@ func TestSearchQueryUsesIndexedPrefixScan(t *testing.T) {
 			t.Fatalf("rows.Scan() error = %v", err)
 		}
 		for _, v := range vals {
-			if strings.Contains(v.String, "idx_cards_id_nocase") || strings.Contains(v.String, "idx_cards_title_nocase") {
-				usedIndex = true
+			if strings.Contains(v.String, "cards_fts") && strings.Contains(v.String, "VIRTUAL TABLE") {
+				usedVirtualTable = true
+			}
+			if strings.Contains(v.String, "SCAN cards ") || strings.HasSuffix(v.String, "SCAN cards") {
+				scannedCardsTable = true
 			}
 		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("rows.Err() = %v", err)
 	}
-	if !usedIndex {
-		t.Fatalf("SearchCards prefix branch query plan did not use idx_cards_id_nocase or idx_cards_title_nocase")
+	if !usedVirtualTable {
+		t.Fatalf("SearchCards query plan did not use the cards_fts virtual table")
+	}
+	if scannedCardsTable {
+		t.Fatalf("SearchCards query plan fell back to a full scan of cards")
+	}
+}
+
+// TestDeleteCardRemovesItAndItsNotesFromSearch is a regression test for bd
+// bdd-cdm: an earlier version of migration 0003_fts5_search.sql added a
+// redundant BEFORE DELETE ON cards trigger to clean up notes_fts, on the
+// mistaken assumption that an FK ON DELETE CASCADE removing a card's notes
+// does not itself fire notes_fts_ad. It does, so the extra trigger raced
+// with the cascade-fired one and issued the fts5 'delete' command against
+// the same row twice, corrupting the database (SQLITE_CORRUPT_VTAB) on the
+// very next DeleteCard call that had a note attached.
+func TestDeleteCardRemovesItAndItsNotesFromSearch(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	card := mustCreateChore(t, db, "deleteme-title-marker")
+	if _, err := db.AddNote(ctx, AddNote{CardID: card.ID, Body: "deleteme-note-marker", Author: "alice"}); err != nil {
+		t.Fatalf("AddNote() error = %v", err)
+	}
+
+	if got, err := db.SearchCards(ctx, SearchOptions{Query: "deleteme-note-marker"}); err != nil || !containsID(got, card.ID) {
+		t.Fatalf("SearchCards(note) before delete = %v, %v, want to include %s", got, err, card.ID)
+	}
+
+	if _, err := db.DeleteCard(ctx, card.ID, "alice", true); err != nil {
+		t.Fatalf("DeleteCard() error = %v", err)
+	}
+
+	got, err := db.SearchCards(ctx, SearchOptions{Query: "deleteme-note-marker", All: true})
+	if err != nil {
+		t.Fatalf("SearchCards(note) after delete error = %v", err)
+	}
+	if containsID(got, card.ID) {
+		t.Fatalf("SearchCards(note) after delete = %v, want to exclude deleted card %s", cardIDs(got), card.ID)
+	}
+
+	got, err = db.SearchCards(ctx, SearchOptions{Query: "deleteme-title-marker", All: true})
+	if err != nil {
+		t.Fatalf("SearchCards(title) after delete error = %v", err)
+	}
+	if containsID(got, card.ID) {
+		t.Fatalf("SearchCards(title) after delete = %v, want to exclude deleted card %s", cardIDs(got), card.ID)
+	}
+
+	// The database must still be usable after the delete: prior corruption
+	// left it unable to serve further writes.
+	if _, err := db.CreateCard(ctx, CreateCard{Title: "still alive", Type: CardTypeChore, CreatedBy: "alice"}); err != nil {
+		t.Fatalf("CreateCard() after delete error = %v", err)
 	}
 }
 

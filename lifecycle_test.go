@@ -31,6 +31,9 @@ func TestClaimCardIdempotentForSameActor(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	card := mustCreate(t, db, "claim me")
+	if _, err := db.UpdateCard(ctx, card.ID, UpdateCard{AddLabels: []string{"x"}}); err != nil {
+		t.Fatalf("UpdateCard() error = %v", err)
+	}
 
 	first, err := db.ClaimCard(ctx, card.ID, "alice")
 	if err != nil {
@@ -45,6 +48,12 @@ func TestClaimCardIdempotentForSameActor(t *testing.T) {
 	}
 	if !second.StartedAt.Equal(*first.StartedAt) {
 		t.Fatalf("StartedAt changed on idempotent reclaim: %v -> %v", first.StartedAt, second.StartedAt)
+	}
+	// The idempotent no-op path returns loadCard's full expansion (labels,
+	// parents), not just the lightweight status+assignee read ClaimCard's
+	// hot path uses to decide whether a write is needed.
+	if len(second.Labels) != 1 || second.Labels[0] != "x" {
+		t.Fatalf("Labels = %v, want [x]", second.Labels)
 	}
 }
 
