@@ -359,6 +359,22 @@ func validateLabels(labels []string) bool {
 	return true
 }
 
+// validateUTF8 reports whether every field is valid UTF-8. It applies the
+// same reject-at-write-time policy as validateLabels to the free-text card
+// fields (title/description/reproduction/design/acceptance/external_ref/
+// worktree/notes), which otherwise accept arbitrary bytes from CLI flags,
+// --description-file, and --stdin. Rejecting invalid encoding here prevents
+// it from being silently replaced with U+FFFD by encoding/json.Marshal on
+// --json output.
+func validateUTF8(fields ...string) bool {
+	for _, f := range fields {
+		if !utf8.ValidString(f) {
+			return false
+		}
+	}
+	return true
+}
+
 // dedupe returns items with duplicates removed, preserving first-seen order,
 // so repeated label/parent inputs behave idempotently.
 func dedupe(items []string) []string {

@@ -121,6 +121,51 @@ func TestCreateFileVariant(t *testing.T) {
 	}
 }
 
+func TestCreateFileVariantRejectsInvalidUTF8(t *testing.T) {
+	dir := initTestWorkspace(t)
+	f, err := os.CreateTemp(t.TempDir(), "acceptance-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("bad \xff\xfe bytes")); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	_, stderr := runCLI(t, dir, ExitUsage, "create", "--type", "task", "--acceptance-file", f.Name(), "task with bad file")
+	if !strings.Contains(stderr, "UTF-8") {
+		t.Fatalf("stderr = %q, want mention of UTF-8", stderr)
+	}
+
+	out, _ := runCLI(t, dir, ExitSuccess, "--json", "list")
+	var cards []CardSummaryResult
+	if err := json.Unmarshal([]byte(out), &cards); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(cards) != 0 {
+		t.Fatalf("cards = %+v, want none written", cards)
+	}
+}
+
+func TestCreateStdinRejectsInvalidUTF8(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Write([]byte("bad \xff\xfe bytes"))
+	w.Close()
+	origStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = origStdin }()
+
+	_, stderr := runCLI(t, dir, ExitUsage, "create", "--type", "task", "--title", "t", "--stdin")
+	if !strings.Contains(stderr, "UTF-8") {
+		t.Fatalf("stderr = %q, want mention of UTF-8", stderr)
+	}
+}
+
 func TestCreateStdinFillsSoleRequiredField(t *testing.T) {
 	dir := initTestWorkspace(t)
 
@@ -431,6 +476,26 @@ func TestNoteStdin(t *testing.T) {
 	}
 	if note.Body != "note from stdin" {
 		t.Fatalf("note = %+v", note)
+	}
+}
+
+func TestNoteStdinRejectsInvalidUTF8(t *testing.T) {
+	dir := initTestWorkspace(t)
+	id := createCard(t, dir, "--type", "chore", "notable")
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Write([]byte("bad \xff\xfe bytes"))
+	w.Close()
+	origStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = origStdin }()
+
+	_, stderr := runCLI(t, dir, ExitUsage, "note", id, "--stdin")
+	if !strings.Contains(stderr, "UTF-8") {
+		t.Fatalf("stderr = %q, want mention of UTF-8", stderr)
 	}
 }
 

@@ -127,6 +127,11 @@ func (db *DB) CreateCard(ctx context.Context, in CreateCard) (*Card, error) {
 	if !validateLabels(in.Labels) {
 		return nil, fmt.Errorf("bdd: create card: labels must be non-empty, valid UTF-8, and at most %d bytes: %w", MaxLabelBytes, ErrInvalidArgument)
 	}
+	if !validateUTF8(in.Title, strOrEmpty(in.Description), strOrEmpty(in.Reproduction),
+		strOrEmpty(in.Design), strOrEmpty(in.Acceptance), strOrEmpty(in.ExternalRef),
+		strOrEmpty(in.Worktree), strOrEmpty(in.Notes)) {
+		return nil, fmt.Errorf("bdd: create card: title/description/reproduction/design/acceptance/external_ref/worktree/notes must be valid UTF-8: %w", ErrInvalidArgument)
+	}
 	if in.Priority != nil && *in.Priority < 0 {
 		return nil, fmt.Errorf("bdd: create card: priority must be >= 0: %w", ErrInvalidArgument)
 	}
@@ -468,6 +473,10 @@ func validateUpdateCard(in UpdateCard) error {
 	if !validateLabels(in.AddLabels) || !validateLabels(in.RemoveLabels) {
 		return fmt.Errorf("bdd: update card: labels must be non-empty, valid UTF-8, and at most %d bytes: %w", MaxLabelBytes, ErrInvalidArgument)
 	}
+	if !validateUTF8(strOrEmpty(in.Title), strOrEmpty(in.Description), strOrEmpty(in.Reproduction),
+		strOrEmpty(in.Design), strOrEmpty(in.Acceptance), strOrEmpty(in.ExternalRef), strOrEmpty(in.Worktree)) {
+		return fmt.Errorf("bdd: update card: title/description/reproduction/design/acceptance/external_ref/worktree must be valid UTF-8: %w", ErrInvalidArgument)
+	}
 	for _, ids := range [][]string{in.AddParents, in.RemoveParents, in.AddChildren, in.RemoveChildren} {
 		for _, id := range ids {
 			if id == "" {
@@ -627,6 +636,9 @@ func (db *DB) AddNote(ctx context.Context, in AddNote) (*Note, error) {
 	}
 	if in.Body == "" {
 		return nil, fmt.Errorf("bdd: add note: body is required: %w", ErrInvalidArgument)
+	}
+	if !validateUTF8(in.Body) {
+		return nil, fmt.Errorf("bdd: add note: body must be valid UTF-8: %w", ErrInvalidArgument)
 	}
 
 	if err := db.ready(); err != nil {

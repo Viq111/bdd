@@ -444,6 +444,89 @@ func TestUpdateCardRejectsInvalidRemoveLabel(t *testing.T) {
 	}
 }
 
+func TestCreateCardRejectsInvalidUTF8(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name string
+		in   CreateCard
+	}{
+		{"title", CreateCard{Title: "bad \xff\xfe", Type: CardTypeChore}},
+		{"description", CreateCard{Title: "x", Type: CardTypeChore, Description: ptr("bad \xff\xfe")}},
+		{"reproduction", CreateCard{Title: "x", Type: CardTypeChore, Reproduction: ptr("bad \xff\xfe")}},
+		{"design", CreateCard{Title: "x", Type: CardTypeChore, Design: ptr("bad \xff\xfe")}},
+		{"acceptance", CreateCard{Title: "x", Type: CardTypeChore, Acceptance: ptr("bad \xff\xfe")}},
+		{"external_ref", CreateCard{Title: "x", Type: CardTypeChore, ExternalRef: ptr("bad \xff\xfe")}},
+		{"worktree", CreateCard{Title: "x", Type: CardTypeChore, Worktree: ptr("bad \xff\xfe")}},
+		{"notes", CreateCard{Title: "x", Type: CardTypeChore, Notes: ptr("bad \xff\xfe")}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := db.CreateCard(ctx, tc.in)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("CreateCard() error = %v, want ErrInvalidArgument for invalid UTF-8 %s", err, tc.name)
+			}
+		})
+	}
+}
+
+func TestUpdateCardRejectsInvalidUTF8(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		in   UpdateCard
+	}{
+		{"title", UpdateCard{Title: ptr("bad \xff\xfe")}},
+		{"description", UpdateCard{Description: ptr("bad \xff\xfe")}},
+		{"reproduction", UpdateCard{Reproduction: ptr("bad \xff\xfe")}},
+		{"design", UpdateCard{Design: ptr("bad \xff\xfe")}},
+		{"acceptance", UpdateCard{Acceptance: ptr("bad \xff\xfe")}},
+		{"external_ref", UpdateCard{ExternalRef: ptr("bad \xff\xfe")}},
+		{"worktree", UpdateCard{Worktree: ptr("bad \xff\xfe")}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := db.UpdateCard(ctx, created.ID, tc.in)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("UpdateCard() error = %v, want ErrInvalidArgument for invalid UTF-8 %s", err, tc.name)
+			}
+
+			unchanged, err := db.GetCard(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("GetCard() error = %v", err)
+			}
+			if unchanged.Revision != created.Revision {
+				t.Fatalf("Revision = %d, want unchanged %d after rejected UpdateCard", unchanged.Revision, created.Revision)
+			}
+		})
+	}
+}
+
+func TestAddNoteRejectsInvalidUTF8(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	_, err = db.AddNote(ctx, AddNote{CardID: created.ID, Body: "bad \xff\xfe", Author: "alice"})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("AddNote() error = %v, want ErrInvalidArgument for invalid UTF-8 body", err)
+	}
+}
+
 func TestUpdateCardNotFound(t *testing.T) {
 	db := newTestDB(t)
 	_, err := db.UpdateCard(context.Background(), "bdd-missing", UpdateCard{Title: ptr("x")})
