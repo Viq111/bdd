@@ -281,6 +281,10 @@ func resolveRestoreTarget(opts RestoreOptions) (string, error) {
 // locking_mode silently downgrades this to an ordinary, non-blocking lock
 // that a concurrent reader can still attach past.
 func acquireExclusive(ctx context.Context, path string) (*sql.DB, error) {
+	if err := sqlite.ValidatePath(path); err != nil {
+		return nil, err
+	}
+
 	var conn *sql.DB
 	err := sqlite.Retry(ctx, func() error {
 		c, err := sql.Open(sqlite.DriverName, path)

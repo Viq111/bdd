@@ -211,8 +211,8 @@ func emitShow(s *Streams, r ShowResult) int {
 			if author == "" {
 				author = "-"
 			}
-			fmt.Fprintf(s.Stdout, "  [%d] %s %s\n", n.ID, n.CreatedAt, author)
-			for _, line := range strings.Split(n.Body, "\n") {
+			fmt.Fprintf(s.Stdout, "  [%d] %s %s\n", n.ID, n.CreatedAt, sanitizeForTerminal(author))
+			for _, line := range strings.Split(sanitizeForTerminal(n.Body), "\n") {
 				fmt.Fprintf(s.Stdout, "      %s\n", line)
 			}
 		}
@@ -225,14 +225,14 @@ func emitShow(s *Streams, r ShowResult) int {
 // the remaining fields.
 func renderCard(w io.Writer, r CardResult) {
 	fmt.Fprintf(w, "id:           %s\n", r.ID)
-	fmt.Fprintf(w, "title:        %s\n", r.Title)
+	fmt.Fprintf(w, "title:        %s\n", sanitizeForTerminal(r.Title))
 	fmt.Fprintf(w, "type:         %s\n", r.Type)
 	fmt.Fprintf(w, "status:       %s\n", r.Status)
 	fmt.Fprintf(w, "priority:     %d\n", r.Priority)
-	fmt.Fprintf(w, "worktree:     %s\n", formatWorktreeDisplay(r.Worktree))
-	fmt.Fprintf(w, "assignee:     %s\n", emptyDash(r.Assignee))
+	fmt.Fprintf(w, "worktree:     %s\n", sanitizeForTerminal(formatWorktreeDisplay(r.Worktree)))
+	fmt.Fprintf(w, "assignee:     %s\n", sanitizeForTerminal(emptyDash(r.Assignee)))
 	fmt.Fprintf(w, "dispatchable: %t\n", r.Dispatchable)
-	fmt.Fprintf(w, "labels:       %s\n", emptyDash(strings.Join(r.Labels, ", ")))
+	fmt.Fprintf(w, "labels:       %s\n", sanitizeForTerminal(emptyDash(strings.Join(r.Labels, ", "))))
 	if len(r.Parents) > 0 {
 		parts := make([]string, len(r.Parents))
 		for i, p := range r.Parents {
@@ -241,9 +241,9 @@ func renderCard(w io.Writer, r CardResult) {
 		fmt.Fprintf(w, "parents:      %s\n", strings.Join(parts, ", "))
 	}
 	if r.ExternalRef != "" {
-		fmt.Fprintf(w, "external_ref: %s\n", r.ExternalRef)
+		fmt.Fprintf(w, "external_ref: %s\n", sanitizeForTerminal(r.ExternalRef))
 	}
-	fmt.Fprintf(w, "created_by:   %s\n", r.CreatedBy)
+	fmt.Fprintf(w, "created_by:   %s\n", sanitizeForTerminal(r.CreatedBy))
 	fmt.Fprintf(w, "created_at:   %s\n", r.CreatedAt)
 	fmt.Fprintf(w, "updated_at:   %s\n", r.UpdatedAt)
 	if r.StartedAt != nil {
@@ -267,7 +267,7 @@ func printTextField(w io.Writer, name, value string) {
 	if value == "" {
 		return
 	}
-	fmt.Fprintf(w, "\n%s:\n%s\n", name, value)
+	fmt.Fprintf(w, "\n%s:\n%s\n", name, sanitizeForTerminal(value))
 }
 
 func emptyDash(s string) string {
@@ -301,7 +301,7 @@ func renderCardSummaryLine(w io.Writer, c CardSummaryResult) {
 	if c.Assignee != "" {
 		assignee = " @" + c.Assignee
 	}
-	fmt.Fprintf(w, "%s\tP%d\t%-10s %-12s %s%s%s\n", c.ID, c.Priority, c.Type, c.Status, c.Title, assignee, labels)
+	fmt.Fprintf(w, "%s\tP%d\t%-10s %-12s %s%s%s\n", c.ID, c.Priority, c.Type, c.Status, sanitizeForTerminal(c.Title), sanitizeForTerminal(assignee), sanitizeForTerminal(labels))
 }
 
 // emitCardSummaries writes a list/search/ready result set.

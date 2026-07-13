@@ -404,7 +404,7 @@ func runReadyExplain(ctx context.Context, db *bdd.DB, s *Streams, id string, lab
 			fmt.Fprintf(s.Stdout, "%s: ready\n", r.ID)
 			continue
 		}
-		fmt.Fprintf(s.Stdout, "%s: %s\n", r.ID, strings.Join(r.Reasons, "; "))
+		fmt.Fprintf(s.Stdout, "%s: %s\n", r.ID, sanitizeForTerminal(strings.Join(r.Reasons, "; ")))
 	}
 	return ExitSuccess
 }

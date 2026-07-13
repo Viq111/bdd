@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -33,6 +34,30 @@ func TestOpenAppliesPragmas(t *testing.T) {
 		if got != want {
 			t.Fatalf("%s = %q, want %q", pragma, got, want)
 		}
+	}
+}
+
+// TestOpenRejectsQueryStringInjection guards against DSN query-parameter
+// injection: modernc.org/sqlite splits a plain DSN at its first '?' and
+// treats the remainder as connection parameters (_pragma runs an arbitrary
+// PRAGMA statement, vfs selects an alternate VFS). Since every path Open
+// receives ultimately traces back to a caller- or flag-supplied filesystem
+// path (--db, snapshot/restore paths), a path containing '?' must be
+// rejected rather than silently reinterpreted.
+func TestOpenRejectsQueryStringInjection(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	truncated := filepath.Join(dir, "bdd.sqlite")
+	path := truncated + "?_pragma=journal_mode(delete)"
+
+	if _, err := Open(ctx, path, Options{}); err == nil {
+		t.Fatalf("Open(%q) succeeded, want an error rejecting the embedded query string", path)
+	}
+
+	// Confirm no file was created under the truncated (query-stripped) name
+	// modernc.org/sqlite would otherwise have used.
+	if _, err := os.Stat(truncated); !os.IsNotExist(err) {
+		t.Fatalf("os.Stat(%q) error = %v, want IsNotExist", truncated, err)
 	}
 }
 

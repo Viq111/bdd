@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	modernc "modernc.org/sqlite"
@@ -55,6 +56,10 @@ const conservativeMaxOpenConns = 4
 // create-if-missing semantics rely on SQLite's default behavior of creating
 // a new file for a path that does not exist yet.
 func Open(ctx context.Context, path string, opts Options) (*sql.DB, error) {
+	if err := ValidatePath(path); err != nil {
+		return nil, err
+	}
+
 	dsn := path
 	if opts.ReadOnly {
 		dsn = fmt.Sprintf("%s?mode=ro", path)
@@ -145,6 +150,25 @@ func IsBusy(err error) bool {
 		return code == sqlite3.SQLITE_BUSY || code == sqlite3.SQLITE_LOCKED
 	}
 	return false
+}
+
+// ValidatePath rejects a database path that could be misinterpreted as a
+// SQLite DSN carrying embedded connection parameters. modernc.org/sqlite
+// splits a plain (non-"file:"-prefixed) DSN at its first unescaped '?' and
+// parses the remainder as query parameters — including "_pragma", which
+// runs an arbitrary "PRAGMA <value>" statement on open, and "vfs", which
+// selects an alternate VFS. Every caller in this package builds its DSN
+// directly from a caller- or flag-supplied filesystem path (--db,
+// --workspace discovery, snapshot/restore paths), so a path containing '?'
+// would let whoever controls that path smuggle arbitrary PRAGMA execution
+// or VFS selection into the open call. Legitimate SQLite filenames have no
+// need for '?', so Open rejects it outright rather than attempting lossy
+// percent-encoding.
+func ValidatePath(path string) error {
+	if strings.ContainsRune(path, '?') {
+		return fmt.Errorf("sqlite: database path %q must not contain '?'", path)
+	}
+	return nil
 }
 
 // IsUniqueViolation reports whether err is a SQLITE_CONSTRAINT_UNIQUE or

@@ -200,6 +200,33 @@ func TestShowIncludesNotes(t *testing.T) {
 	}
 }
 
+// TestShowSanitizesControlCharsInTitle guards against terminal escape
+// sequence injection: a card title is arbitrary text supplied by whoever
+// creates the card, so a title containing raw control bytes (e.g. ESC)
+// must not reach the human-readable renderer unsanitized, where it could
+// manipulate the viewer's terminal.
+func TestShowSanitizesControlCharsInTitle(t *testing.T) {
+	dir := initTestWorkspace(t)
+	evilTitle := "evil\x1b]0;PWNED\x07title"
+	id := createCard(t, dir, "--type", "chore", evilTitle)
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "show", id)
+	if strings.Contains(stdout, "\x1b") || strings.Contains(stdout, "\x07") {
+		t.Fatalf("show output contains raw control bytes: %q", stdout)
+	}
+
+	// JSON output is untouched: it carries the literal title, escaped by
+	// encoding/json rather than replaced.
+	jsonOut, _ := runCLI(t, dir, ExitSuccess, "--json", "show", id)
+	var show ShowResult
+	if err := json.Unmarshal([]byte(jsonOut), &show); err != nil {
+		t.Fatal(err)
+	}
+	if show.Title != evilTitle {
+		t.Fatalf("JSON title = %q, want unsanitized %q", show.Title, evilTitle)
+	}
+}
+
 func TestListDefaultExcludesDoneCards(t *testing.T) {
 	dir := initTestWorkspace(t)
 	open := createCard(t, dir, "--type", "chore", "open one")

@@ -4,7 +4,12 @@ FIXTURE := $(BENCH_DIR)/fixture-10k.sqlite
 MANIFEST := $(BENCH_DIR)/fixture-10k.manifest.json
 REPORT := $(BENCH_DIR)/report.json
 
-.PHONY: build fixture bench clean test
+.PHONY: build fixture bench clean test fuzz-short
+
+# Per-target duration for fuzz-short: short enough that the full set stays
+# CI-friendly. See docs/security-review.md for longer, exploratory local
+# fuzz runs.
+FUZZTIME := 3s
 
 build:
 	go build -o $(BIN_DIR)/bdd ./cmd/bdd
@@ -27,6 +32,24 @@ test:
 	go build ./...
 	go vet ./...
 	go test ./...
+	$(MAKE) fuzz-short
+
+# Short, seed-corpus-plus-a-few-seconds-of-mutation smoke run for every
+# fuzz target (bd bdd-ifik / docs/security-review.md), safe to run on every
+# CI build. Each target runs standalone (go test -fuzz allows only one fuzz
+# function per invocation).
+fuzz-short:
+	go test -run '^$$' -fuzz '^FuzzParseStatusCustom$$' -fuzztime $(FUZZTIME) .
+	go test -run '^$$' -fuzz '^FuzzParseTypesCustom$$' -fuzztime $(FUZZTIME) .
+	go test -run '^$$' -fuzz '^FuzzCreateCardDecode$$' -fuzztime $(FUZZTIME) .
+	go test -run '^$$' -fuzz '^FuzzUpdateCardDecode$$' -fuzztime $(FUZZTIME) .
+	go test -run '^$$' -fuzz '^FuzzCycleDetection$$' -fuzztime $(FUZZTIME) .
+	go test -run '^$$' -fuzz '^FuzzParseGlobalFlags$$' -fuzztime $(FUZZTIME) ./internal/cli
+	# -parallel 2: FuzzRun spins up a full SQLite workspace per execution;
+	# the default worker count (GOMAXPROCS) made the fuzz coordinator's
+	# worker handshake flaky (spurious "context deadline exceeded") under
+	# load in short runs. See docs/security-review.md.
+	go test -run '^$$' -fuzz '^FuzzRun$$' -fuzztime $(FUZZTIME) -parallel 2 ./internal/cli
 
 clean:
 	rm -rf $(BIN_DIR) $(BENCH_DIR)

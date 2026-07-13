@@ -5,7 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
+
+// sanitizeForTerminal neutralizes ASCII control bytes (other than the
+// newline and tab used for structural formatting) in s. Card titles,
+// descriptions, notes, and other free-text fields are arbitrary input
+// supplied by whoever creates or updates a card; rendered unsanitized to a
+// human-readable terminal, control bytes such as ESC (0x1B) let a card
+// body inject terminal escape sequences into anyone running `bdd show` or
+// `bdd list` (cursor manipulation, title-bar spoofing, or worse depending
+// on the terminal emulator). JSON output is unaffected by this: it never
+// calls sanitizeForTerminal, since encoding/json already escapes control
+// bytes as \u00XX.
+func sanitizeForTerminal(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || r == 0x7f {
+			return '�'
+		}
+		return r
+	}, s)
+}
 
 // Streams carries the output destinations and rendering mode shared by
 // every command: data goes to Stdout, diagnostics to Stderr, and JSON/
