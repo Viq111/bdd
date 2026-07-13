@@ -39,7 +39,7 @@ func statusCategory(ctx context.Context, q execer, status Status) (StatusCategor
 // UpdateCard's Status field) may move a card from category from to
 // category to. Every transition is allowed except leaving done directly:
 // a done-category card can only move to a different done-category status
-// (closed <-> wontfix, or a custom done status) through UpdateCard.
+// (closed, or a custom done status) through UpdateCard.
 // Un-closing a card requires ReopenCard instead, since only it clears the
 // ClosedAt/StartedAt/Assignee fields a done-category card accumulated
 // (plan section 16).
@@ -124,9 +124,8 @@ func (db *DB) ClaimCard(ctx context.Context, id, actor string) (*Card, error) {
 
 // CloseCard moves a card to StatusClosed, setting ClosedAt. CloseCard is
 // idempotent: closing a card already in a done-category status (closed,
-// wontfix, or a custom done status) leaves its status and ClosedAt
-// untouched. A non-empty Reason is appended as a note on every call,
-// closed or not.
+// or a custom done status) leaves its status and ClosedAt untouched. A
+// non-empty Reason is appended as a note on every call, closed or not.
 func (db *DB) CloseCard(ctx context.Context, id string, in CloseCard) (*Card, error) {
 	if err := db.ready(); err != nil {
 		return nil, err

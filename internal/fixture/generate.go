@@ -148,7 +148,7 @@ func Generate(opts Options) (*Manifest, error) {
 		{"task", 40}, {"bug", 25}, {"feature", 15}, {"chore", 10}, {"epic", 5}, {"decision", 5},
 	}
 	statusWeights := []weighted[string]{
-		{"open", 35}, {"in_progress", 15}, {"blocked", 10}, {"deferred", 5}, {"closed", 30}, {"wontfix", 5},
+		{"open", 35}, {"in_progress", 15}, {"awaiting_review", 5}, {"blocked", 10}, {"deferred", 5}, {"closed", 30},
 	}
 	priorityWeights := []weighted[int]{
 		{0, 10}, {1, 30}, {2, 50}, {3, 10},
@@ -217,10 +217,10 @@ func Generate(opts Options) (*Manifest, error) {
 		dispatchable := 1
 
 		switch status {
-		case "in_progress":
+		case "in_progress", "awaiting_review":
 			startedAt = rfc3339(updatedAt)
 			assignee = actorPool[rng.Intn(len(actorPool))]
-		case "closed", "wontfix":
+		case "closed":
 			startedAt = rfc3339(updatedAt.Add(-time.Hour))
 			closedAt = rfc3339(updatedAt)
 		case "deferred":
@@ -244,7 +244,7 @@ func Generate(opts Options) (*Manifest, error) {
 		if rng.Intn(4) == 0 {
 			externalRef = fmt.Sprintf("EXT-%d", rng.Intn(9999))
 		}
-		if status == "in_progress" {
+		if status == "in_progress" || status == "awaiting_review" {
 			worktree = fmt.Sprintf(".worktrees/%s", id)
 		}
 

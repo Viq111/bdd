@@ -126,12 +126,12 @@ CREATE INDEX idx_runes_kind_enabled_updated ON runes(kind, enabled, updated_at);
 
 -- Built-in statuses (bdd plan section 10 / card.go BuiltinStatusCategories).
 INSERT INTO status_definitions (name, category, built_in) VALUES
-  ('open',        'active', 1),
-  ('in_progress', 'wip',    1),
-  ('blocked',     'frozen', 1),
-  ('deferred',    'frozen', 1),
-  ('closed',      'done',   1),
-  ('wontfix',     'done',   1);
+  ('open',            'active', 1),
+  ('in_progress',     'wip',    1),
+  ('awaiting_review', 'wip',    1),
+  ('blocked',         'frozen', 1),
+  ('deferred',        'frozen', 1),
+  ('closed',          'done',   1);
 
 -- Built-in types (bdd plan section 10 / card.go CardType constants).
 INSERT INTO type_definitions (name, built_in) VALUES

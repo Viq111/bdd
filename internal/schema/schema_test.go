@@ -89,12 +89,12 @@ func TestUpgradeSeedsBuiltinStatusesAndTypes(t *testing.T) {
 	}
 
 	wantStatuses := map[string]string{
-		"open":        "active",
-		"in_progress": "wip",
-		"blocked":     "frozen",
-		"deferred":    "frozen",
-		"closed":      "done",
-		"wontfix":     "done",
+		"open":            "active",
+		"in_progress":     "wip",
+		"awaiting_review": "wip",
+		"blocked":         "frozen",
+		"deferred":        "frozen",
+		"closed":          "done",
 	}
 	rows, err := db.QueryContext(ctx, "SELECT name, category FROM status_definitions")
 	if err != nil {

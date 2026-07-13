@@ -42,24 +42,24 @@ type Status string
 // Built-in statuses seeded into every workspace, each with a fixed
 // StatusCategory (see BuiltinStatusCategories).
 const (
-	StatusOpen       Status = "open"
-	StatusInProgress Status = "in_progress"
-	StatusBlocked    Status = "blocked"
-	StatusDeferred   Status = "deferred"
-	StatusClosed     Status = "closed"
-	StatusWontFix    Status = "wontfix"
+	StatusOpen           Status = "open"
+	StatusInProgress     Status = "in_progress"
+	StatusAwaitingReview Status = "awaiting_review"
+	StatusBlocked        Status = "blocked"
+	StatusDeferred       Status = "deferred"
+	StatusClosed         Status = "closed"
 )
 
 // BuiltinStatusCategories maps every built-in Status to its
 // StatusCategory. Custom statuses are not represented here; resolve their
 // category via the config/status-definitions API instead.
 var BuiltinStatusCategories = map[Status]StatusCategory{
-	StatusOpen:       StatusCategoryActive,
-	StatusInProgress: StatusCategoryWIP,
-	StatusBlocked:    StatusCategoryFrozen,
-	StatusDeferred:   StatusCategoryFrozen,
-	StatusClosed:     StatusCategoryDone,
-	StatusWontFix:    StatusCategoryDone,
+	StatusOpen:           StatusCategoryActive,
+	StatusInProgress:     StatusCategoryWIP,
+	StatusAwaitingReview: StatusCategoryWIP,
+	StatusBlocked:        StatusCategoryFrozen,
+	StatusDeferred:       StatusCategoryFrozen,
+	StatusClosed:         StatusCategoryDone,
 }
 
 // CardType is the kind of work a card represents. It determines which

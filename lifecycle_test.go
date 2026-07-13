@@ -298,6 +298,10 @@ func TestUpdateCardStatusLeavingDoneRequiresReopen(t *testing.T) {
 	ctx := context.Background()
 	card := mustCreate(t, db, "closed")
 
+	if err := db.ConfigSet(ctx, ConfigKeyStatusCustom, "wontfix:done", "alice"); err != nil {
+		t.Fatalf("ConfigSet(status.custom) error = %v", err)
+	}
+
 	if _, err := db.CloseCard(ctx, card.ID, CloseCard{Actor: "alice"}); err != nil {
 		t.Fatalf("CloseCard() error = %v", err)
 	}
@@ -307,8 +311,8 @@ func TestUpdateCardStatusLeavingDoneRequiresReopen(t *testing.T) {
 		t.Fatalf("UpdateCard(status=open) on closed card error = %v, want ErrInvalidTransition", err)
 	}
 
-	wontfix := StatusWontFix
-	if got, err := db.UpdateCard(ctx, card.ID, UpdateCard{Status: &wontfix, Actor: "alice"}); err != nil || got.Status != StatusWontFix {
+	wontfix := Status("wontfix")
+	if got, err := db.UpdateCard(ctx, card.ID, UpdateCard{Status: &wontfix, Actor: "alice"}); err != nil || got.Status != wontfix {
 		t.Fatalf("UpdateCard(status=wontfix) on closed card = (%v, %v), want (wontfix, nil)", got, err)
 	}
 }
