@@ -137,6 +137,178 @@ func TestUpgradeSeedsBuiltinStatusesAndTypes(t *testing.T) {
 	}
 }
 
+// legacySchemaV1SQL is the 0001_initial.sql seed as it shipped before bd
+// bdd-zj9 fixed it: built_in wontfix instead of awaiting_review. Workspaces
+// created by that build ran exactly this SQL and are now stuck at schema
+// version 1 (or 2) with the wrong built-in status set, since a migration
+// that already ran is never re-applied (bd bdd-3wx).
+const legacySchemaV1SQL = `
+CREATE TABLE schema_versions (
+  version    INTEGER PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+
+CREATE TABLE workspace (
+  singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),
+  prefix     TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE status_definitions (
+  name     TEXT PRIMARY KEY,
+  category TEXT NOT NULL,
+  built_in INTEGER NOT NULL
+);
+
+CREATE TABLE type_definitions (
+  name     TEXT PRIMARY KEY,
+  built_in INTEGER NOT NULL
+);
+
+CREATE TABLE cards (
+  id           TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  worktree     TEXT NOT NULL DEFAULT '',
+  description  TEXT NOT NULL DEFAULT '',
+  reproduction TEXT NOT NULL DEFAULT '',
+  design       TEXT NOT NULL DEFAULT '',
+  acceptance   TEXT NOT NULL DEFAULT '',
+  status       TEXT NOT NULL REFERENCES status_definitions(name),
+  priority     INTEGER NOT NULL DEFAULT 2 CHECK (priority BETWEEN 0 AND 2147483647),
+  card_type    TEXT NOT NULL REFERENCES type_definitions(name),
+  external_ref TEXT NOT NULL DEFAULT '',
+  assignee     TEXT NOT NULL DEFAULT '',
+  created_by   TEXT NOT NULL DEFAULT '',
+  dispatchable INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  started_at   TEXT,
+  closed_at    TEXT,
+  defer_until  TEXT,
+  revision     INTEGER NOT NULL DEFAULT 1
+);
+
+INSERT INTO status_definitions (name, category, built_in) VALUES
+  ('open',        'active', 1),
+  ('in_progress', 'wip',    1),
+  ('blocked',     'frozen', 1),
+  ('deferred',    'frozen', 1),
+  ('closed',      'done',   1),
+  ('wontfix',     'done',   1);
+
+INSERT INTO type_definitions (name, built_in) VALUES
+  ('bug', 1),
+  ('task', 1),
+  ('feature', 1),
+  ('epic', 1),
+  ('decision', 1),
+  ('chore', 1);
+`
+
+// seedLegacyV1 sets up db as a workspace initialized before bd bdd-zj9 and
+// already upgraded to schema version 1, bypassing the current (fixed)
+// migrations entirely.
+func seedLegacyV1(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, legacySchemaV1SQL); err != nil {
+		t.Fatalf("seeding legacy schema version 1: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO schema_versions (version, applied_at) VALUES (1, '2020-01-01T00:00:00Z')"); err != nil {
+		t.Fatalf("recording legacy schema_versions row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 1"); err != nil {
+		t.Fatalf("setting legacy user_version: %v", err)
+	}
+}
+
+func TestUpgradeFromLegacyV1MigratesWontfixToAwaitingReview(t *testing.T) {
+	db := openMemDB(t)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("enabling foreign_keys: %v", err)
+	}
+	seedLegacyV1(t, ctx, db)
+
+	if err := Upgrade(ctx, db); err != nil {
+		t.Fatalf("Upgrade() from legacy version 1 error = %v", err)
+	}
+
+	rows, err := db.QueryContext(ctx, "SELECT name, category, built_in FROM status_definitions")
+	if err != nil {
+		t.Fatalf("querying status_definitions: %v", err)
+	}
+	type def struct {
+		category string
+		builtIn  int
+	}
+	got := map[string]def{}
+	for rows.Next() {
+		var name, category string
+		var builtIn int
+		if err := rows.Scan(&name, &category, &builtIn); err != nil {
+			t.Fatalf("scanning status row: %v", err)
+		}
+		got[name] = def{category, builtIn}
+	}
+	rows.Close()
+
+	if _, ok := got["wontfix"]; ok {
+		t.Fatalf("status_definitions still has wontfix after Upgrade(): %v", got)
+	}
+	ar, ok := got["awaiting_review"]
+	if !ok {
+		t.Fatalf("status_definitions missing awaiting_review after Upgrade(): %v", got)
+	}
+	if ar.category != "wip" || ar.builtIn != 1 {
+		t.Fatalf("awaiting_review = %+v, want category=wip built_in=1", ar)
+	}
+
+	v, err := ReadVersion(ctx, db)
+	if err != nil {
+		t.Fatalf("ReadVersion() error = %v", err)
+	}
+	if v != CurrentVersion() {
+		t.Fatalf("ReadVersion() = %d, want %d", v, CurrentVersion())
+	}
+}
+
+func TestUpgradeFromLegacyV1PreservesWontfixStillInUse(t *testing.T) {
+	db := openMemDB(t)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("enabling foreign_keys: %v", err)
+	}
+	seedLegacyV1(t, ctx, db)
+
+	now := "2020-01-01T00:00:00Z"
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO cards (id, title, status, card_type, created_at, updated_at, closed_at)
+		VALUES ('qa-1', 'legacy wontfix card', 'wontfix', 'bug', ?, ?, ?)`, now, now, now); err != nil {
+		t.Fatalf("inserting legacy wontfix card: %v", err)
+	}
+
+	if err := Upgrade(ctx, db); err != nil {
+		t.Fatalf("Upgrade() from legacy version 1 error = %v", err)
+	}
+
+	var category string
+	var builtIn int
+	if err := db.QueryRowContext(ctx, "SELECT category, built_in FROM status_definitions WHERE name = 'wontfix'").Scan(&category, &builtIn); err != nil {
+		t.Fatalf("querying wontfix status_definitions row: %v", err)
+	}
+	if category != "done" || builtIn != 0 {
+		t.Fatalf("wontfix = (category=%q, built_in=%d), want (done, 0) so the in-use card keeps a valid status", category, builtIn)
+	}
+
+	var cardStatus string
+	if err := db.QueryRowContext(ctx, "SELECT status FROM cards WHERE id = 'qa-1'").Scan(&cardStatus); err != nil {
+		t.Fatalf("querying card status: %v", err)
+	}
+	if cardStatus != "wontfix" {
+		t.Fatalf("card status = %q, want wontfix (untouched)", cardStatus)
+	}
+}
+
 func TestUpgradeAppliesOnlyPendingMigrations(t *testing.T) {
 	db := openMemDB(t)
 	ctx := context.Background()
