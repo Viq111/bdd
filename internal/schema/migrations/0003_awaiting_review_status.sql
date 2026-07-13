@@ -8,14 +8,20 @@ INSERT INTO status_definitions (name, category, built_in)
 VALUES ('awaiting_review', 'wip', 1)
 ON CONFLICT(name) DO NOTHING;
 
--- If a card still references wontfix, keep the definition (as a plain
--- custom status, so FK integrity holds) instead of deleting it out from
--- under that card.
+-- Only the legacy built-in wontfix definition is retired here; a
+-- workspace may separately define its own custom wontfix status, which
+-- must be left untouched.
+--
+-- If a card still references the built-in wontfix, keep the definition
+-- (as a plain custom status, so FK integrity holds) instead of deleting
+-- it out from under that card.
 UPDATE status_definitions
 SET built_in = 0
 WHERE name = 'wontfix'
+  AND built_in = 1
   AND EXISTS (SELECT 1 FROM cards WHERE status = 'wontfix');
 
 DELETE FROM status_definitions
 WHERE name = 'wontfix'
+  AND built_in = 1
   AND NOT EXISTS (SELECT 1 FROM cards WHERE status = 'wontfix');

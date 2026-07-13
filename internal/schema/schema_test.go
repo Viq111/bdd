@@ -309,6 +309,50 @@ func TestUpgradeFromLegacyV1PreservesWontfixStillInUse(t *testing.T) {
 	}
 }
 
+// TestUpgradeFromV2PreservesCustomWontfixStatus covers a workspace that
+// already ran the fixed 0001/0002 migrations (so its built-in set is
+// awaiting_review, not wontfix) but separately defined its own custom
+// wontfix status. Migration 3's UPDATE/DELETE must key off built_in = 1 so
+// it only ever touches the retired legacy built-in definition, never a
+// user-defined status that happens to share the name.
+func TestUpgradeFromV2PreservesCustomWontfixStatus(t *testing.T) {
+	db := openMemDB(t)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("enabling foreign_keys: %v", err)
+	}
+
+	ms := Migrations()
+	for _, m := range ms {
+		if m.Version > 2 {
+			break
+		}
+		if _, err := db.ExecContext(ctx, m.SQL); err != nil {
+			t.Fatalf("applying migration %d: %v", m.Version, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
+		t.Fatalf("setting user_version to 2: %v", err)
+	}
+
+	if _, err := db.ExecContext(ctx, "INSERT INTO status_definitions (name, category, built_in) VALUES ('wontfix', 'done', 0)"); err != nil {
+		t.Fatalf("inserting custom wontfix status: %v", err)
+	}
+
+	if err := Upgrade(ctx, db); err != nil {
+		t.Fatalf("Upgrade() from version 2 error = %v", err)
+	}
+
+	var category string
+	var builtIn int
+	if err := db.QueryRowContext(ctx, "SELECT category, built_in FROM status_definitions WHERE name = 'wontfix'").Scan(&category, &builtIn); err != nil {
+		t.Fatalf("querying wontfix status_definitions row: %v", err)
+	}
+	if category != "done" || builtIn != 0 {
+		t.Fatalf("wontfix = (category=%q, built_in=%d), want (done, 0): custom status must survive migration 3 untouched", category, builtIn)
+	}
+}
+
 func TestUpgradeAppliesOnlyPendingMigrations(t *testing.T) {
 	db := openMemDB(t)
 	ctx := context.Background()
