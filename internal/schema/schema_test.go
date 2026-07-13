@@ -188,6 +188,72 @@ CREATE TABLE cards (
   revision     INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE labels (
+  card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  label   TEXT NOT NULL,
+  PRIMARY KEY (card_id, label)
+);
+
+CREATE TABLE card_edges (
+  parent_id  TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  child_id   TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  created_by TEXT,
+  PRIMARY KEY (parent_id, child_id),
+  CHECK (parent_id <> child_id)
+);
+
+CREATE TABLE notes (
+  id         INTEGER PRIMARY KEY,
+  card_id    TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  author     TEXT,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE memories (
+  key        TEXT PRIMARY KEY,
+  body       TEXT NOT NULL,
+  created_by TEXT,
+  updated_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  revision   INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE runes (
+  key           TEXT PRIMARY KEY,
+  kind          TEXT NOT NULL,
+  title         TEXT NOT NULL,
+  body          TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  protected     INTEGER NOT NULL DEFAULT 0,
+  created_by    TEXT,
+  updated_by    TEXT,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  revision      INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE events (
+  id           INTEGER PRIMARY KEY,
+  subject_kind TEXT NOT NULL,
+  subject_key  TEXT NOT NULL,
+  revision     INTEGER NOT NULL,
+  action       TEXT NOT NULL,
+  actor        TEXT,
+  payload_json TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+
+CREATE TABLE config (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT
+);
+
 INSERT INTO status_definitions (name, category, built_in) VALUES
   ('open',        'active', 1),
   ('in_progress', 'wip',    1),

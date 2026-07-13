@@ -456,7 +456,7 @@ var searchQueryTextColumns = []string{
 // searchMatchCondition builds the "id IN (...)" WHERE condition and its args
 // for SearchCards' Query text, as a UNION of two subqueries against the
 // cards_fts/notes_fts trigram-tokenized virtual tables (migration
-// 0003_fts5_search.sql, plan section 7's anticipated fallback: "Add an FTS5
+// 0004_fts5_search.sql, plan section 7's anticipated fallback: "Add an FTS5
 // table maintained transactionally if the latency benchmark exceeds budget
 // at the target database size"):
 //

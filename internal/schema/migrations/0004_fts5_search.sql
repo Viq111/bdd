@@ -1,4 +1,4 @@
--- Schema version 3: FTS5 trigram indexes backing SearchCards' substring
+-- Schema version 4: FTS5 trigram indexes backing SearchCards' substring
 -- match (plan section 7's anticipated fallback: "Add an FTS5 table
 -- maintained transactionally if the latency benchmark exceeds budget at the
 -- target database size"). bd bdd-cdm found SearchCards' OR'd LIKE '%...%'
