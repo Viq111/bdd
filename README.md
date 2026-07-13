@@ -399,3 +399,6 @@ additionally lists every field that failed validation, not just the first.
 - [`docs/policy.md`](docs/policy.md) — the benchmark policy (promised
   latency, reference machine) and compatibility policy (what API/CLI
   stability is promised pre-v1 and post-v1).
+- [`docs/release.md`](docs/release.md) — cross-platform release builds,
+  version stamping, and the repeatable procedure for cutting a tagged
+  release.

@@ -1,18 +1,28 @@
 BIN_DIR := bin
+DIST_DIR := dist
 BENCH_DIR := testdata/bench
 FIXTURE := $(BENCH_DIR)/fixture-10k.sqlite
 MANIFEST := $(BENCH_DIR)/fixture-10k.manifest.json
 REPORT := $(BENCH_DIR)/report.json
 
-.PHONY: build fixture bench clean test fuzz-short
+.PHONY: build dist release fixture bench clean test fuzz-short
 
 # Per-target duration for fuzz-short: short enough that the full set stays
 # CI-friendly. See docs/security-review.md for longer, exploratory local
 # fuzz runs.
 FUZZTIME := 3s
 
+# Falls back to "dev" outside a git checkout (e.g. an extracted source
+# tarball with no .git directory).
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 build:
-	go build -o $(BIN_DIR)/bdd ./cmd/bdd
+	go build -trimpath -ldflags "-X main.version=$(VERSION)" -o $(BIN_DIR)/bdd ./cmd/bdd
+
+# Cross-compile and package release archives + checksums for every
+# supported platform. See docs/release.md for the full release procedure.
+dist release:
+	VERSION=$(VERSION) ./scripts/release.sh
 
 # Regenerate the 10k-card benchmark fixture. Deterministic: same seed and
 # card count always produce a byte-identical SQLite file.
@@ -52,4 +62,4 @@ fuzz-short:
 	go test -run '^$$' -fuzz '^FuzzRun$$' -fuzztime $(FUZZTIME) -parallel 2 ./internal/cli
 
 clean:
-	rm -rf $(BIN_DIR) $(BENCH_DIR)
+	rm -rf $(BIN_DIR) $(DIST_DIR) $(BENCH_DIR)
