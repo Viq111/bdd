@@ -748,3 +748,47 @@ func TestGetCardExposesParentLinks(t *testing.T) {
 		t.Fatalf("GetCard() Parents = %v, want empty non-nil slice for a parentless card", got.Parents)
 	}
 }
+
+// TestGetCardExposesChildLinks guards against the regression fixed in
+// bdd-ui9: GetCard must expand child edges itself, mirroring its parent-edge
+// expansion, rather than requiring a separate Children() call.
+func TestGetCardExposesChildLinks(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	parent, err := db.CreateCard(ctx, CreateCard{Title: "parent", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	c1, err := db.CreateCard(ctx, CreateCard{Title: "c1", Type: CardTypeChore, Parents: []string{parent.ID}})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	c2, err := db.CreateCard(ctx, CreateCard{Title: "c2", Type: CardTypeChore, Parents: []string{parent.ID}})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	got, err := db.GetCard(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if len(got.Children) != 2 {
+		t.Fatalf("GetCard() Children = %v, want 2 children", got.Children)
+	}
+	seen := map[string]bool{got.Children[0].ID: true, got.Children[1].ID: true}
+	if !seen[c1.ID] || !seen[c2.ID] {
+		t.Fatalf("GetCard() Children = %v, want %s and %s", got.Children, c1.ID, c2.ID)
+	}
+	if got.Children[0].ID >= got.Children[1].ID {
+		t.Fatalf("GetCard() Children = %v, want ascending ID order", got.Children)
+	}
+	if got.Children[0].Title == "" || got.Children[0].Type == "" || got.Children[0].Status == "" {
+		t.Fatalf("GetCard() Children = %+v, want title/type/status populated on each CardRef", got.Children)
+	}
+
+	// A card with no children gets an empty (not nil) slice.
+	if got := c1; got.Children == nil || len(got.Children) != 0 {
+		t.Fatalf("GetCard() Children = %v, want empty non-nil slice for a childless card", got.Children)
+	}
+}

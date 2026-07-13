@@ -272,6 +272,29 @@ func TestShowSanitizesControlCharsInTitle(t *testing.T) {
 	}
 }
 
+// TestShowExposesChildren guards against the regression fixed in bdd-ui9:
+// `show` must surface a card's children (in both --json and human output),
+// not just its parents.
+func TestShowExposesChildren(t *testing.T) {
+	dir := initTestWorkspace(t)
+	parent := createCard(t, dir, "--type", "chore", "parent")
+	child := createCard(t, dir, "--type", "chore", "--parent", parent, "child")
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "show", parent)
+	var show ShowResult
+	if err := json.Unmarshal([]byte(stdout), &show); err != nil {
+		t.Fatal(err)
+	}
+	if len(show.Children) != 1 || show.Children[0].ID != child {
+		t.Fatalf("children = %+v, want [%s]", show.Children, child)
+	}
+
+	humanStdout, _ := runCLI(t, dir, ExitSuccess, "show", parent)
+	if !strings.Contains(humanStdout, "children:") || !strings.Contains(humanStdout, child) {
+		t.Fatalf("human show output = %q, want a children line referencing %s", humanStdout, child)
+	}
+}
+
 func TestListDefaultExcludesDoneCards(t *testing.T) {
 	dir := initTestWorkspace(t)
 	open := createCard(t, dir, "--type", "chore", "open one")

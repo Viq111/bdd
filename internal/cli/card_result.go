@@ -32,6 +32,7 @@ type CardResult struct {
 	Acceptance   string          `json:"acceptance"`
 	ExternalRef  string          `json:"external_ref"`
 	Parents      []CardRefResult `json:"parents"`
+	Children     []CardRefResult `json:"children"`
 	CreatedBy    string          `json:"created_by"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
@@ -132,6 +133,7 @@ func toCardResult(c *bdd.Card) CardResult {
 		Acceptance:   c.Acceptance,
 		ExternalRef:  c.ExternalRef,
 		Parents:      toCardRefResults(c.Parents),
+		Children:     toCardRefResults(c.Children),
 		CreatedBy:    c.CreatedBy,
 		CreatedAt:    formatTimestamp(c.CreatedAt),
 		UpdatedAt:    formatTimestamp(c.UpdatedAt),
@@ -239,6 +241,13 @@ func renderCard(w io.Writer, r CardResult) {
 			parts[i] = fmt.Sprintf("%s (%s, %s)", p.ID, p.Type, p.Status)
 		}
 		fmt.Fprintf(w, "parents:      %s\n", strings.Join(parts, ", "))
+	}
+	if len(r.Children) > 0 {
+		parts := make([]string, len(r.Children))
+		for i, c := range r.Children {
+			parts[i] = fmt.Sprintf("%s (%s, %s)", c.ID, c.Type, c.Status)
+		}
+		fmt.Fprintf(w, "children:     %s\n", strings.Join(parts, ", "))
 	}
 	if r.ExternalRef != "" {
 		fmt.Fprintf(w, "external_ref: %s\n", sanitizeForTerminal(r.ExternalRef))
