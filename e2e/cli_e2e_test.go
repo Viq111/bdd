@@ -470,3 +470,93 @@ func TestLabelIdempotence(t *testing.T) {
 		t.Fatalf("removing an absent label: code = %d, want 0 (no-op success)", r.code)
 	}
 }
+
+// --- Per-command -h contract: every subcommand and every subcommand-group
+// member supports -h with a Usage: line and an Examples: section, and
+// never touches a workspace or database (cobra migration, bd bdd-s7m). This
+// table is the external contract: it must be updated by hand whenever a
+// command is added, so a missing entry (and therefore a missing -h) is
+// caught by review rather than by reflecting cobra's own command tree. ---
+
+var allSubcommands = [][]string{
+	{"init"},
+	{"status"},
+	{"config"},
+	{"config", "get"},
+	{"config", "set"},
+	{"config", "unset"},
+	{"config", "list"},
+	{"statuses"},
+	{"types"},
+	{"remember"},
+	{"memories"},
+	{"recall"},
+	{"forget"},
+	{"rune"},
+	{"rune", "put"},
+	{"rune", "show"},
+	{"rune", "list"},
+	{"rune", "search"},
+	{"rune", "enable"},
+	{"rune", "disable"},
+	{"rune", "remove"},
+	{"rune", "export"},
+	{"create"},
+	{"show"},
+	{"list"},
+	{"search"},
+	{"ready"},
+	{"update"},
+	{"note"},
+	{"close"},
+	{"reopen"},
+	{"defer"},
+	{"human"},
+	{"parents"},
+	{"children"},
+	{"label"},
+	{"label", "add"},
+	{"label", "remove"},
+	{"label", "list"},
+	{"delete"},
+	{"snapshot"},
+	{"restore"},
+	{"prime"},
+}
+
+func TestHelpFlagEverySubcommand(t *testing.T) {
+	dbDir := t.TempDir()
+	db := filepath.Join(dbDir, "should-never-be-opened.sqlite")
+
+	for _, cmd := range allSubcommands {
+		name := strings.Join(cmd, " ")
+		t.Run(name, func(t *testing.T) {
+			r := run(t, db, append(append([]string{}, cmd...), "-h")...)
+			if r.code != 0 {
+				t.Fatalf("bdd %s -h: code = %d, want 0 (stderr=%s)", name, r.code, r.stderr)
+			}
+			if !strings.Contains(r.stdout, "Usage:") {
+				t.Fatalf("bdd %s -h: stdout missing Usage: line:\n%s", name, r.stdout)
+			}
+			if !strings.Contains(r.stdout, "Examples:") {
+				t.Fatalf("bdd %s -h: stdout missing Examples: section:\n%s", name, r.stdout)
+			}
+			if _, err := os.Stat(db); err == nil {
+				t.Fatalf("bdd %s -h: created a database file at %s", name, db)
+			}
+		})
+	}
+}
+
+// --- Post-migration exit-code contract, black-box side (bd bdd-s7m). ---
+
+func TestUnknownCommandAndFlagExitUsage(t *testing.T) {
+	db := newWorkspace(t)
+
+	if r := run(t, db, "nosuchcommand"); r.code != 2 {
+		t.Fatalf("unknown command: code = %d, want 2 (stderr=%s)", r.code, r.stderr)
+	}
+	if r := run(t, db, "create", "--nope"); r.code != 2 {
+		t.Fatalf("unknown flag on real command: code = %d, want 2 (stderr=%s)", r.code, r.stderr)
+	}
+}
