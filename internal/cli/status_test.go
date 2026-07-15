@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/viq111/bdd/internal/schema"
@@ -63,8 +64,12 @@ func TestStatusMissingDatabaseReturnsNotFound(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if stderr.Len() == 0 {
-		t.Fatal("stderr = empty, want a diagnostic")
+	const want = "bdd: no .bdd/bdd.sqlite found, init database with bdd init"
+	if !strings.Contains(stderr.String(), want) {
+		t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), want)
+	}
+	if strings.Contains(stderr.String(), "walking up from") {
+		t.Fatalf("stderr = %q, should not leak the raw discovery error", stderr.String())
 	}
 }
 

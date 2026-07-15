@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-
-	"github.com/viq111/bdd"
 )
 
 // StatusResult is the JSON/human result of `bdd status`.
@@ -33,10 +31,9 @@ func runStatus(g GlobalFlags, args []string, s *Streams) int {
 	}
 
 	ctx := context.Background()
-	db, err := bdd.Open(ctx, bdd.OpenOptions{Path: g.DBPath, Workspace: g.Workspace})
-	if err != nil {
-		s.Errorf("bdd: status: %v\n", err)
-		return ExitCode(err)
+	db, code := openDB(ctx, g, "status", s)
+	if db == nil {
+		return code
 	}
 	defer db.Close()
 
