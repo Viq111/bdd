@@ -96,22 +96,17 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 
 	streams := &Streams{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, JSON: global.JSON, Silent: global.Silent}
 
-	target, ok := buildCommands(global, streams)[cmd]
-	if !ok {
-		fmt.Fprintf(stderr, "bdd: unknown command %q\n", cmd)
-		fmt.Fprint(stderr, helpText)
-		return ExitUsage
-	}
+	root := buildRoot(global, streams)
+	root.SetArgs(append([]string{cmd}, cmdArgs...))
+	root.SetOut(stdout)
+	root.SetErr(stderr)
 
-	target.SetArgs(cmdArgs)
-	target.SetOut(stdout)
-	target.SetErr(stderr)
-
-	if err := target.Execute(); err != nil {
+	if err := root.Execute(); err != nil {
 		var ee exitError
 		if errors.As(err, &ee) {
 			return ee.code
 		}
+		fmt.Fprintln(stderr, err)
 		return ExitUsage
 	}
 	return ExitSuccess

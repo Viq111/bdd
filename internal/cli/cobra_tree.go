@@ -75,11 +75,12 @@ func newLeaf(use, short, long, example string, handler func(GlobalFlags, []strin
 // genuine cobra "unknown flag" error and automatic -h handling for free.
 // fallback reproduces the pre-migration "missing subcommand"/"unknown
 // subcommand" behavior and only runs when no child matches.
-func newGroup(use, short, long string, fallback func(GlobalFlags, []string, *Streams) int, global GlobalFlags, streams *Streams, children ...*cobra.Command) *cobra.Command {
+func newGroup(use, short, long, example string, fallback func(GlobalFlags, []string, *Streams) int, global GlobalFlags, streams *Streams, children ...*cobra.Command) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           use,
 		Short:         short,
 		Long:          long,
+		Example:       example,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          legacyRunE(fallback, global, streams),
@@ -88,11 +89,46 @@ func newGroup(use, short, long string, fallback func(GlobalFlags, []string, *Str
 	return cmd
 }
 
-// buildCommands constructs the full cobra command tree, keyed by top-level
-// command name. It is built fresh on every Run call (never a package-level
-// var) so it never carries stale global/streams closures or output writers
-// across calls.
-func buildCommands(global GlobalFlags, streams *Streams) map[string]*cobra.Command {
+// registerGlobalFlags declares the five flags shared by every bdd
+// subcommand (see GlobalFlags in flags.go) on fs purely so cobra's
+// generated help text lists them; the values are never read back through
+// pflag. Run's pre-cobra ParseGlobalFlags pass (internal/cli/flags.go)
+// already strips every occurrence of these flags out of args, wherever
+// they appear, before any cobra command sees its argument list, so
+// registering them here cannot double-parse or conflict with that pass.
+func registerGlobalFlags(fs *pflag.FlagSet) {
+	fs.StringP("workspace", "C", "", "resolve the workspace starting from <dir> (default: cwd)")
+	fs.String("db", "", "use this database file instead of workspace discovery")
+	fs.String("actor", "", "actor recorded against mutations (see BDD_ACTOR)")
+	fs.Bool("json", false, "emit machine-readable JSON instead of human output")
+	fs.Bool("silent", false, "emit minimal output and suppress incidental diagnostics")
+}
+
+// buildRoot constructs the full cobra command tree rooted at a synthetic
+// "bdd" command that is never itself executed (Run already handles the
+// no-args and version/help fast paths before reaching cobra). Its only
+// purposes are to carry the five global flags as persistent flags, so
+// every subcommand's generated help lists them under "Global Flags:", and
+// to give cobra's own Find() a real tree to walk for unknown-command and
+// unknown-flag errors. It is built fresh on every Run call (never a
+// package-level var) so it never carries stale global/streams closures or
+// output writers across calls.
+func buildRoot(global GlobalFlags, streams *Streams) *cobra.Command {
+	root := &cobra.Command{
+		Use:           "bdd",
+		Short:         "bdd is a CLI for tracking small cards.",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+	}
+	registerGlobalFlags(root.PersistentFlags())
+	root.AddCommand(buildCommands(global, streams)...)
+	return root
+}
+
+// buildCommands constructs the full set of top-level cobra.Commands. It is
+// built fresh on every Run call (never a package-level var) so it never
+// carries stale global/streams closures or output writers across calls.
+func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 	cmds := []*cobra.Command{
 		newLeaf("init [path]", "Create a new workspace database",
 			"Create a new bdd workspace database at <path> (default: the current\ndirectory, or --workspace's directory), or at --db if given explicitly.",
@@ -110,6 +146,7 @@ func buildCommands(global GlobalFlags, streams *Streams) map[string]*cobra.Comma
 
 		newGroup("config", "Read or write workspace configuration",
 			"Manage key/value configuration entries stored in the workspace database.",
+			"  bdd config get status.custom\n  bdd config set status.custom \"triage:active\"",
 			runConfig, global, streams,
 			newLeaf("get <key>", "Print a configuration value", "Print the value stored for <key>.",
 				"  bdd config get status.custom", runConfigGet, global, streams, nil),
@@ -152,6 +189,8 @@ func buildCommands(global GlobalFlags, streams *Streams) map[string]*cobra.Comma
 
 		newGroup("rune", "Manage rune records",
 			"Manage rune records: reusable, keyed documents (checklists, prompts,\nreference material) attached to the workspace rather than any one card.",
+			`  bdd rune put review-checklist --kind doc --title "Review checklist" --body "..."
+  bdd rune list --kind doc`,
 			runRune, global, streams,
 			newLeaf("put <key>", "Create or update a rune",
 				"Create or update the rune at <key>. Supply the body directly with --body,\nor read it from a file with --body-file.",
@@ -317,6 +356,7 @@ func buildCommands(global GlobalFlags, streams *Streams) map[string]*cobra.Comma
 
 		newGroup("label", "Manage a card's labels",
 			"Add, remove, or list the labels on a card.",
+			"  bdd label add bdd-a1b urgent\n  bdd label list bdd-a1b",
 			runCardLabel, global, streams,
 			newLeaf("add <id> <label>", "Add a label to a card", "Add <label> to the card at <id>.",
 				"  bdd label add bdd-a1b urgent", func(g GlobalFlags, a []string, s *Streams) int {
@@ -356,9 +396,5 @@ func buildCommands(global GlobalFlags, streams *Streams) map[string]*cobra.Comma
 			}),
 	}
 
-	byName := make(map[string]*cobra.Command, len(cmds))
-	for _, c := range cmds {
-		byName[c.Name()] = c
-	}
-	return byName
+	return cmds
 }

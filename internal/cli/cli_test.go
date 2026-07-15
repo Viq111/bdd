@@ -111,3 +111,34 @@ func TestRunSubcommandHelpShowsExample(t *testing.T) {
 		t.Fatalf("stdout = %q, want a Flags section", stdout.String())
 	}
 }
+
+func TestRunSubcommandHelpShowsGlobalFlags(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"create", "-h"}, &stdout, &stderr, "dev")
+	if code != ExitSuccess {
+		t.Fatalf("Run(create -h) exit = %d, stderr = %q", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"--workspace", "-C", "--db", "--actor", "--json", "--silent"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, want it to mention global flag %q", out, want)
+		}
+	}
+}
+
+func TestRunGroupHelpShowsExample(t *testing.T) {
+	for _, group := range []string{"config", "rune", "label"} {
+		var stdout, stderr bytes.Buffer
+		code := Run([]string{group, "-h"}, &stdout, &stderr, "dev")
+		if code != ExitSuccess {
+			t.Fatalf("Run(%s -h) exit = %d, stderr = %q", group, code, stderr.String())
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "Examples:") {
+			t.Fatalf("Run(%s -h) stdout = %q, want an Examples section", group, out)
+		}
+		if !strings.Contains(out, "--workspace") {
+			t.Fatalf("Run(%s -h) stdout = %q, want it to mention global flags", group, out)
+		}
+	}
+}
