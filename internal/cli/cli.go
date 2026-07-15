@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -95,66 +96,23 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 
 	streams := &Streams{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, JSON: global.JSON, Silent: global.Silent}
 
-	switch cmd {
-	case "init":
-		return runInit(global, cmdArgs, streams)
-	case "status":
-		return runStatus(global, cmdArgs, streams)
-	case "config":
-		return runConfig(global, cmdArgs, streams)
-	case "statuses":
-		return runStatuses(global, cmdArgs, streams)
-	case "types":
-		return runTypes(global, cmdArgs, streams)
-	case "remember":
-		return runRemember(global, cmdArgs, streams)
-	case "memories":
-		return runMemories(global, cmdArgs, streams)
-	case "recall":
-		return runRecall(global, cmdArgs, streams)
-	case "forget":
-		return runForget(global, cmdArgs, streams)
-	case "rune":
-		return runRune(global, cmdArgs, streams)
-	case "create":
-		return runCardCreate(global, cmdArgs, streams)
-	case "show":
-		return runCardShow(global, cmdArgs, streams)
-	case "list":
-		return runCardList(global, cmdArgs, streams)
-	case "search":
-		return runCardSearch(global, cmdArgs, streams)
-	case "ready":
-		return runCardReady(global, cmdArgs, streams)
-	case "update":
-		return runCardUpdate(global, cmdArgs, streams)
-	case "note":
-		return runCardNote(global, cmdArgs, streams)
-	case "close":
-		return runCardClose(global, cmdArgs, streams)
-	case "reopen":
-		return runCardReopen(global, cmdArgs, streams)
-	case "defer":
-		return runCardDefer(global, cmdArgs, streams)
-	case "human":
-		return runCardHuman(global, cmdArgs, streams)
-	case "parents":
-		return runCardParents(global, cmdArgs, streams)
-	case "children":
-		return runCardChildren(global, cmdArgs, streams)
-	case "label":
-		return runCardLabel(global, cmdArgs, streams)
-	case "delete":
-		return runCardDelete(global, cmdArgs, streams)
-	case "snapshot":
-		return runSnapshot(global, cmdArgs, streams)
-	case "restore":
-		return runRestore(global, cmdArgs, streams)
-	case "prime":
-		return runPrime(global, cmdArgs, streams)
-	default:
+	target, ok := buildCommands(global, streams)[cmd]
+	if !ok {
 		fmt.Fprintf(stderr, "bdd: unknown command %q\n", cmd)
 		fmt.Fprint(stderr, helpText)
 		return ExitUsage
 	}
+
+	target.SetArgs(cmdArgs)
+	target.SetOut(stdout)
+	target.SetErr(stderr)
+
+	if err := target.Execute(); err != nil {
+		var ee exitError
+		if errors.As(err, &ee) {
+			return ee.code
+		}
+		return ExitUsage
+	}
+	return ExitSuccess
 }

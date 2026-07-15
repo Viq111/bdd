@@ -1,0 +1,364 @@
+package cli
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+)
+
+// exitError carries a legacy runXxx handler's intended exit code through
+// cobra's error-returning RunE convention. Run unwraps it after Execute();
+// every other error (a cobra/pflag structural error: unknown flag, failed
+// argument validation) maps to ExitUsage instead, since those are all
+// usage-shaped mistakes cobra itself detected.
+type exitError struct{ code int }
+
+func (e exitError) Error() string { return fmt.Sprintf("bdd: exit %d", e.code) }
+
+// hasHelpFlag reports whether args requests help. Every command built here
+// disables cobra's own flag parsing so a legacy handler's custom flag
+// grammar (see internal/cli/flags.go) keeps working untouched; that means
+// cobra's automatic -h/--help interception never fires, so each leaf
+// checks for it manually before delegating to its handler.
+func hasHelpFlag(args []string) bool {
+	for _, a := range args {
+		if a == "-h" || a == "--help" {
+			return true
+		}
+	}
+	return false
+}
+
+// legacyRunE adapts an existing runXxx(GlobalFlags, []string, *Streams) int
+// handler to cobra's RunE signature: -h/--help anywhere in args prints the
+// command's cobra-generated help instead of reaching the handler, and a
+// non-success exit code is carried out via exitError rather than changing
+// any handler's return convention.
+func legacyRunE(handler func(GlobalFlags, []string, *Streams) int, global GlobalFlags, streams *Streams) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if hasHelpFlag(args) {
+			return cmd.Help()
+		}
+		if code := handler(global, args, streams); code != ExitSuccess {
+			return exitError{code}
+		}
+		return nil
+	}
+}
+
+// newLeaf builds a cobra.Command for a command with no subcommands of its
+// own. Flag parsing is disabled so the full, unmodified args reach handler
+// exactly as they did before the cobra migration; configureFlags (when
+// non-nil) only registers flags for `-h`'s generated usage text, it never
+// affects actual parsing.
+func newLeaf(use, short, long, example string, handler func(GlobalFlags, []string, *Streams) int, global GlobalFlags, streams *Streams, configureFlags func(*pflag.FlagSet)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                use,
+		Short:              short,
+		Long:               long,
+		Example:            example,
+		DisableFlagParsing: true,
+		SilenceErrors:      true,
+		SilenceUsage:       true,
+		RunE:               legacyRunE(handler, global, streams),
+	}
+	if configureFlags != nil {
+		configureFlags(cmd.Flags())
+	}
+	return cmd
+}
+
+// newGroup builds a cobra.Command for a command with subcommands (config,
+// rune, label). Unlike newLeaf, flag parsing stays enabled: a group takes
+// no business flags of its own, so real pflag parsing safely gives it a
+// genuine cobra "unknown flag" error and automatic -h handling for free.
+// fallback reproduces the pre-migration "missing subcommand"/"unknown
+// subcommand" behavior and only runs when no child matches.
+func newGroup(use, short, long string, fallback func(GlobalFlags, []string, *Streams) int, global GlobalFlags, streams *Streams, children ...*cobra.Command) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           use,
+		Short:         short,
+		Long:          long,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE:          legacyRunE(fallback, global, streams),
+	}
+	cmd.AddCommand(children...)
+	return cmd
+}
+
+// buildCommands constructs the full cobra command tree, keyed by top-level
+// command name. It is built fresh on every Run call (never a package-level
+// var) so it never carries stale global/streams closures or output writers
+// across calls.
+func buildCommands(global GlobalFlags, streams *Streams) map[string]*cobra.Command {
+	cmds := []*cobra.Command{
+		newLeaf("init [path]", "Create a new workspace database",
+			"Create a new bdd workspace database at <path> (default: the current\ndirectory, or --workspace's directory), or at --db if given explicitly.",
+			"  bdd init\n  bdd init --prefix acme ./acme-project",
+			runInit, global, streams, func(f *pflag.FlagSet) {
+				f.String("prefix", "", "workspace ID prefix (derived from the directory name if omitted)")
+			}),
+
+		newLeaf("status", "Show the resolved workspace, database, and schema state",
+			"Print the resolved workspace directory, database path, and schema version.\n--upgrade applies any pending schema migration first.",
+			"  bdd status\n  bdd status --upgrade",
+			runStatus, global, streams, func(f *pflag.FlagSet) {
+				f.Bool("upgrade", false, "apply a pending schema migration before reporting status")
+			}),
+
+		newGroup("config", "Read or write workspace configuration",
+			"Manage key/value configuration entries stored in the workspace database.",
+			runConfig, global, streams,
+			newLeaf("get <key>", "Print a configuration value", "Print the value stored for <key>.",
+				"  bdd config get status.custom", runConfigGet, global, streams, nil),
+			newLeaf("set <key> <value>", "Set a configuration value", "Set <key> to <value>, creating or overwriting the entry.",
+				`  bdd config set status.custom "triage:active"`, runConfigSet, global, streams, nil),
+			newLeaf("unset <key>", "Remove a configuration value", "Remove the configuration entry for <key>.",
+				"  bdd config unset status.custom", runConfigUnset, global, streams, nil),
+			newLeaf("list", "List all configuration entries", "List every configuration key/value pair.",
+				"  bdd config list", runConfigList, global, streams, nil),
+		),
+
+		newLeaf("statuses", "List built-in and custom statuses",
+			"List every status known to the workspace, built-in and custom, with its category.",
+			"  bdd statuses", runStatuses, global, streams, nil),
+
+		newLeaf("types", "List built-in and custom card types",
+			"List every card type known to the workspace, built-in and custom.",
+			"  bdd types", runTypes, global, streams, nil),
+
+		newLeaf("remember [body]", "Create or update a memory",
+			"Create or update a durable, keyed, workspace-scoped memory. Supply the body\nas a positional argument, or pipe it via --stdin.",
+			`  bdd remember "prefer small PRs" --key style
+  echo "prefer small PRs" | bdd remember --key style --stdin`,
+			runRemember, global, streams, func(f *pflag.FlagSet) {
+				f.String("key", "", "memory key (generated if omitted)")
+				f.Bool("stdin", false, "read the body from stdin instead of a positional argument")
+			}),
+
+		newLeaf("memories [query]", "List memories, optionally filtered by text",
+			"List every memory, or only those whose key or body contains <query>.",
+			"  bdd memories\n  bdd memories style", runMemories, global, streams, nil),
+
+		newLeaf("recall <key>", "Show a memory's full record",
+			"Print the full body of the memory stored at <key>.",
+			"  bdd recall style", runRecall, global, streams, nil),
+
+		newLeaf("forget <key>", "Delete a memory",
+			"Delete the memory stored at <key>.",
+			"  bdd forget style", runForget, global, streams, nil),
+
+		newGroup("rune", "Manage rune records",
+			"Manage rune records: reusable, keyed documents (checklists, prompts,\nreference material) attached to the workspace rather than any one card.",
+			runRune, global, streams,
+			newLeaf("put <key>", "Create or update a rune",
+				"Create or update the rune at <key>. Supply the body directly with --body,\nor read it from a file with --body-file.",
+				`  bdd rune put review-checklist --kind doc --title "Review checklist" --body "..."`,
+				runRunePut, global, streams, func(f *pflag.FlagSet) {
+					f.String("kind", "", "rune kind (e.g. doc, prompt, checklist)")
+					f.String("title", "", "rune title")
+					f.String("body", "", "rune body text")
+					f.String("body-file", "", "read the body from this file instead of --body")
+					f.String("metadata", "", "JSON metadata object")
+					f.Bool("protected", false, "require --force to mutate or remove this rune later")
+					f.Bool("create-only", false, "fail if the rune already exists")
+					f.Int64("if-revision", 0, "fail unless the rune is currently at this revision")
+					f.Bool("force", false, "acknowledge overwriting a protected rune")
+				}),
+			newLeaf("show <key>", "Show a rune's full record", "Print the full record for the rune at <key>.",
+				"  bdd rune show review-checklist", runRuneShow, global, streams, nil),
+			newLeaf("list", "List runes", "List rune summaries, optionally filtered by kind.",
+				"  bdd rune list --kind doc", runRuneList, global, streams, func(f *pflag.FlagSet) {
+					f.String("kind", "", "only list runes of this kind")
+					f.Bool("all", false, "include disabled runes")
+				}),
+			newLeaf("search <text>", "Search runes by text", "Search rune titles and bodies for <text>.",
+				"  bdd rune search checklist", runRuneSearch, global, streams, func(f *pflag.FlagSet) {
+					f.String("kind", "", "only search runes of this kind")
+					f.Bool("all", false, "include disabled runes")
+				}),
+			newLeaf("enable <key>", "Enable a rune", "Mark the rune at <key> enabled.",
+				"  bdd rune enable review-checklist", func(g GlobalFlags, a []string, s *Streams) int {
+					return runRuneSetEnabled(g, a, s, true, "rune enable")
+				}, global, streams, func(f *pflag.FlagSet) {
+					f.Bool("force", false, "acknowledge enabling a protected rune")
+				}),
+			newLeaf("disable <key>", "Disable a rune", "Mark the rune at <key> disabled.",
+				"  bdd rune disable review-checklist --force", func(g GlobalFlags, a []string, s *Streams) int {
+					return runRuneSetEnabled(g, a, s, false, "rune disable")
+				}, global, streams, func(f *pflag.FlagSet) {
+					f.Bool("force", false, "acknowledge disabling a protected rune")
+				}),
+			newLeaf("remove <key>", "Delete a rune", "Delete the rune at <key>.",
+				"  bdd rune remove review-checklist --force", runRuneRemove, global, streams, func(f *pflag.FlagSet) {
+					f.Bool("force", false, "acknowledge removing a protected rune")
+				}),
+			newLeaf("export <key>", "Export a rune", "Print the rune at <key> rendered as markdown or JSON.",
+				"  bdd rune export review-checklist --format json", runRuneExport, global, streams, func(f *pflag.FlagSet) {
+					f.String("format", "markdown", "output format: markdown or json")
+				}),
+		),
+
+		newLeaf("create [title]", "Create a new card",
+			"Create a new card. Supply the title as a positional argument or --title.\nRequired text fields vary by --type; a field can also be read from a file\nwith --<field>-file, or from stdin with --stdin when exactly one required\ntext field is still unset.",
+			`  bdd create "Fix login bug" --type bug --priority P1 --reproduce "steps..." --acceptance "..."`,
+			runCardCreate, global, streams, func(f *pflag.FlagSet) {
+				f.String("title", "", "card title (alternative to the positional argument)")
+				f.String("type", "", "card type")
+				f.String("priority", "", "priority, e.g. P1 or 1")
+				f.String("description", "", "description text")
+				f.String("description-file", "", "read description from this file")
+				f.String("reproduce", "", "reproduction steps text")
+				f.String("reproduce-file", "", "read reproduction steps from this file")
+				f.String("design", "", "design text")
+				f.String("design-file", "", "read design from this file")
+				f.String("acceptance", "", "acceptance criteria text")
+				f.String("acceptance-file", "", "read acceptance criteria from this file")
+				f.String("worktree", "", "worktree path to associate with the card")
+				f.StringArray("label", nil, "label to add (repeatable)")
+				f.StringArray("parent", nil, "parent card id to block on (repeatable)")
+				f.String("notes", "", "initial note text")
+				f.Bool("stdin", false, "read the one still-unset required text field from stdin")
+			}),
+
+		newLeaf("show <id>", "Show a card's full record",
+			"Print a card's full record, including its notes.",
+			"  bdd show bdd-a1b", runCardShow, global, streams, nil),
+
+		newLeaf("list", "List cards matching filters",
+			"List cards, optionally filtered by status, type, label, or parent/child edge.",
+			"  bdd list --status in_progress --limit 20", runCardList, global, streams, func(f *pflag.FlagSet) {
+				f.StringArray("status", nil, "only cards with this status (repeatable)")
+				f.StringArray("status-category", nil, "only cards whose status has this category (repeatable)")
+				f.StringArray("type", nil, "only cards of this type (repeatable)")
+				f.StringArray("label", nil, "only cards with this label (repeatable)")
+				f.String("parent", "", "only cards blocked by this parent id")
+				f.String("child", "", "only cards blocking this child id")
+				f.String("description-like", "", "only cards whose description contains this text")
+				f.String("sort", "", "sort field")
+				f.Bool("reverse", false, "reverse the sort order")
+				f.Int("limit", 0, "maximum number of cards to return (0 = no limit)")
+			}),
+
+		newLeaf("search <query>", "Search cards by text",
+			"Search card titles and text fields for <query>.",
+			`  bdd search "login bug" --limit 10`, runCardSearch, global, streams, func(f *pflag.FlagSet) {
+				f.StringArray("status", nil, "only cards with this status (repeatable)")
+				f.Bool("all", false, "include cards outside the active status category")
+				f.StringArray("label", nil, "only cards with this label (repeatable)")
+				f.Int("limit", 0, "maximum number of cards to return (0 = no limit)")
+			}),
+
+		newLeaf("ready [id]", "List dispatchable cards",
+			"List every dispatchable, unassigned, unclaimed card without the human label.\n--explain [id] reports exactly why a given card (or every matching card) is\nexcluded.",
+			"  bdd ready --limit 10\n  bdd ready --explain bdd-a1b", runCardReady, global, streams, func(f *pflag.FlagSet) {
+				f.StringArray("label", nil, "only cards with this label (repeatable)")
+				f.Int("limit", 0, "maximum number of cards to return (0 = no limit)")
+				f.Bool("explain", false, "report exclusion reasons instead of listing ready cards")
+			}),
+
+		newLeaf("update <id>", "Update a card's fields, status, labels, or edges",
+			"Update one or more fields of the card at <id>, claim it, or adjust its\nlabels and parent/child edges. At least one of --claim or a field flag is\nrequired.",
+			"  bdd update bdd-a1b --claim\n  bdd update bdd-a1b --status in_progress --add-label urgent",
+			runCardUpdate, global, streams, func(f *pflag.FlagSet) {
+				f.Bool("claim", false, "claim the card for the calling actor")
+				f.String("title", "", "new title")
+				f.String("type", "", "new type")
+				f.String("status", "", "new status")
+				f.String("priority", "", "new priority, e.g. P1 or 1")
+				f.String("description", "", "new description text")
+				f.String("reproduce", "", "new reproduction steps text")
+				f.String("design", "", "new design text")
+				f.String("acceptance", "", "new acceptance criteria text")
+				f.String("external-ref", "", "new external reference")
+				f.String("worktree", "", "new worktree path")
+				f.Bool("clear-worktree", false, "clear the worktree field")
+				f.StringArray("add-label", nil, "label to add (repeatable)")
+				f.StringArray("remove-label", nil, "label to remove (repeatable)")
+				f.StringArray("add-parent", nil, "parent card id to add (repeatable)")
+				f.StringArray("remove-parent", nil, "parent card id to remove (repeatable)")
+				f.StringArray("add-child", nil, "child card id to add (repeatable)")
+				f.StringArray("remove-child", nil, "child card id to remove (repeatable)")
+			}),
+
+		newLeaf("note <id> [body]", "Append a note to a card",
+			"Append an append-only note to the card at <id>. Supply the body as a\npositional argument, or pipe it via --stdin.",
+			`  bdd note bdd-a1b "investigated, root cause is X"`, runCardNote, global, streams, func(f *pflag.FlagSet) {
+				f.Bool("stdin", false, "read the body from stdin instead of a positional argument")
+			}),
+
+		newLeaf("close <id> [reason]", "Close a card",
+			"Close the card at <id>, optionally recording a reason.",
+			`  bdd close bdd-a1b "fixed in v1.2"`, runCardClose, global, streams, nil),
+
+		newLeaf("reopen <id>", "Reopen a done-category card",
+			"Move the card at <id> back out of a done-category status.",
+			"  bdd reopen bdd-a1b", runCardReopen, global, streams, nil),
+
+		newLeaf("defer <id>", "Defer a card",
+			"Move the card at <id> to a deferred status, optionally until a given time.",
+			"  bdd defer bdd-a1b --until 2026-08-01T00:00:00Z", runCardDefer, global, streams, func(f *pflag.FlagSet) {
+				f.String("until", "", "RFC3339 timestamp to defer until")
+			}),
+
+		newLeaf("human <id> [reason]", "Flag a card as needing human attention",
+			"Flag the card at <id> as needing human attention, optionally recording why.",
+			`  bdd human bdd-a1b "needs product decision"`, runCardHuman, global, streams, nil),
+
+		newLeaf("parents <id>", "List a card's blocking parents",
+			"List the cards that block the card at <id>.",
+			"  bdd parents bdd-a1b", runCardParents, global, streams, nil),
+
+		newLeaf("children <id>", "List a card's blocked children",
+			"List the cards blocked by the card at <id>.",
+			"  bdd children bdd-a1b", runCardChildren, global, streams, nil),
+
+		newGroup("label", "Manage a card's labels",
+			"Add, remove, or list the labels on a card.",
+			runCardLabel, global, streams,
+			newLeaf("add <id> <label>", "Add a label to a card", "Add <label> to the card at <id>.",
+				"  bdd label add bdd-a1b urgent", func(g GlobalFlags, a []string, s *Streams) int {
+					return runCardLabelMutate(g, a, s, true)
+				}, global, streams, nil),
+			newLeaf("remove <id> <label>", "Remove a label from a card", "Remove <label> from the card at <id>.",
+				"  bdd label remove bdd-a1b urgent", func(g GlobalFlags, a []string, s *Streams) int {
+					return runCardLabelMutate(g, a, s, false)
+				}, global, streams, nil),
+			newLeaf("list <id>", "List a card's labels", "List the labels on the card at <id>.",
+				"  bdd label list bdd-a1b", runCardLabelList, global, streams, nil),
+		),
+
+		newLeaf("delete <id>", "Hard-delete a card and its edges",
+			"Permanently delete the card at <id> and its parent/child edges. Requires\n--force to acknowledge the destructive, irreversible operation.",
+			"  bdd delete bdd-a1b --force", runCardDelete, global, streams, func(f *pflag.FlagSet) {
+				f.Bool("force", false, "acknowledge the destructive delete")
+			}),
+
+		newLeaf("snapshot", "Write an integrity-checked backup of the live database",
+			"Write a point-in-time, integrity-checked backup of the live database.",
+			"  bdd snapshot --output .bdd/backup.sqlite", runSnapshot, global, streams, func(f *pflag.FlagSet) {
+				f.String("output", "", "backup file path (default: .bdd/backup.sqlite)")
+			}),
+
+		newLeaf("restore <snapshot.sqlite>", "Install a snapshot as the workspace database",
+			"Install <snapshot.sqlite> as the workspace database, backing up any\nexisting database first. Requires --force to acknowledge the destructive\noperation.",
+			"  bdd restore .bdd/backup.sqlite --force", runRestore, global, streams, func(f *pflag.FlagSet) {
+				f.Bool("force", false, "acknowledge the destructive restore")
+			}),
+
+		newLeaf("prime", "Print the workspace contract and memories for session start",
+			"Print the workspace contract (command set and semantics) and current\nmemories, for an agent to load at session start.",
+			"  bdd prime\n  bdd prime --memory-limit 20", runPrime, global, streams, func(f *pflag.FlagSet) {
+				f.Int("memory-limit", 0, "cap the number of memories printed")
+				f.Bool("no-memories", false, "skip loading memories entirely")
+			}),
+	}
+
+	byName := make(map[string]*cobra.Command, len(cmds))
+	for _, c := range cmds {
+		byName[c.Name()] = c
+	}
+	return byName
+}
