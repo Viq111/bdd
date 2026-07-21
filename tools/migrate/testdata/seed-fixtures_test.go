@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -27,5 +28,28 @@ func TestSeedScriptDoesNotModifyInvokingBeads(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("seed helper modified the invoking repository's .beads/issues.jsonl")
+	}
+}
+
+func TestSeedScriptUsesPublicCommandsForCompleteFixtureShape(t *testing.T) {
+	script, err := os.ReadFile("seed-fixtures.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(script)
+	for _, want := range []string{
+		"--id \"$role_id\"", // representative linked IDs
+		"--acceptance \"$acceptance\"",
+		"--append-notes 'accumulated note'",
+		"bd comment \"$role_id\"",
+		"bd dep add \"$role_id\" \"$blocker_id\" --type blocks",
+		"bd dep add \"$role_id\" \"$related_id\" --type related",
+		"bd remember \"remember this $shape fixture\" --key \"$memory_key\"",
+		"bd --readonly export --all",
+		"bd --readonly version",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("seed script does not create required fixture data with %q", want)
+		}
 	}
 }

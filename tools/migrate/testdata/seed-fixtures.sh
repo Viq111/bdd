@@ -18,9 +18,46 @@ for shape in orcha ocp; do
     bd init --non-interactive --quiet --prefix "$shape" --skip-agents --skip-hooks
     bd config set status.custom awaiting_review
     bd config set types.custom role
-    bd create --title="[role] Programmer" --type=role --description $'first line\nsecond line' --design $'design\nnotes' --notes 'accumulated note' --labels 'runtime:codex,café' --silent >/dev/null
-    bd export --all > "$work/${shape}-bd-$(bd version | awk '{print $3}').generated.jsonl"
-    echo "generated sanitized-review input: $work/${shape}-bd-$(bd version | awk '{print $3}').generated.jsonl"
+
+    # Explicit IDs make the exported graph representative of the IDs that the
+    # importer must preserve. Each role has both a blocking and a non-blocking
+    # edge, while closed_at remains null for these open issues.
+    if [ "$shape" = orcha ]; then
+      role_id=orcha-wisp-abc
+      blocker_id=orcha-dep
+      related_id=orcha-related
+      memory_key=orcha/agent
+      title='[role] Programmer'
+      description=$'first line\nsecond line'
+      design=$'design\nnotes'
+      acceptance=$'works\nwith multiline acceptance'
+      labels='runtime:codex,café'
+    else
+      role_id=ocp-123
+      blocker_id=ocp-122
+      related_id=ocp-100
+      memory_key=ocp/migration
+      title='[role] OCP migration'
+      description=$'multiline\ndescription'
+      design=$'keep\nraw'
+      acceptance=$'all fields\nare retained'
+      labels='release,日本語'
+    fi
+
+    bd create --id "$blocker_id" --title="Fixture blocker" --silent >/dev/null
+    bd create --id "$related_id" --title="Fixture related issue" --silent >/dev/null
+    bd create --id "$role_id" --title="$title" --type=role \
+      --description "$description" --design "$design" --acceptance "$acceptance" \
+      --notes 'initial note' --labels "$labels" --silent >/dev/null
+    bd update "$role_id" --append-notes 'accumulated note' >/dev/null
+    bd comment "$role_id" $'structured\ncomment' >/dev/null
+    bd dep add "$role_id" "$blocker_id" --type blocks >/dev/null
+    bd dep add "$role_id" "$related_id" --type related >/dev/null
+    bd remember "remember this $shape fixture" --key "$memory_key" >/dev/null
+
+    version=$(bd --readonly version | awk '{print $3}')
+    bd --readonly export --all > "$work/${shape}-bd-${version}.generated.jsonl"
+    echo "generated sanitized-review input: $work/${shape}-bd-${version}.generated.jsonl"
   )
 done
 after=""
