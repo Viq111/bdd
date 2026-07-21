@@ -1,8 +1,6 @@
 project:
   name: bdd
   conventions-id: bdd-iux
-web:
-  addr: 127.0.0.1:8093
 dispatch:
   max-active: 3
 llm:
