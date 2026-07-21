@@ -71,23 +71,23 @@ func (p *Plan) Canonicalize() {
 	for i := range p.Cards {
 		sort.Strings(p.Cards[i].Labels)
 		p.Cards[i].HashVersion = HashVersion
-		p.Cards[i].Hash = hash(p.Cards[i])
+		p.Cards[i].Hash = hashCard(p.Cards[i])
 	}
 	for i := range p.Runes {
 		p.Runes[i].HashVersion = HashVersion
-		p.Runes[i].Hash = hash(p.Runes[i])
+		p.Runes[i].Hash = hashRune(p.Runes[i])
 	}
 	for i := range p.Memories {
 		p.Memories[i].HashVersion = HashVersion
-		p.Memories[i].Hash = hash(p.Memories[i])
+		p.Memories[i].Hash = hashMemory(p.Memories[i])
 	}
 	for i := range p.Notes {
 		p.Notes[i].HashVersion = HashVersion
-		p.Notes[i].Hash = hash(p.Notes[i])
+		p.Notes[i].Hash = hashNote(p.Notes[i])
 	}
 	for i := range p.Edges {
 		p.Edges[i].HashVersion = HashVersion
-		p.Edges[i].Hash = hash(p.Edges[i])
+		p.Edges[i].Hash = hashEdge(p.Edges[i])
 	}
 	sort.Slice(p.Cards, func(i, j int) bool { return p.Cards[i].ID < p.Cards[j].ID })
 	sort.Slice(p.Runes, func(i, j int) bool { return p.Runes[i].Key < p.Runes[j].Key })
@@ -133,9 +133,62 @@ func uniqueTypes(in []TypePlan) []TypePlan {
 	}
 	return out
 }
+
+// The hash projections below are intentionally separate from the plan structs.
+// In particular, they omit Hash itself so calling Canonicalize repeatedly is
+// idempotent, and a future presentation-only struct field cannot accidentally
+// change the import identity.
+type cardProjection struct {
+	ID, Title, Description, Reproduction, Design, Acceptance, Status, Type string
+	Priority                                                               int32
+	Assignee, Owner, Creator, ExternalRef, Worktree                        string
+	Labels                                                                 []string
+	CreatedAt, UpdatedAt, ClosedAt, DeferUntil                             *string
+	HashVersion                                                            int
+}
+type runeProjection struct {
+	Key, Kind, Title, Body string
+	Enabled, Protected     bool
+	Metadata               map[string]string
+	HashVersion            int
+}
+type memoryProjection struct {
+	Key, Body, Actor string
+	CreatedAt        *string
+	HashVersion      int
+}
+type noteProjection struct {
+	CardID, SourceKey, SourceKind, SourceID, Author, Body string
+	CreatedAt                                             *string
+	HashVersion                                           int
+}
+type edgeProjection struct {
+	ParentID, ChildID string
+	HashVersion       int
+}
+
+func hashCard(v CardPlan) string {
+	return hash(cardProjection{v.ID, v.Title, v.Description, v.Reproduction, v.Design, v.Acceptance, v.Status, v.Type, v.Priority, v.Assignee, v.Owner, v.Creator, v.ExternalRef, v.Worktree, v.Labels, timestamp(v.CreatedAt), timestamp(v.UpdatedAt), timestamp(v.ClosedAt), timestamp(v.DeferUntil), v.HashVersion})
+}
+func hashRune(v RunePlan) string {
+	return hash(runeProjection{v.Key, v.Kind, v.Title, v.Body, v.Enabled, v.Protected, v.Metadata, v.HashVersion})
+}
+func hashMemory(v MemoryPlan) string {
+	return hash(memoryProjection{v.Key, v.Body, v.Actor, timestamp(v.CreatedAt), v.HashVersion})
+}
+func hashNote(v NotePlan) string {
+	return hash(noteProjection{v.CardID, v.SourceKey, v.SourceKind, v.SourceID, v.Author, v.Body, timestamp(v.CreatedAt), v.HashVersion})
+}
+func hashEdge(v EdgePlan) string { return hash(edgeProjection{v.ParentID, v.ChildID, v.HashVersion}) }
+func timestamp(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.UTC().Format(time.RFC3339Nano)
+	return &s
+}
 func hash(v any) string {
-	b, _ := json.Marshal(normalized(v))
+	b, _ := json.Marshal(v)
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:])
 }
-func normalized(v any) any { b, _ := json.Marshal(v); var x any; _ = json.Unmarshal(b, &x); return x }

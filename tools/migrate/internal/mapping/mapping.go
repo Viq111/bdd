@@ -86,6 +86,14 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 				}
 				roles[key] = id
 				p.Runes = append(p.Runes, model.RunePlan{Key: key, Kind: "role", Title: v.Title, Body: v.Description, Enabled: v.Status != "closed" && v.Status != "done", Protected: true, Metadata: map[string]string{"legacy_system": "beads", "legacy_bd_id": id, "legacy_status": v.Status}})
+				// Notes and edges cannot be attached to a destination rune.  Do not
+				// lose that fact merely because the role itself imported successfully.
+				if v.Notes != "" {
+					add(id, "skipped role-attached notes because role is imported as a rune")
+				}
+				if len(v.Comments) != 0 {
+					add(id, "skipped role-attached comments because role is imported as a rune")
+				}
 				continue
 			}
 			if skippedTypes[typ] {
@@ -149,7 +157,21 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 	}
 	for _, r := range records {
 		v, ok := r.(sourcebd.Issue)
-		if !ok || !cards[v.ID] {
+		if !ok {
+			continue
+		}
+		if !cards[v.ID] {
+			// A role is a valid imported source record, but it has no destination
+			// card to which a dependency can be attached.
+			if _, role := rolesForID(roles, v.ID); role {
+				for _, d := range v.Dependencies {
+					if d.Kind != "blocks" {
+						add(v.ID, "skipped dependency kind "+fmt.Sprintf("%q", d.Kind)+" to "+d.IssueID)
+					} else {
+						add(v.ID, "skipped dependency to "+d.IssueID+" because role is imported as a rune")
+					}
+				}
+			}
 			continue
 		}
 		for _, d := range v.Dependencies {
@@ -175,6 +197,14 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 	}
 	p.Canonicalize()
 	return p, nil
+}
+func rolesForID(roles map[string]string, id string) (string, bool) {
+	for key, roleID := range roles {
+		if roleID == id {
+			return key, true
+		}
+	}
+	return "", false
 }
 func safeID(s string) bool {
 	return s != "" && utf8.ValidString(s) && len(s) <= 255 && !strings.ContainsAny(s, "\x00\r\n")

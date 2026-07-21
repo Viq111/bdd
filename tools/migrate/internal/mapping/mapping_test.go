@@ -2,6 +2,8 @@ package mapping
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,6 +19,79 @@ func plan(t *testing.T, data string) (string, error) {
 	}
 	p, err := Map(r, Config{StatusCategories: map[string]string{"verified": "done"}, CustomTypes: map[string]bool{"custom": true}})
 	return warnings.Render(p.Warnings), err
+}
+
+func TestOrchaFixtureAccountsForRoleAttachments(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "orcha-bd-1.0.3.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := sourcebd.ParseJSONL(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(r, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Runes) != 1 || p.Runes[0].Key != "role/programmer" || len(p.Memories) != 1 {
+		t.Fatalf("fixture plans: runes=%#v memories=%#v", p.Runes, p.Memories)
+	}
+	want := `warning: orcha-wisp-abc: skipped dependency kind "related" to orcha-related; skipped dependency to orcha-dep because role is imported as a rune; skipped role-attached comments because role is imported as a rune; skipped role-attached notes because role is imported as a rune`
+	if got := warnings.Render(p.Warnings); got != want {
+		t.Fatalf("fixture warning = %q, want %q", got, want)
+	}
+}
+
+func TestOCPFixtureMapsEverySupportedRecord(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ocp-bd-1.0.3.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := sourcebd.ParseJSONL(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(r, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Cards) != 1 || len(p.Memories) != 1 || len(p.Notes) != 2 {
+		t.Fatalf("fixture plans: cards=%#v memories=%#v notes=%#v", p.Cards, p.Memories, p.Notes)
+	}
+	want := "warning: ocp-123: skipped dependency kind \"parent-child\" to ocp-100; skipped dependency to ocp-122 because endpoint was not imported\nwarning: opaque-1: unsupported export record; skipped record"
+	if got := warnings.Render(p.Warnings); got != want {
+		t.Fatalf("fixture warning = %q, want %q", got, want)
+	}
+}
+
+func TestMappingMalformedDuplicateAndAnonymousComments(t *testing.T) {
+	data := `{"_type":"issue","id":"bad\n","title":"bad","status":"open","issue_type":"task"}
+{"_type":"issue","id":"badrole","title":"[role] !!!","status":"open","issue_type":"role"}
+{"_type":"issue","id":"role1","title":"[role] QA - team","status":"open","issue_type":"role"}
+{"_type":"issue","id":"role2","title":"[role] qa — duplicate","status":"open","issue_type":"role"}
+{"_type":"issue","id":"card","title":"card","status":"custom-status","issue_type":"custom-type","comments":[{"body":"same","author":"a","created_at":"2026-01-02T00:00:00Z"},{"body":"same","author":"a","created_at":"2026-01-02T00:00:00Z"},{"body":"later","author":"b","created_at":"2026-01-03T00:00:00Z"}]}`
+	r, err := sourcebd.ParseJSONL(bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(r, Config{StatusCategories: map[string]string{"custom-status": "done"}, CustomTypes: map[string]bool{"custom-type": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Cards) != 1 || p.Cards[0].Status != "custom-status" || len(p.Workspace.Statuses) != 1 || len(p.Workspace.Types) != 1 {
+		t.Fatalf("custom mapping %#v", p)
+	}
+	if len(p.Runes) != 1 || p.Runes[0].Metadata["legacy_bd_id"] != "role1" {
+		t.Fatalf("role mapping %#v", p.Runes)
+	}
+	if len(p.Notes) != 2 || p.Notes[0].Body != "same" || p.Notes[1].Body != "later" {
+		t.Fatalf("comment ordering %#v", p.Notes)
+	}
+	want := "warning: bad\n: invalid bdd card ID; skipped record\nwarning: badrole: role title does not produce a valid rune key; skipped record\nwarning: card: ambiguous identical comment; collapsed duplicate\nwarning: role2: duplicate rune key \"role/qa\"; skipped record"
+	if got := warnings.Render(p.Warnings); got != want {
+		t.Fatalf("warnings = %q, want %q", got, want)
+	}
 }
 
 func TestCardFieldsReproductionNotesAndEdges(t *testing.T) {
