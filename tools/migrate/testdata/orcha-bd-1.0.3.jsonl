@@ -1,0 +1,4 @@
+{"_type":"issue","id":"orcha-wisp-abc","title":"[role] Programmer","description":"first line\nsecond line","design":"design\nnotes","acceptance_criteria":"works","notes":"accumulated note","status":"awaiting_review","issue_type":"role","labels":["runtime:codex","café"],"dependencies":[{"issue_id":"orcha-dep","type":"blocks"},{"issue_id":"orcha-related","type":"related"}],"comments":[{"id":"comment-1","body":"structured\ncomment","created_at":"2026-07-21T12:00:00Z"}],"created_at":"2026-07-21T12:00:00Z","updated_at":null,"closed_at":null}
+{"_type":"memory","key":"orcha/agent","value":"remember this","created_at":null}
+{"_type":"status","name":"awaiting_review","category":"wip"}
+{"_type":"type","name":"role"}
