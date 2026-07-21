@@ -18,7 +18,6 @@ for shape in orcha ocp; do
     bd init --non-interactive --quiet --prefix "$shape" --skip-agents --skip-hooks
     bd config set status.custom awaiting_review
     bd config set types.custom role
-
     # Explicit IDs make the exported graph representative of the IDs that the
     # importer must preserve. Each role has both a blocking and a non-blocking
     # edge, while closed_at remains null for these open issues.

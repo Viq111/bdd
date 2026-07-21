@@ -29,6 +29,9 @@ func TestFixturesParseToTypedOrRawRecords(t *testing.T) {
 				t.Fatalf("%s did not retain raw data", record.Type())
 			}
 		}
+		if issue, ok := records[0].(Issue); !ok || len(issue.Labels) == 0 || len(issue.Dependencies) == 0 || len(issue.Comments) == 0 {
+			t.Fatalf("%s first record did not preserve issue fields: %#v", fixture, records[0])
+		}
 	}
 }
 

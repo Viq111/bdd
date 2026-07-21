@@ -23,7 +23,24 @@ func (r baseRecord) RawJSON() map[string]json.RawMessage { return r.Raw }
 
 type Issue struct {
 	baseRecord
-	ID, Title string
+	ID, Title, Description, Design, AcceptanceCriteria, Notes, Status, IssueType string
+	Labels                                                                       []string
+	Dependencies                                                                 []Dependency
+	Comments                                                                     []Comment
+}
+
+// Dependency and Comment expose the parts of issue exports that the mapping
+// layer needs first. Their Raw fields retain any later-added Beads fields.
+type Dependency struct {
+	IssueID string `json:"issue_id"`
+	Kind    string `json:"type"`
+	Raw     map[string]json.RawMessage
+}
+
+type Comment struct {
+	ID   string `json:"id"`
+	Body string `json:"body"`
+	Raw  map[string]json.RawMessage
 }
 type Memory struct {
 	baseRecord
@@ -61,14 +78,31 @@ func ParseJSONL(input io.Reader) ([]Record, error) {
 		switch kind {
 		case "issue":
 			var v struct {
-				ID    string `json:"id"`
-				Title string `json:"title"`
+				ID                 string       `json:"id"`
+				Title              string       `json:"title"`
+				Description        string       `json:"description"`
+				Design             string       `json:"design"`
+				AcceptanceCriteria string       `json:"acceptance_criteria"`
+				Notes              string       `json:"notes"`
+				Status             string       `json:"status"`
+				IssueType          string       `json:"issue_type"`
+				Labels             []string     `json:"labels"`
+				Dependencies       []Dependency `json:"dependencies"`
+				Comments           []Comment    `json:"comments"`
 			}
-			_ = json.Unmarshal(data, &v)
+			if err := json.Unmarshal(data, &v); err != nil {
+				return nil, fmt.Errorf("export line %d: incompatible issue envelope: %w", line, err)
+			}
 			if v.ID == "" {
 				return nil, fmt.Errorf("export line %d: incompatible issue envelope: missing id", line)
 			}
-			records = append(records, Issue{base, v.ID, v.Title})
+			for i := range v.Dependencies {
+				v.Dependencies[i].Raw = rawObject(raw["dependencies"], i)
+			}
+			for i := range v.Comments {
+				v.Comments[i].Raw = rawObject(raw["comments"], i)
+			}
+			records = append(records, Issue{base, v.ID, v.Title, v.Description, v.Design, v.AcceptanceCriteria, v.Notes, v.Status, v.IssueType, v.Labels, v.Dependencies, v.Comments})
 		case "memory":
 			var v struct {
 				Key   string `json:"key"`
@@ -86,4 +120,12 @@ func ParseJSONL(input io.Reader) ([]Record, error) {
 		return nil, fmt.Errorf("read export: %w", err)
 	}
 	return records, nil
+}
+
+func rawObject(array json.RawMessage, index int) map[string]json.RawMessage {
+	var objects []map[string]json.RawMessage
+	if json.Unmarshal(array, &objects) != nil || index >= len(objects) {
+		return nil
+	}
+	return objects[index]
 }
