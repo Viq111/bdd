@@ -42,3 +42,25 @@ func TestParseJSONLRejectsIncompatibleEnvelope(t *testing.T) {
 		}
 	}
 }
+
+func TestParseJSONLRetainsUnsupportedIssueAndContinues(t *testing.T) {
+	input := `{"_type":"issue","id":"valid","labels":["ok"]}
+{"_type":"issue","id":"unsupported","labels":"not-an-array"}
+{"_type":"memory","key":"after","value":"still parsed"}`
+	records, err := ParseJSONL(bytes.NewBufferString(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("record count = %d, want 3", len(records))
+	}
+	if _, ok := records[0].(Issue); !ok {
+		t.Fatalf("first record = %T, want Issue", records[0])
+	}
+	if _, ok := records[1].(RawRecord); !ok {
+		t.Fatalf("unsupported issue = %T, want RawRecord", records[1])
+	}
+	if _, ok := records[2].(Memory); !ok {
+		t.Fatalf("record after unsupported issue = %T, want Memory", records[2])
+	}
+}

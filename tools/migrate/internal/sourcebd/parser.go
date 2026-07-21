@@ -77,6 +77,16 @@ func ParseJSONL(input io.Reader) ([]Record, error) {
 		base := baseRecord{Kind: kind, Raw: raw}
 		switch kind {
 		case "issue":
+			// ID is part of the issue envelope.  Its absence or an incompatible
+			// shape means the record cannot be identified, so fail the snapshot.
+			// Other known fields belong to an individual issue and may evolve;
+			// retain such an issue raw rather than discarding unrelated records.
+			var envelope struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(data, &envelope); err != nil || envelope.ID == "" {
+				return nil, fmt.Errorf("export line %d: incompatible issue envelope: missing or invalid id", line)
+			}
 			var v struct {
 				ID                 string       `json:"id"`
 				Title              string       `json:"title"`
@@ -91,10 +101,8 @@ func ParseJSONL(input io.Reader) ([]Record, error) {
 				Comments           []Comment    `json:"comments"`
 			}
 			if err := json.Unmarshal(data, &v); err != nil {
-				return nil, fmt.Errorf("export line %d: incompatible issue envelope: %w", line, err)
-			}
-			if v.ID == "" {
-				return nil, fmt.Errorf("export line %d: incompatible issue envelope: missing id", line)
+				records = append(records, RawRecord{base})
+				continue
 			}
 			for i := range v.Dependencies {
 				v.Dependencies[i].Raw = rawObject(raw["dependencies"], i)
