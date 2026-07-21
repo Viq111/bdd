@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/viq111/bdd/tools/migrate/internal/model"
 	"github.com/viq111/bdd/tools/migrate/internal/sourcebd"
 	"github.com/viq111/bdd/tools/migrate/internal/warnings"
 )
@@ -103,7 +104,7 @@ func TestMappingMalformedDuplicateAndAnonymousComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Cards) != 1 || p.Cards[0].Status != "custom-status" || len(p.Workspace.Statuses) != 1 || len(p.Workspace.Types) != 1 {
+	if len(p.Cards) != 1 || p.Cards[0].Status != "custom-status" || !reflect.DeepEqual(p.Workspace.Statuses, []model.StatusPlan{{Name: "custom-status", Category: "done"}}) || !reflect.DeepEqual(p.Workspace.Types, []model.TypePlan{{Name: "custom-type"}}) {
 		t.Fatalf("custom mapping %#v", p)
 	}
 	if len(p.Runes) != 1 || p.Runes[0].Metadata["legacy_bd_id"] != "role1" {
@@ -113,6 +114,31 @@ func TestMappingMalformedDuplicateAndAnonymousComments(t *testing.T) {
 		t.Fatalf("comment ordering %#v", p.Notes)
 	}
 	want := "warning: bad\\n: invalid bdd card ID; skipped record\nwarning: badrole: role title does not produce a valid rune key; skipped record\nwarning: card: ambiguous identical comment; collapsed duplicate\nwarning: role2: duplicate rune key \"role/qa\"; skipped record"
+	if got := warnings.Render(p.Warnings); got != want {
+		t.Fatalf("warnings = %q, want %q", got, want)
+	}
+}
+
+func TestMappingSkipsUnsupportedStatusAndTypes(t *testing.T) {
+	data := `{"_type":"issue","id":"supported","title":"supported","status":"verified","issue_type":"custom"}
+{"_type":"issue","id":"unknown-status","title":"unknown status","status":"missing-category","issue_type":"task"}
+{"_type":"issue","id":"unsupported-type","title":"unsupported type","status":"open","issue_type":"unknown"}
+{"_type":"issue","id":"infrastructure-type","title":"infrastructure type","status":"open","issue_type":"infrastructure"}`
+	r, err := sourcebd.ParseJSONL(bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(r, Config{StatusCategories: map[string]string{"verified": "done"}, CustomTypes: map[string]bool{"custom": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Cards) != 1 || p.Cards[0].ID != "supported" || p.Cards[0].Status != "verified" || p.Cards[0].Type != "custom" {
+		t.Fatalf("supported card mapping %#v", p.Cards)
+	}
+	if !reflect.DeepEqual(p.Workspace.Statuses, []model.StatusPlan{{Name: "verified", Category: "done"}}) || !reflect.DeepEqual(p.Workspace.Types, []model.TypePlan{{Name: "custom"}}) {
+		t.Fatalf("workspace mapping %#v", p.Workspace)
+	}
+	want := "warning: infrastructure-type: unsupported issue type \"infrastructure\"; skipped record\nwarning: unknown-status: status \"missing-category\" has no category; skipped record\nwarning: unsupported-type: unsupported issue type \"unknown\"; skipped record"
 	if got := warnings.Render(p.Warnings); got != want {
 		t.Fatalf("warnings = %q, want %q", got, want)
 	}
