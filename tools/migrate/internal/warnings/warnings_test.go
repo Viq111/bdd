@@ -1,6 +1,7 @@
 package warnings
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/viq111/bdd/tools/migrate/internal/model"
@@ -17,8 +18,12 @@ func TestRenderSortsLinesAndReasonsWithoutMutatingInput(t *testing.T) {
 }
 
 func TestRenderEscapesLineTerminatorsInSourceID(t *testing.T) {
-	values := []model.Warning{{SourceID: "bad\r\nnext", Reasons: []string{"invalid bdd card ID; skipped record"}}}
-	if got, want := Render(values), `warning: bad\r\nnext: invalid bdd card ID; skipped record`; got != want {
+	values := []model.Warning{{SourceID: "bad\r\nnext", Reasons: []string{"invalid bdd card ID; skipped record", "skipped dependency to target\r\nnext"}}}
+	got := Render(values)
+	if want := `warning: bad\r\nnext: invalid bdd card ID; skipped record; skipped dependency to target\r\nnext`; got != want {
 		t.Fatalf("Render() = %q, want %q", got, want)
+	}
+	if strings.Count(got, "\n") != 0 {
+		t.Fatalf("Render() emitted more than one physical line: %q", got)
 	}
 }
