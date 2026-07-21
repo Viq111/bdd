@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/viq111/bdd/tools/migrate/internal/sourcebd"
 	"github.com/viq111/bdd/tools/migrate/internal/warnings"
@@ -37,6 +39,14 @@ func TestOrchaFixtureAccountsForRoleAttachments(t *testing.T) {
 	if len(p.Runes) != 1 || p.Runes[0].Key != "role/programmer" || len(p.Memories) != 1 {
 		t.Fatalf("fixture plans: runes=%#v memories=%#v", p.Runes, p.Memories)
 	}
+	rune := p.Runes[0]
+	if rune.Kind != "role" || rune.Title != "[role] Programmer" || rune.Body != "first line\nsecond line" || !rune.Enabled || !rune.Protected || !reflect.DeepEqual(rune.Metadata, map[string]string{"legacy_system": "beads", "legacy_bd_id": "orcha-wisp-abc", "legacy_status": "awaiting_review"}) {
+		t.Fatalf("rune mapping = %#v", rune)
+	}
+	memory := p.Memories[0]
+	if memory.Key != "orcha/agent" || memory.Body != "remember this" || memory.Actor != "bdd-migration" || memory.CreatedAt != nil {
+		t.Fatalf("memory mapping = %#v", memory)
+	}
 	want := `warning: orcha-wisp-abc: skipped dependency kind "related" to orcha-related; skipped dependency to orcha-dep because role is imported as a rune; skipped role-attached comments because role is imported as a rune; skipped role-attached notes because role is imported as a rune`
 	if got := warnings.Render(p.Warnings); got != want {
 		t.Fatalf("fixture warning = %q, want %q", got, want)
@@ -58,6 +68,20 @@ func TestOCPFixtureMapsEverySupportedRecord(t *testing.T) {
 	}
 	if len(p.Cards) != 1 || len(p.Memories) != 1 || len(p.Notes) != 2 {
 		t.Fatalf("fixture plans: cards=%#v memories=%#v notes=%#v", p.Cards, p.Memories, p.Notes)
+	}
+	card := p.Cards[0]
+	if card.ID != "ocp-123" || card.Title != "Migrate OCP" || card.Description != "multiline\ndescription" || card.Design != "keep raw" || card.Acceptance != "all fields" || card.Reproduction != "" || card.Status != "open" || card.Type != "feature" || card.Priority != 0 || card.Assignee != "" || card.Owner != "" || card.Creator != "" || card.ExternalRef != "" || card.Worktree != "" || !reflect.DeepEqual(card.Labels, []string{"release", "日本語"}) || card.CreatedAt == nil || card.CreatedAt.UTC().Format(time.RFC3339Nano) != "2026-07-20T12:00:00Z" || card.UpdatedAt != nil || card.ClosedAt != nil || card.DeferUntil != nil {
+		t.Fatalf("card mapping = %#v", card)
+	}
+	memory := p.Memories[0]
+	if memory.Key != "ocp/migration" || memory.Body != "state" || memory.Actor != "bdd-migration" || memory.CreatedAt == nil || memory.CreatedAt.UTC().Format(time.RFC3339Nano) != "2026-07-20T12:00:00Z" {
+		t.Fatalf("memory mapping = %#v", memory)
+	}
+	if got, want := p.Notes[1].SourceKey, "ocp-123/notes/78ec140f79eeb6a673f3f88f0b7bf66cd62b16923ea5d73a47f5474552f595bd"; got != want {
+		t.Fatalf("notes source key = %q, want %q", got, want)
+	}
+	if note := p.Notes[0]; note.CardID != "ocp-123" || note.SourceKey != "ocp-123/comment/ocp-comment-1" || note.SourceKind != "comment" || note.SourceID != "ocp-comment-1" || note.Author != "" || note.Body != `{"kind":"decision"}` || note.CreatedAt != nil {
+		t.Fatalf("comment mapping = %#v", note)
 	}
 	want := "warning: ocp-123: skipped dependency kind \"parent-child\" to ocp-100; skipped dependency to ocp-122 because endpoint was not imported\nwarning: opaque-1: unsupported export record; skipped record"
 	if got := warnings.Render(p.Warnings); got != want {
@@ -88,7 +112,7 @@ func TestMappingMalformedDuplicateAndAnonymousComments(t *testing.T) {
 	if len(p.Notes) != 2 || p.Notes[0].Body != "same" || p.Notes[1].Body != "later" {
 		t.Fatalf("comment ordering %#v", p.Notes)
 	}
-	want := "warning: bad\n: invalid bdd card ID; skipped record\nwarning: badrole: role title does not produce a valid rune key; skipped record\nwarning: card: ambiguous identical comment; collapsed duplicate\nwarning: role2: duplicate rune key \"role/qa\"; skipped record"
+	want := "warning: bad\\n: invalid bdd card ID; skipped record\nwarning: badrole: role title does not produce a valid rune key; skipped record\nwarning: card: ambiguous identical comment; collapsed duplicate\nwarning: role2: duplicate rune key \"role/qa\"; skipped record"
 	if got := warnings.Render(p.Warnings); got != want {
 		t.Fatalf("warnings = %q, want %q", got, want)
 	}
@@ -106,10 +130,10 @@ func TestCardFieldsReproductionNotesAndEdges(t *testing.T) {
 		t.Fatalf("cards %#v", p.Cards)
 	}
 	c := p.Cards[0]
-	if c.Description == c.Reproduction || c.Reproduction != "1. run\n### detail\nx" || c.Assignee != "" || c.CreatedAt.UTC().Format("15:04") != "23:00" {
+	if c.ID != "child" || c.Title != "Bug" || c.Description != "intro\n## Steps TO reproduce\n1. run\n### detail\nx\n## Next\ny" || c.Description == c.Reproduction || c.Reproduction != "1. run\n### detail\nx" || c.Design != "" || c.Acceptance != "" || c.Status != "open" || c.Type != "bug" || c.Priority != 3 || c.Assignee != "" || c.Owner != "owner" || c.Creator != "creator" || c.ExternalRef != "ref" || c.Worktree != "wt" || !reflect.DeepEqual(c.Labels, []string{"a", "z"}) || c.CreatedAt == nil || c.CreatedAt.UTC().Format(time.RFC3339Nano) != "2025-12-31T23:00:00Z" || c.UpdatedAt != nil || c.ClosedAt != nil || c.DeferUntil != nil {
 		t.Fatalf("card mapping %#v", c)
 	}
-	if len(p.Notes) != 2 || p.Notes[0].SourceKind != "notes" || len(p.Edges) != 1 || p.Edges[0].ParentID != "parent" || p.Edges[0].ChildID != "child" {
+	if len(p.Notes) != 2 || p.Notes[0].CardID != "child" || p.Notes[0].SourceKind != "notes" || p.Notes[0].SourceID != "16a0eeb0791b6c92451fd284dd9f599e0a7dbe7f6ebea6e2d2d06c7f74aec112" || p.Notes[0].SourceKey != "child/notes/16a0eeb0791b6c92451fd284dd9f599e0a7dbe7f6ebea6e2d2d06c7f74aec112" || p.Notes[0].Body != "snapshot" || p.Notes[0].CreatedAt != nil || p.Notes[1].SourceKey != "child/comment/c" || p.Notes[1].Author != "me" || p.Notes[1].Body != "comment" || p.Notes[1].CreatedAt == nil || p.Notes[1].CreatedAt.UTC().Format(time.RFC3339Nano) != "2026-01-02T00:00:00Z" || len(p.Edges) != 1 || p.Edges[0].ParentID != "parent" || p.Edges[0].ChildID != "child" {
 		t.Fatalf("notes/edges %#v %#v", p.Notes, p.Edges)
 	}
 	if got := warnings.Render(p.Warnings); got != `warning: child: skipped dependency kind "related" to other` {

@@ -16,7 +16,14 @@ func Render(values []model.Warning) string {
 	for _, w := range copy {
 		reasons := append([]string(nil), w.Reasons...)
 		sort.Strings(reasons)
-		lines = append(lines, fmt.Sprintf("warning: %s: %s", w.SourceID, strings.Join(reasons, "; ")))
+		lines = append(lines, fmt.Sprintf("warning: %s: %s", renderSourceID(w.SourceID), strings.Join(reasons, "; ")))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// renderSourceID keeps untrusted source identifiers from creating additional
+// physical stderr lines. Escaping also makes the original offending bytes
+// visible to the operator instead of silently discarding them.
+func renderSourceID(id string) string {
+	return strings.NewReplacer("\r", "\\r", "\n", "\\n").Replace(id)
 }
