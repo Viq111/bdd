@@ -2,6 +2,7 @@ package mapping
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -37,6 +38,7 @@ func TestOrchaFixtureAccountsForRoleAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertFixtureRecordsAccounted(t, r, p)
 	if len(p.Runes) != 1 || p.Runes[0].Key != "role/programmer" || len(p.Memories) != 1 {
 		t.Fatalf("fixture plans: runes=%#v memories=%#v", p.Runes, p.Memories)
 	}
@@ -48,7 +50,7 @@ func TestOrchaFixtureAccountsForRoleAttachments(t *testing.T) {
 	if memory.Key != "orcha/agent" || memory.Body != "remember this" || memory.Actor != "bdd-migration" || memory.CreatedAt != nil {
 		t.Fatalf("memory mapping = %#v", memory)
 	}
-	want := `warning: orcha-wisp-abc: skipped dependency kind "related" to orcha-related; skipped dependency to orcha-dep because role is imported as a rune; skipped role-attached comments because role is imported as a rune; skipped role-attached notes because role is imported as a rune`
+	want := "warning: orcha-wisp-abc: skipped dependency kind \"related\" to orcha-related; skipped dependency to orcha-dep because role is imported as a rune; skipped role-attached comments because role is imported as a rune; skipped role-attached notes because role is imported as a rune\nwarning: workspace: built-in status definition \"awaiting_review\" requires no workspace plan; skipped record; built-in type definition \"role\" requires no workspace plan; skipped record"
 	if got := warnings.Render(p.Warnings); got != want {
 		t.Fatalf("fixture warning = %q, want %q", got, want)
 	}
@@ -67,6 +69,7 @@ func TestOCPFixtureMapsEverySupportedRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertFixtureRecordsAccounted(t, r, p)
 	if len(p.Cards) != 1 || len(p.Memories) != 1 || len(p.Notes) != 2 {
 		t.Fatalf("fixture plans: cards=%#v memories=%#v notes=%#v", p.Cards, p.Memories, p.Notes)
 	}
@@ -84,10 +87,174 @@ func TestOCPFixtureMapsEverySupportedRecord(t *testing.T) {
 	if note := p.Notes[0]; note.CardID != "ocp-123" || note.SourceKey != "ocp-123/comment/ocp-comment-1" || note.SourceKind != "comment" || note.SourceID != "ocp-comment-1" || note.Author != "" || note.Body != `{"kind":"decision"}` || note.CreatedAt != nil {
 		t.Fatalf("comment mapping = %#v", note)
 	}
-	want := "warning: ocp-123: skipped dependency kind \"parent-child\" to ocp-100; skipped dependency to ocp-122 because endpoint was not imported\nwarning: opaque-1: unsupported export record; skipped record"
+	want := "warning: ocp-123: skipped dependency kind \"parent-child\" to ocp-100; skipped dependency to ocp-122 because endpoint was not imported\nwarning: opaque-1: unsupported export record; skipped record\nwarning: workspace: status definition \"verified\" has no category; skipped record"
 	if got := warnings.Render(p.Warnings); got != want {
 		t.Fatalf("fixture warning = %q, want %q", got, want)
 	}
+}
+
+func TestFixtureMappingDeterminism(t *testing.T) {
+	for _, fixture := range []string{"ocp-bd-1.0.3.jsonl", "orcha-bd-1.0.3.jsonl"} {
+		t.Run(fixture, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "testdata", fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			records, err := sourcebd.ParseJSONL(bytes.NewReader(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, err := Map(records, Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := Map(records, Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(canonicalHashes(first), canonicalHashes(second)) {
+				t.Fatalf("canonical hashes differ:\nfirst=%#v\nsecond=%#v", canonicalHashes(first), canonicalHashes(second))
+			}
+			if warnings.Render(first.Warnings) != warnings.Render(second.Warnings) {
+				t.Fatalf("warnings differ:\nfirst=%q\nsecond=%q", warnings.Render(first.Warnings), warnings.Render(second.Warnings))
+			}
+		})
+	}
+}
+
+func canonicalHashes(p model.Plan) []string {
+	var hashes []string
+	for _, value := range p.Cards {
+		hashes = append(hashes, "card:"+value.Hash)
+	}
+	for _, value := range p.Runes {
+		hashes = append(hashes, "rune:"+value.Hash)
+	}
+	for _, value := range p.Memories {
+		hashes = append(hashes, "memory:"+value.Hash)
+	}
+	for _, value := range p.Notes {
+		hashes = append(hashes, "note:"+value.Hash)
+	}
+	for _, value := range p.Edges {
+		hashes = append(hashes, "edge:"+value.Hash)
+	}
+	return hashes
+}
+
+func assertFixtureRecordsAccounted(t *testing.T, records []sourcebd.Record, p model.Plan) {
+	t.Helper()
+	for _, record := range records {
+		switch value := record.(type) {
+		case sourcebd.Issue:
+			if hasCard(p, value.ID) || hasRune(p, value.ID) || hasWarning(p, value.ID) {
+				continue
+			}
+			t.Errorf("issue %q has no plan value or warning", value.ID)
+		case sourcebd.Memory:
+			if !hasMemory(p, value.Key) {
+				t.Errorf("memory %q has no plan value", value.Key)
+			}
+		case sourcebd.Infrastructure:
+			if !hasWorkspaceDefinition(p, value.RawJSON()) && !hasWorkspaceWarningForDefinition(p, value.RawJSON()) {
+				t.Errorf("infrastructure record %#v has no plan value or warning", value.RawJSON())
+			}
+		case sourcebd.RawRecord:
+			id := rawString(value.RawJSON(), "id", "workspace")
+			if !hasWarning(p, id) {
+				t.Errorf("raw record %q has no warning", id)
+			}
+		}
+	}
+}
+
+func hasCard(p model.Plan, id string) bool {
+	for _, value := range p.Cards {
+		if value.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRune(p model.Plan, id string) bool {
+	for _, value := range p.Runes {
+		if value.Metadata["legacy_bd_id"] == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMemory(p model.Plan, key string) bool {
+	for _, value := range p.Memories {
+		if value.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWorkspaceDefinition(p model.Plan, raw map[string]json.RawMessage) bool {
+	name := rawString(raw, "name", "")
+	kind := rawString(raw, "kind", "")
+	if kind == "" {
+		_ = json.Unmarshal(raw["_type"], &kind)
+	}
+	if kind == "status" || kind == "custom_status" {
+		for _, value := range p.Workspace.Statuses {
+			if value.Name == name {
+				return true
+			}
+		}
+	}
+	if kind == "type" || kind == "custom_type" {
+		for _, value := range p.Workspace.Types {
+			if value.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasWarning(p model.Plan, id string) bool {
+	for _, value := range p.Warnings {
+		if value.SourceID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWorkspaceWarningForDefinition(p model.Plan, raw map[string]json.RawMessage) bool {
+	kind := rawString(raw, "kind", "")
+	if kind == "" {
+		_ = json.Unmarshal(raw["_type"], &kind)
+	}
+	name := rawString(raw, "name", "")
+	var prefixes []string
+	switch kind {
+	case "status", "custom_status":
+		prefixes = []string{"status definition \"" + name + "\"", "built-in status definition \"" + name + "\""}
+	case "type", "custom_type":
+		prefixes = []string{"built-in type definition \"" + name + "\""}
+	default:
+		prefixes = []string{"unsupported infrastructure record"}
+	}
+	for _, value := range p.Warnings {
+		if value.SourceID != "workspace" {
+			continue
+		}
+		for _, reason := range value.Reasons {
+			for _, prefix := range prefixes {
+				if strings.HasPrefix(reason, prefix) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func TestMappingMalformedDuplicateAndAnonymousComments(t *testing.T) {

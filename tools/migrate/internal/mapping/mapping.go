@@ -33,36 +33,66 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 	if cfg.CustomTypes == nil {
 		cfg.CustomTypes = map[string]bool{}
 	}
-	// Fixture exports may carry definition records. They are equivalent to the
-	// supplementary read-only configuration reads and make the pure mapper easy
-	// to exercise without a runner.
-	for _, r := range records {
-		if infra, ok := r.(sourcebd.Infrastructure); ok {
-			raw := infra.RawJSON()
-			switch infra.Type() {
-			case "status":
-				name := rawString(raw, "name", "")
-				if name != "" {
-					cfg.StatusCategories[name] = rawString(raw, "category", "")
-				}
-			case "type":
-				name := rawString(raw, "name", "")
-				if name != "" {
-					cfg.CustomTypes[name] = true
-				}
-			}
-		}
-	}
 	p := model.Plan{Workspace: model.WorkspacePlan{IssuePrefix: cfg.IssuePrefix}}
 	warns := map[string][]string{}
-	cards := map[string]bool{}
-	roles := map[string]string{}
 	add := func(id, reason string) {
 		if id == "" {
 			id = "workspace"
 		}
 		warns[id] = append(warns[id], reason)
 	}
+	// Fixture exports may carry definition records. They are equivalent to the
+	// supplementary read-only configuration reads and make the pure mapper easy
+	// to exercise without a runner. Every such record gets an explicit plan
+	// value or warning; definitions must not disappear merely because no card
+	// happens to use them in the same export.
+	for _, r := range records {
+		infra, ok := r.(sourcebd.Infrastructure)
+		if !ok {
+			continue
+		}
+		raw := infra.RawJSON()
+		kind := infra.Type()
+		if kind == "infrastructure" {
+			kind = rawString(raw, "kind", "")
+		}
+		name := rawString(raw, "name", "")
+		switch kind {
+		case "status", "custom_status":
+			category := rawString(raw, "category", "")
+			if category == "" {
+				category = cfg.StatusCategories[name]
+			}
+			if category == "" {
+				category = cfg.LegacyStatusCategories[name]
+			}
+			if name == "" || category == "" {
+				add("workspace", "status definition "+fmt.Sprintf("%q", name)+" has no category; skipped record")
+				continue
+			}
+			cfg.StatusCategories[name] = category
+			if !builtInStatuses[name] {
+				p.Workspace.Statuses = append(p.Workspace.Statuses, model.StatusPlan{Name: name, Category: category})
+			} else {
+				add("workspace", "built-in status definition "+fmt.Sprintf("%q", name)+" requires no workspace plan; skipped record")
+			}
+		case "type", "custom_type":
+			if name == "" {
+				add("workspace", "type definition has no name; skipped record")
+				continue
+			}
+			cfg.CustomTypes[name] = true
+			if !builtInTypes[name] && name != "role" {
+				p.Workspace.Types = append(p.Workspace.Types, model.TypePlan{Name: name})
+			} else {
+				add("workspace", "built-in type definition "+fmt.Sprintf("%q", name)+" requires no workspace plan; skipped record")
+			}
+		default:
+			add("workspace", "unsupported infrastructure record; skipped record")
+		}
+	}
+	cards := map[string]bool{}
+	roles := map[string]string{}
 	for _, r := range records {
 		switch v := r.(type) {
 		case sourcebd.Memory:
