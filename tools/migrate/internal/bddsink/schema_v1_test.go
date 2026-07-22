@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"github.com/viq111/bdd"
 	"github.com/viq111/bdd/internal/sqlite"
 	"github.com/viq111/bdd/tools/migrate/internal/mapping"
@@ -88,11 +89,15 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 		t.Fatalf("initial ApplyWithWarnings() = %v, %v", warnings, err)
 	}
 	before := sinkCounts(t, ctx, path)
+	beforeProjection := logicalProjection(t, ctx, path)
 	if warnings, err := ApplyWithWarnings(ctx, path, "src", plan); err != nil || len(warnings) != 0 {
 		t.Fatalf("identical rerun = %v, %v", warnings, err)
 	}
 	if got := sinkCounts(t, ctx, path); got != before {
 		t.Fatalf("identical rerun wrote logical rows: got %#v want %#v", got, before)
+	}
+	if got := logicalProjection(t, ctx, path); !bytes.Equal(got, beforeProjection) {
+		t.Fatalf("identical rerun changed logical projection:\n got %s\nwant %s", got, beforeProjection)
 	}
 
 	raw, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
@@ -158,7 +163,18 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 	changed.Notes = append(changed.Notes, model.NotePlan{CardID: "src-1", SourceKey: "src-1/comment/b", SourceKind: "comment", SourceID: "b", Body: "second"})
 	changed.Edges = []model.EdgePlan{{ParentID: "src-1", ChildID: "src-3"}}
 	changed.Memories = []model.MemoryPlan{{Key: "source/memory", Body: "two", Actor: actor}}
-	changed.Runes = append(changed.Runes, model.RunePlan{Key: "role/collision", Kind: "role", Title: "collision", Enabled: true, Protected: true, Metadata: map[string]string{"legacy_bd_id": "role-collision"}})
+	// Omitting source records must not delete or rewrite their destination
+	// counterparts. Keep snapshots that include their complete rows and card
+	// provenance before applying a plan that removes all three.
+	removedCard := projection(t, ctx, path, []projectionQuery{
+		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(dispatchable),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards WHERE id='src-2' ORDER BY id`},
+		{"labels", `SELECT quote(card_id),quote(label) FROM labels WHERE card_id='src-2' ORDER BY card_id,label`},
+		{"events", `SELECT quote(id),quote(subject_kind),quote(subject_key),quote(revision),quote(action),quote(actor),quote(payload_json),quote(created_at) FROM events WHERE subject_kind='card' AND subject_key='src-2' ORDER BY id`},
+	})
+	removedRune := projection(t, ctx, path, []projectionQuery{{"runes", `SELECT quote(key),quote(kind),quote(title),quote(body),quote(metadata_json),quote(enabled),quote(protected),quote(created_by),quote(updated_by),quote(created_at),quote(updated_at),quote(revision) FROM runes WHERE key='role/source' ORDER BY key`}})
+	removedMemory := projection(t, ctx, path, []projectionQuery{{"memories", `SELECT quote(key),quote(body),quote(created_by),quote(updated_by),quote(created_at),quote(updated_at),quote(revision) FROM memories WHERE key='source/memory' ORDER BY key`}})
+	changed.Runes = []model.RunePlan{{Key: "role/collision", Kind: "role", Title: "collision", Enabled: true, Protected: true, Metadata: map[string]string{"legacy_bd_id": "role-collision"}}}
+	changed.Memories = nil
 	warnings, err := ApplyWithWarnings(ctx, path, "src", changed)
 	if err != nil {
 		t.Fatal(err)
@@ -177,6 +193,19 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 	}
 	if _, err := db.GetCard(ctx, "src-2"); err != nil { // source removal never deletes.
 		t.Fatal(err)
+	}
+	if got := projection(t, ctx, path, []projectionQuery{
+		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(dispatchable),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards WHERE id='src-2' ORDER BY id`},
+		{"labels", `SELECT quote(card_id),quote(label) FROM labels WHERE card_id='src-2' ORDER BY card_id,label`},
+		{"events", `SELECT quote(id),quote(subject_kind),quote(subject_key),quote(revision),quote(action),quote(actor),quote(payload_json),quote(created_at) FROM events WHERE subject_kind='card' AND subject_key='src-2' ORDER BY id`},
+	}); !bytes.Equal(got, removedCard) {
+		t.Fatalf("removed source card changed destination record:\n got %s\nwant %s", got, removedCard)
+	}
+	if got := projection(t, ctx, path, []projectionQuery{{"runes", `SELECT quote(key),quote(kind),quote(title),quote(body),quote(metadata_json),quote(enabled),quote(protected),quote(created_by),quote(updated_by),quote(created_at),quote(updated_at),quote(revision) FROM runes WHERE key='role/source' ORDER BY key`}}); !bytes.Equal(got, removedRune) {
+		t.Fatalf("removed source rune changed destination record:\n got %s\nwant %s", got, removedRune)
+	}
+	if got := projection(t, ctx, path, []projectionQuery{{"memories", `SELECT quote(key),quote(body),quote(created_by),quote(updated_by),quote(created_at),quote(updated_at),quote(revision) FROM memories WHERE key='source/memory' ORDER BY key`}}); !bytes.Equal(got, removedMemory) {
+		t.Fatalf("removed source memory changed destination record:\n got %s\nwant %s", got, removedMemory)
 	}
 	if native, err := db.GetCard(ctx, "native"); err != nil || native.Title != "native" || len(native.Parents) != 1 || native.Parents[0].ID != "src-1" {
 		t.Fatalf("destination-only card/edge changed: %#v, %v", native, err)
@@ -216,6 +245,76 @@ func sinkCounts(t *testing.T, ctx context.Context, path string) counts {
 		t.Fatal(err)
 	}
 	return got
+}
+
+// logicalProjection is a byte-stable snapshot of every logical table that a
+// migration can affect. It intentionally retains complete rows (not merely
+// counts), including individual revisions, provenance payloads, and times.
+func logicalProjection(t *testing.T, ctx context.Context, path string) []byte {
+	t.Helper()
+	return projection(t, ctx, path, []projectionQuery{
+		{"workspace", `SELECT quote(singleton),quote(prefix),quote(created_at) FROM workspace ORDER BY singleton`},
+		{"status_definitions", `SELECT quote(name),quote(category),quote(built_in) FROM status_definitions ORDER BY name`},
+		{"type_definitions", `SELECT quote(name),quote(built_in) FROM type_definitions ORDER BY name`},
+		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(dispatchable),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards ORDER BY id`},
+		{"labels", `SELECT quote(card_id),quote(label) FROM labels ORDER BY card_id,label`},
+		{"card_edges", `SELECT quote(parent_id),quote(child_id),quote(created_at),quote(created_by) FROM card_edges ORDER BY parent_id,child_id`},
+		{"notes", `SELECT quote(id),quote(card_id),quote(author),quote(body),quote(created_at) FROM notes ORDER BY id`},
+		{"memories", `SELECT quote(key),quote(body),quote(created_by),quote(updated_by),quote(created_at),quote(updated_at),quote(revision) FROM memories ORDER BY key`},
+		{"runes", `SELECT quote(key),quote(kind),quote(title),quote(body),quote(metadata_json),quote(enabled),quote(protected),quote(created_by),quote(updated_by),quote(created_at),quote(updated_at),quote(revision) FROM runes ORDER BY key`},
+		{"events", `SELECT quote(id),quote(subject_kind),quote(subject_key),quote(revision),quote(action),quote(actor),quote(payload_json),quote(created_at) FROM events ORDER BY id`},
+		{"config", `SELECT quote(key),quote(value),quote(updated_at),quote(updated_by) FROM config ORDER BY key`},
+	})
+}
+
+type projectionQuery struct{ table, query string }
+
+func projection(t *testing.T, ctx context.Context, path string, queries []projectionQuery) []byte {
+	t.Helper()
+	db, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var out []byte
+	for _, q := range queries {
+		rows, err := db.QueryContext(ctx, q.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			values := make([]any, len(columns))
+			pointers := make([]any, len(values))
+			for i := range values {
+				pointers[i] = &values[i]
+			}
+			if err := rows.Scan(pointers...); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			row := append([]any{q.table}, values...)
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			out = append(out, encoded...)
+			out = append(out, '\n')
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
 }
 
 func TestApplyInitialImportIsPubliclyReadable(t *testing.T) {
