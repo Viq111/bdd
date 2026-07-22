@@ -2,9 +2,15 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestPrimeHumanOutputListsSupportedCommandsAndMemories(t *testing.T) {
@@ -74,9 +80,6 @@ func TestPrimeJSONIncludesMemories(t *testing.T) {
 	if len(result.Memories) != 2 {
 		t.Fatalf("len(result.Memories) = %d, want 2", len(result.Memories))
 	}
-	if result.SchemaVersion == 0 {
-		t.Fatal("result.SchemaVersion = 0, want > 0")
-	}
 }
 
 func TestPrimeMemoryLimit(t *testing.T) {
@@ -144,6 +147,80 @@ func TestPrimeNoMemories(t *testing.T) {
 	}
 	if result.Memories != nil {
 		t.Fatalf("result.Memories = %v, want nil with --no-memories", result.Memories)
+	}
+}
+
+func TestPrimeHeaderOmitsDatabaseAndSchemaOnCurrentSchema(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--workspace", dir, "prime"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(prime) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	out := stdout.String()
+	if strings.Contains(out, "database:") {
+		t.Fatalf("prime output contains a database: line; got:\n%s", out)
+	}
+	if strings.Contains(out, "schema:") {
+		t.Fatalf("prime output contains a schema: line; got:\n%s", out)
+	}
+	if strings.Contains(out, "schema upgrade pending") {
+		t.Fatalf("prime output contains the upgrade nudge on a current schema; got:\n%s", out)
+	}
+	if !strings.Contains(out, "workspace:") {
+		t.Fatalf("prime output missing workspace: line; got:\n%s", out)
+	}
+
+	var result PrimeResult
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"--workspace", dir, "prime", "--json"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(prime --json) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	if strings.Contains(stdout.String(), `"database"`) || strings.Contains(stdout.String(), `"schema_version"`) {
+		t.Fatalf("prime --json output contains database/schema_version keys; got:\n%s", stdout.String())
+	}
+}
+
+func TestPrimeNudgesOnPendingUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, ".bdd", "bdd.sqlite")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	if err := raw.PingContext(context.Background()); err != nil {
+		t.Fatalf("PingContext() error = %v", err)
+	}
+	raw.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--workspace", dir, "prime"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(prime) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	out := stdout.String()
+	const want = "⚠ schema upgrade pending — run `bdd status --upgrade`"
+	if !strings.Contains(out, want) {
+		t.Fatalf("prime output missing upgrade nudge; got:\n%s", out)
+	}
+	if strings.Contains(out, "database:") || strings.Contains(out, "schema:") {
+		t.Fatalf("prime output still contains database/schema lines; got:\n%s", out)
+	}
+	if idx := strings.Index(out, want); idx == -1 || idx > strings.Index(out, "Commands:") {
+		t.Fatalf("upgrade nudge must appear ahead of the commands contract; got:\n%s", out)
 	}
 }
 

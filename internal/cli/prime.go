@@ -69,13 +69,11 @@ Snapshot and restore:
 // primeContract plus the memories section instead of this structure
 // directly.
 type PrimeResult struct {
-	Workspace     string         `json:"workspace"`
-	Database      string         `json:"database"`
-	Prefix        *string        `json:"prefix"`
-	SchemaVersion int            `json:"schema_version"`
-	MemoryCount   int            `json:"memory_count"`
-	MemoryLimit   *int           `json:"memory_limit,omitempty"`
-	Memories      []MemoryResult `json:"memories"`
+	Workspace   string         `json:"workspace"`
+	Prefix      *string        `json:"prefix"`
+	MemoryCount int            `json:"memory_count"`
+	MemoryLimit *int           `json:"memory_limit,omitempty"`
+	Memories    []MemoryResult `json:"memories"`
 }
 
 // runPrime implements `bdd prime [--memory-limit <n>] [--no-memories]`: the
@@ -132,16 +130,15 @@ func runPrime(g GlobalFlags, args []string, s *Streams) int {
 	}
 	defer db.Close()
 
-	onDisk, _, err := db.SchemaVersions(ctx)
+	onDisk, current, err := db.SchemaVersions(ctx)
 	if err != nil {
 		s.Errorf("bdd: prime: %v\n", err)
 		return ExitCode(err)
 	}
+	upgradePending := onDisk < current
 
 	result := PrimeResult{
-		Workspace:     workspaceDir(db.Path()),
-		Database:      db.Path(),
-		SchemaVersion: onDisk,
+		Workspace: workspaceDir(db.Path()),
 	}
 	if onDisk > 0 {
 		if prefix, err := db.Prefix(ctx); err == nil {
@@ -149,7 +146,7 @@ func runPrime(g GlobalFlags, args []string, s *Streams) int {
 		}
 	}
 
-	if !noMemories {
+	if !noMemories && !upgradePending {
 		memories, err := db.Memories(ctx, bdd.MemoryQuery{})
 		if err != nil {
 			s.Errorf("bdd: prime: %v\n", err)
@@ -168,10 +165,10 @@ func runPrime(g GlobalFlags, args []string, s *Streams) int {
 		}
 	}
 
-	return emitPrime(s, result)
+	return emitPrime(s, result, upgradePending)
 }
 
-func emitPrime(s *Streams, r PrimeResult) int {
+func emitPrime(s *Streams, r PrimeResult, upgradePending bool) int {
 	if s.JSON {
 		if err := NewJSONEncoder(s.Stdout).Object(r); err != nil {
 			s.Errorf("bdd: prime: %v\n", err)
@@ -181,17 +178,23 @@ func emitPrime(s *Streams, r PrimeResult) int {
 	}
 
 	fmt.Fprintf(s.Stdout, "workspace: %s\n", r.Workspace)
-	fmt.Fprintf(s.Stdout, "database:  %s\n", r.Database)
 	if r.Prefix != nil {
 		fmt.Fprintf(s.Stdout, "prefix:    %s\n", *r.Prefix)
 	}
-	fmt.Fprintf(s.Stdout, "schema:    %d\n\n", r.SchemaVersion)
+	if upgradePending {
+		fmt.Fprintln(s.Stdout, "⚠ schema upgrade pending — run `bdd status --upgrade`")
+	}
+	fmt.Fprintln(s.Stdout)
 
 	fmt.Fprint(s.Stdout, primeContract)
 
 	fmt.Fprintln(s.Stdout)
 	if r.Memories == nil {
-		fmt.Fprintln(s.Stdout, "Memories: skipped (--no-memories)")
+		if upgradePending {
+			fmt.Fprintln(s.Stdout, "Memories: skipped (schema upgrade pending)")
+		} else {
+			fmt.Fprintln(s.Stdout, "Memories: skipped (--no-memories)")
+		}
 		return ExitSuccess
 	}
 	if r.MemoryLimit != nil && r.MemoryCount > *r.MemoryLimit {
