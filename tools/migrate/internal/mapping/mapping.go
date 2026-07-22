@@ -69,6 +69,9 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 				add("workspace", "status definition "+fmt.Sprintf("%q", name)+" has no category; skipped record")
 				continue
 			}
+			if existing, ok := cfg.StatusCategories[name]; ok && existing != category {
+				return model.Plan{}, fmt.Errorf("incompatible status definitions for %q: categories %q and %q", name, existing, category)
+			}
 			cfg.StatusCategories[name] = category
 			if !builtInStatuses[name] {
 				p.Workspace.Statuses = append(p.Workspace.Statuses, model.StatusPlan{Name: name, Category: category})

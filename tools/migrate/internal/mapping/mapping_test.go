@@ -384,6 +384,21 @@ func TestMappingSkipsKeylessMemoriesAndDefaultsEmptyActors(t *testing.T) {
 	}
 }
 
+func TestMappingRejectsConflictingCustomStatusDefinitions(t *testing.T) {
+	records, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"status","name":"verified","category":"active"}
+{"_type":"status","name":"verified","category":"done"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(records, Config{})
+	if err == nil || !strings.Contains(err.Error(), `incompatible status definitions for "verified"`) {
+		t.Fatalf("Map() error = %v, want incompatible status definition error", err)
+	}
+	if len(p.Workspace.Statuses) != 0 {
+		t.Fatalf("Map() workspace statuses = %#v, want no plan", p.Workspace.Statuses)
+	}
+}
+
 func TestMappingDoesNotLeakFixtureDefinitionsIntoConfig(t *testing.T) {
 	cfg := Config{
 		StatusCategories:       map[string]string{},
