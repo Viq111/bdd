@@ -349,16 +349,26 @@ func verifyPublicLinks(c *bdd.Card, id string, edges []model.EdgePlan) error {
 			children = append(children, e.ChildID)
 		}
 	}
-	gotParents := make([]string, len(c.Parents))
-	for i, v := range c.Parents {
-		gotParents[i] = v.ID
+	// Edges to destination-only cards are additive and intentionally outside
+	// the imported projection.  Every source-owned link was already checked
+	// exactly by verifyEdgesTx; here assert that public reads expose it.
+	gotParents := make(map[string]bool, len(c.Parents))
+	for _, v := range c.Parents {
+		gotParents[v.ID] = true
 	}
-	gotChildren := make([]string, len(c.Children))
-	for i, v := range c.Children {
-		gotChildren[i] = v.ID
+	gotChildren := make(map[string]bool, len(c.Children))
+	for _, v := range c.Children {
+		gotChildren[v.ID] = true
 	}
-	if !equalStringSlices(gotParents, parents) || !equalStringSlices(gotChildren, children) {
-		return fmt.Errorf("bdd migration sink: public edge projection mismatch for %q", id)
+	for _, parent := range parents {
+		if !gotParents[parent] {
+			return fmt.Errorf("bdd migration sink: public edge projection mismatch for %q", id)
+		}
+	}
+	for _, child := range children {
+		if !gotChildren[child] {
+			return fmt.Errorf("bdd migration sink: public edge projection mismatch for %q", id)
+		}
 	}
 	return nil
 }

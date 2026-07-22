@@ -23,21 +23,30 @@ const actor = "bdd-migration"
 // Apply initializes destination through bdd.Init when it does not exist and
 // then writes the complete plan in one SQLite transaction.  A new database is
 // initialized at a sibling path and only published after public API checks.
-func Apply(ctx context.Context, destination, prefix string, plan model.Plan) (err error) {
+func Apply(ctx context.Context, destination, prefix string, plan model.Plan) error {
+	_, err := ApplyWithWarnings(ctx, destination, prefix, plan)
+	return err
+}
+
+// ApplyWithWarnings applies a plan and reports destination collisions that
+// were deliberately skipped.  Mapping warnings remain owned by mapping; these
+// warnings require inspecting the destination and are therefore discovered by
+// the sink.
+func ApplyWithWarnings(ctx context.Context, destination, prefix string, plan model.Plan) (warnings []model.Warning, err error) {
 	if destination == "" || prefix == "" {
-		return fmt.Errorf("bdd migration sink: destination and prefix are required")
+		return nil, fmt.Errorf("bdd migration sink: destination and prefix are required")
 	}
 	plan.Canonicalize()
 	_, statErr := os.Stat(destination)
 	newDB := errors.Is(statErr, os.ErrNotExist)
 	if statErr != nil && !newDB {
-		return fmt.Errorf("bdd migration sink: stat destination: %w", statErr)
+		return nil, fmt.Errorf("bdd migration sink: stat destination: %w", statErr)
 	}
 	path := destination
 	if newDB {
 		path = filepath.Join(filepath.Dir(destination), "."+filepath.Base(destination)+".migration-tmp")
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+			return nil, err
 		}
 		defer func() {
 			if err != nil {
@@ -48,85 +57,95 @@ func Apply(ctx context.Context, destination, prefix string, plan model.Plan) (er
 		}()
 		db, initErr := bdd.Init(ctx, bdd.InitOptions{DBPath: path, Prefix: prefix})
 		if initErr != nil {
-			return fmt.Errorf("bdd migration sink: initialize destination: %w", initErr)
+			return nil, fmt.Errorf("bdd migration sink: initialize destination: %w", initErr)
 		}
 		if closeErr := db.Close(); closeErr != nil {
-			return closeErr
+			return nil, closeErr
 		}
 	}
-	if err = apply(ctx, path, plan); err != nil {
-		return err
+	var effective model.Plan
+	if effective, warnings, err = apply(ctx, path, plan); err != nil {
+		return nil, err
 	}
-	if err = verifyPublic(ctx, path, plan); err != nil {
+	if err = verifyPublic(ctx, path, effective); err != nil {
 		if newDB {
-			return err
+			return nil, err
 		}
-		return fmt.Errorf("bdd migration sink: transaction committed but verification failed: %w", err)
+		return nil, fmt.Errorf("bdd migration sink: transaction committed but verification failed: %w", err)
 	}
 	if newDB {
 		if err = os.Rename(path, destination); err != nil {
-			return fmt.Errorf("bdd migration sink: publish destination: %w", err)
+			return nil, fmt.Errorf("bdd migration sink: publish destination: %w", err)
 		}
 	}
-	return nil
+	return warnings, nil
 }
 
-func apply(ctx context.Context, path string, plan model.Plan) error {
+func apply(ctx context.Context, path string, plan model.Plan) (model.Plan, []model.Warning, error) {
 	db, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot, SkipJournalMode: true})
 	if err != nil {
-		return err
+		return model.Plan{}, nil, err
 	}
 	defer db.Close()
 	if err := checkSchema(ctx, db); err != nil {
-		return err
+		return model.Plan{}, nil, err
 	}
-	return sqlite.Retry(ctx, func() error {
+	var effective model.Plan
+	var warnings []model.Warning
+	err = sqlite.Retry(ctx, func() error {
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
 		defer tx.Rollback()
+		var prepErr error
+		effective, warnings, prepErr = prepare(ctx, tx, plan)
+		if prepErr != nil {
+			return prepErr
+		}
 		now := time.Now().UTC().Format(time.RFC3339Nano)
-		for _, v := range plan.Workspace.Statuses {
+		for _, v := range effective.Workspace.Statuses {
 			if err := definition(ctx, tx, "status_definitions", v.Name, v.Category); err != nil {
 				return err
 			}
 		}
-		for _, v := range plan.Workspace.Types {
+		for _, v := range effective.Workspace.Types {
 			if err := definition(ctx, tx, "type_definitions", v.Name, ""); err != nil {
 				return err
 			}
 		}
-		for _, v := range plan.Cards {
+		for _, v := range effective.Cards {
 			if err := card(ctx, tx, v, now); err != nil {
 				return err
 			}
 		}
-		for _, v := range plan.Notes {
+		for _, v := range effective.Notes {
 			if err := note(ctx, tx, v, now); err != nil {
 				return err
 			}
 		}
-		for _, v := range plan.Edges {
-			if err := edge(ctx, tx, v, now); err != nil {
-				return err
-			}
+		if err := reconcileEdges(ctx, tx, effective.Edges, now); err != nil {
+			return err
 		}
-		for _, v := range plan.Runes {
+		for _, v := range effective.Runes {
 			if err := rune(ctx, tx, v, now); err != nil {
 				return err
 			}
 		}
-		for _, v := range plan.Memories {
+		for _, v := range effective.Memories {
 			if err := memory(ctx, tx, v, now); err != nil {
 				return err
 			}
 		}
-		if err := verifyTx(ctx, tx, plan); err != nil {
+		if err := verifyTx(ctx, tx, effective); err != nil {
 			return err
 		}
 		return tx.Commit()
 	})
+	if err != nil {
+		return model.Plan{}, nil, err
+	}
+	return effective, warnings, nil
 }
 
 func definition(ctx context.Context, tx *sql.Tx, table, name, category string) error {
@@ -154,6 +173,91 @@ func definition(ctx context.Context, tx *sql.Tx, table, name, category string) e
 	return err
 }
 
+// prepare filters destination-owned collisions before any write and carries
+// forward destination-only fields that Beads cannot represent.  It is called
+// inside the import transaction so ownership decisions and writes see one
+// consistent destination snapshot.
+func prepare(ctx context.Context, tx *sql.Tx, plan model.Plan) (model.Plan, []model.Warning, error) {
+	effective := plan
+	effective.Cards = nil
+	effective.Runes = nil
+	effective.Notes = nil
+	effective.Edges = nil
+	acceptedCards := make(map[string]bool, len(plan.Cards))
+	var warnings []model.Warning
+	for _, source := range plan.Cards {
+		var worktree string
+		var payload sql.NullString
+		err := tx.QueryRowContext(ctx, `SELECT c.worktree,e.payload_json FROM cards c LEFT JOIN events e ON e.subject_kind='card' AND e.subject_key=c.id AND e.action='migration.card' WHERE c.id=?`, source.ID).Scan(&worktree, &payload)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			acceptedCards[source.ID] = true
+			effective.Cards = append(effective.Cards, source)
+		case err != nil:
+			return model.Plan{}, nil, err
+		case !cardProvenance(payload.String, source.ID):
+			warnings = append(warnings, model.Warning{SourceID: source.ID, Reasons: []string{"destination-owned card ID collision; skipped record"}})
+		default:
+			// An empty source worktree means there was no recognized Beads
+			// value. Keep the native field without making it source-owned.
+			if source.Worktree == "" {
+				source.Worktree = worktree
+			}
+			acceptedCards[source.ID] = true
+			effective.Cards = append(effective.Cards, source)
+		}
+	}
+	for _, source := range plan.Notes {
+		if acceptedCards[source.CardID] {
+			effective.Notes = append(effective.Notes, source)
+		}
+	}
+	for _, source := range plan.Edges {
+		if acceptedCards[source.ParentID] && acceptedCards[source.ChildID] {
+			effective.Edges = append(effective.Edges, source)
+		}
+	}
+	for _, source := range plan.Runes {
+		var metadata string
+		err := tx.QueryRowContext(ctx, `SELECT metadata_json FROM runes WHERE key=?`, source.Key).Scan(&metadata)
+		if errors.Is(err, sql.ErrNoRows) {
+			effective.Runes = append(effective.Runes, source)
+			continue
+		}
+		if err != nil {
+			return model.Plan{}, nil, err
+		}
+		var existing map[string]string
+		if json.Unmarshal([]byte(metadata), &existing) != nil || existing["legacy_bd_id"] != source.Metadata["legacy_bd_id"] {
+			warnings = append(warnings, model.Warning{SourceID: source.Metadata["legacy_bd_id"], Reasons: []string{"destination-owned rune key collision; skipped record"}})
+			continue
+		}
+		effective.Runes = append(effective.Runes, source)
+	}
+	return effective, canonicalWarnings(warnings), nil
+}
+
+func cardProvenance(payload, id string) bool {
+	if payload == "" {
+		return false
+	}
+	var value struct {
+		SourceSystem string `json:"source_system"`
+		SourceKind   string `json:"source_kind"`
+		SourceID     string `json:"source_id"`
+	}
+	return json.Unmarshal([]byte(payload), &value) == nil && value.SourceSystem == "beads" && value.SourceKind == "issue" && value.SourceID == id
+}
+
+func canonicalWarnings(in []model.Warning) []model.Warning {
+	if len(in) == 0 {
+		return nil
+	}
+	p := model.Plan{Warnings: in}
+	p.Canonicalize()
+	return p.Warnings
+}
+
 func card(ctx context.Context, tx *sql.Tx, v model.CardPlan, now string) error {
 	created, updated := timestamp(v.CreatedAt, now), timestamp(v.UpdatedAt, timestamp(v.CreatedAt, now))
 	var exists int
@@ -166,14 +270,23 @@ func card(ctx context.Context, tx *sql.Tx, v model.CardPlan, now string) error {
 	} else if err != nil {
 		return err
 	} else {
-		// Phase 2 preserves destination-owned cards; later rerun reconciliation
-		// only touches records marked by a migration provenance event.
-		var owned int
-		err = tx.QueryRowContext(ctx, `SELECT 1 FROM events WHERE subject_kind='card' AND subject_key=? AND action='migration.card' LIMIT 1`, v.ID).Scan(&owned)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("bdd migration sink: destination-owned card ID collision %q", v.ID)
-		}
+		var oldHash string
+		err = tx.QueryRowContext(ctx, `SELECT json_extract(payload_json, '$.hash') FROM events WHERE subject_kind='card' AND subject_key=? AND action='migration.card'`, v.ID).Scan(&oldHash)
 		if err != nil {
+			return err
+		}
+		matches, err := cardProjectionMatches(ctx, tx, v)
+		if err != nil {
+			return err
+		}
+		if oldHash == v.Hash && matches {
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE cards SET title=?,worktree=CASE WHEN ?<>'' THEN ? ELSE worktree END,description=?,reproduction=?,design=?,acceptance=?,status=?,priority=?,card_type=?,external_ref=?,assignee=?,created_by=?,owner=?,updated_at=?,closed_at=?,defer_until=?,revision=revision+1 WHERE id=?`, v.Title, v.Worktree, v.Worktree, v.Description, v.Reproduction, v.Design, v.Acceptance, v.Status, v.Priority, v.Type, v.ExternalRef, v.Assignee, v.Creator, v.Owner, updated, timeValue(v.ClosedAt), timeValue(v.DeferUntil), v.ID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM labels WHERE card_id=?`, v.ID); err != nil {
 			return err
 		}
 	}
@@ -183,6 +296,41 @@ func card(ctx context.Context, tx *sql.Tx, v model.CardPlan, now string) error {
 		}
 	}
 	return provenance(ctx, tx, "card", v.ID, 1, "migration.card", map[string]any{"source_system": "beads", "source_kind": "issue", "source_id": v.ID, "hash_version": v.HashVersion, "hash": v.Hash}, now)
+}
+
+// cardProjectionMatches detects a native edit to a mapped field even when
+// the source hash is unchanged.  Destination-only worktree data and omitted
+// source timestamps are normalized away before hashing, so they do not turn
+// an otherwise identical rerun into a write.
+func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan) (bool, error) {
+	var got model.CardPlan
+	err := tx.QueryRowContext(ctx, `SELECT id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner FROM cards WHERE id=?`, want.ID).Scan(&got.ID, &got.Title, &got.Worktree, &got.Description, &got.Reproduction, &got.Design, &got.Acceptance, &got.Status, &got.Priority, &got.Type, &got.ExternalRef, &got.Assignee, &got.Creator, &got.Owner)
+	if err != nil {
+		return false, err
+	}
+	if want.Worktree == "" {
+		got.Worktree = ""
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT label FROM labels WHERE card_id=? ORDER BY label`, want.ID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var label string
+		if err := rows.Scan(&label); err != nil {
+			return false, err
+		}
+		got.Labels = append(got.Labels, label)
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	// Only source-provided timestamp values participate in the projection.
+	got.CreatedAt, got.UpdatedAt, got.ClosedAt, got.DeferUntil = want.CreatedAt, want.UpdatedAt, want.ClosedAt, want.DeferUntil
+	p := model.Plan{Cards: []model.CardPlan{got}}
+	p.Canonicalize()
+	return p.Cards[0].Hash == want.Hash, nil
 }
 
 func note(ctx context.Context, tx *sql.Tx, v model.NotePlan, now string) error {
@@ -204,9 +352,38 @@ func note(ctx context.Context, tx *sql.Tx, v model.NotePlan, now string) error {
 	}
 	return provenance(ctx, tx, "note", v.SourceKey, 1, "migration.note", map[string]any{"source_system": "beads", "source_kind": v.SourceKind, "source_id": v.SourceID, "source_key": v.SourceKey, "note_id": noteID, "hash_version": v.HashVersion, "hash": v.Hash}, now)
 }
-func edge(ctx context.Context, tx *sql.Tx, v model.EdgePlan, now string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO card_edges (parent_id,child_id,created_at,created_by) VALUES (?,?,?,?) ON CONFLICT(parent_id,child_id) DO NOTHING`, v.ParentID, v.ChildID, now, actor)
-	return err
+func reconcileEdges(ctx context.Context, tx *sql.Tx, want []model.EdgePlan, now string) error {
+	wanted := make(map[string]bool, len(want))
+	for _, v := range want {
+		wanted[v.ParentID+"\x00"+v.ChildID] = true
+		if _, err := tx.ExecContext(ctx, `INSERT INTO card_edges (parent_id,child_id,created_at,created_by) VALUES (?,?,?,?) ON CONFLICT(parent_id,child_id) DO NOTHING`, v.ParentID, v.ChildID, now, actor); err != nil {
+			return err
+		}
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT e.parent_id,e.child_id FROM card_edges e WHERE EXISTS (SELECT 1 FROM events p WHERE p.subject_kind='card' AND p.subject_key=e.parent_id AND p.action='migration.card') AND EXISTS (SELECT 1 FROM events c WHERE c.subject_kind='card' AND c.subject_key=e.child_id AND c.action='migration.card')`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var remove []model.EdgePlan
+	for rows.Next() {
+		var edge model.EdgePlan
+		if err := rows.Scan(&edge.ParentID, &edge.ChildID); err != nil {
+			return err
+		}
+		if !wanted[edge.ParentID+"\x00"+edge.ChildID] {
+			remove = append(remove, edge)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, edge := range remove {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM card_edges WHERE parent_id=? AND child_id=?`, edge.ParentID, edge.ChildID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func rune(ctx context.Context, tx *sql.Tx, v model.RunePlan, now string) error {
 	metadata, err := json.Marshal(v.Metadata)
@@ -227,6 +404,10 @@ func provenance(ctx context.Context, tx *sql.Tx, kind, key string, revision int6
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO events (subject_kind,subject_key,revision,action,actor,payload_json,created_at) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM events WHERE subject_kind=? AND subject_key=? AND action=?)`, kind, key, revision, action, actor, string(b), now, kind, key, action)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE events SET revision=?, payload_json=? WHERE subject_kind=? AND subject_key=? AND action=? AND payload_json<>?`, revision, string(b), kind, key, action, string(b))
 	return err
 }
 func timestamp(v *time.Time, fallback string) string {
