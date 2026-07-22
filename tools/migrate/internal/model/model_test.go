@@ -25,3 +25,28 @@ func TestCanonicalizeIsStableAndExcludesHashFields(t *testing.T) {
 		t.Fatalf("card not canonicalized: %#v", p.Cards[0])
 	}
 }
+
+func TestCanonicalizeDeduplicatesEdgesAndAggregatesWarnings(t *testing.T) {
+	p := Plan{
+		Edges: []EdgePlan{{ParentID: "a", ChildID: "b"}, {ParentID: "a", ChildID: "b"}},
+		Warnings: []Warning{
+			{SourceID: "z", Reasons: []string{"second", "first"}},
+			{SourceID: "a", Reasons: []string{"only"}},
+			{SourceID: "z", Reasons: []string{"first"}},
+			{Reasons: []string{"workspace reason"}},
+		},
+	}
+
+	p.Canonicalize()
+
+	if len(p.Edges) != 1 || p.Edges[0].ParentID != "a" || p.Edges[0].ChildID != "b" {
+		t.Fatalf("edges = %#v", p.Edges)
+	}
+	if got, want := p.Warnings, []Warning{
+		{SourceID: "a", Reasons: []string{"only"}},
+		{SourceID: "workspace", Reasons: []string{"workspace reason"}},
+		{SourceID: "z", Reasons: []string{"first", "second"}},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("warnings = %#v, want %#v", got, want)
+	}
+}

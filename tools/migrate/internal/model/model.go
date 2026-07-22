@@ -99,10 +99,8 @@ func (p *Plan) Canonicalize() {
 		}
 		return p.Edges[i].ParentID < p.Edges[j].ParentID
 	})
-	sort.Slice(p.Warnings, func(i, j int) bool { return p.Warnings[i].SourceID < p.Warnings[j].SourceID })
-	for i := range p.Warnings {
-		sort.Strings(p.Warnings[i].Reasons)
-	}
+	p.Edges = uniqueEdges(p.Edges)
+	p.Warnings = canonicalWarnings(p.Warnings)
 	sort.Slice(p.Workspace.Statuses, func(i, j int) bool { return p.Workspace.Statuses[i].Name < p.Workspace.Statuses[j].Name })
 	sort.Slice(p.Workspace.Types, func(i, j int) bool { return p.Workspace.Types[i].Name < p.Workspace.Types[j].Name })
 	p.Workspace.Statuses = uniqueStatuses(p.Workspace.Statuses)
@@ -129,6 +127,46 @@ func uniqueTypes(in []TypePlan) []TypePlan {
 	for i, v := range in {
 		if i == 0 || v.Name != in[i-1].Name {
 			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func uniqueEdges(in []EdgePlan) []EdgePlan {
+	out := in[:0]
+	for i, edge := range in {
+		if i == 0 || edge.ParentID != in[i-1].ParentID || edge.ChildID != in[i-1].ChildID {
+			out = append(out, edge)
+		}
+	}
+	return out
+}
+
+// canonicalWarnings preserves the one-line-per-source warning contract for
+// plans assembled by more than one mapping pass, not only for mapper output.
+func canonicalWarnings(in []Warning) []Warning {
+	bySource := make(map[string][]string, len(in))
+	for _, warning := range in {
+		source := warning.SourceID
+		if source == "" {
+			source = "workspace"
+		}
+		bySource[source] = append(bySource[source], warning.Reasons...)
+	}
+	out := make([]Warning, 0, len(bySource))
+	for source, reasons := range bySource {
+		sort.Strings(reasons)
+		out = append(out, Warning{SourceID: source, Reasons: uniqueStrings(reasons)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].SourceID < out[j].SourceID })
+	return out
+}
+
+func uniqueStrings(in []string) []string {
+	out := in[:0]
+	for i, value := range in {
+		if i == 0 || value != in[i-1] {
+			out = append(out, value)
 		}
 	}
 	return out
