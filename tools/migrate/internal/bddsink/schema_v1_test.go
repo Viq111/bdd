@@ -315,8 +315,12 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 	if err != nil || len(notes) != 2 {
 		t.Fatalf("notes after changed rerun = %#v, %v", notes, err)
 	}
+	beforeChangedNoop := sinkCounts(t, ctx, path)
 	if warnings, err := ApplyWithWarnings(ctx, path, "src", changed); err != nil || len(warnings) != 2 {
 		t.Fatalf("changed plan no-op rerun = %v, %v", warnings, err)
+	}
+	if got := sinkCounts(t, ctx, path); got != beforeChangedNoop {
+		t.Fatalf("changed plan's identical rerun wrote logical rows: got %#v want %#v", got, beforeChangedNoop)
 	}
 }
 

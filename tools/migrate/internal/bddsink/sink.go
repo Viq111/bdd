@@ -186,9 +186,8 @@ func prepare(ctx context.Context, tx *sql.Tx, plan model.Plan) (model.Plan, []mo
 	acceptedCards := make(map[string]bool, len(plan.Cards))
 	var warnings []model.Warning
 	for _, source := range plan.Cards {
-		var worktree string
 		var payload sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT c.worktree,e.payload_json FROM cards c LEFT JOIN events e ON e.subject_kind='card' AND e.subject_key=c.id AND e.action='migration.card' WHERE c.id=?`, source.ID).Scan(&worktree, &payload)
+		err := tx.QueryRowContext(ctx, `SELECT e.payload_json FROM cards c LEFT JOIN events e ON e.subject_kind='card' AND e.subject_key=c.id AND e.action='migration.card' WHERE c.id=?`, source.ID).Scan(&payload)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			acceptedCards[source.ID] = true
@@ -199,10 +198,9 @@ func prepare(ctx context.Context, tx *sql.Tx, plan model.Plan) (model.Plan, []mo
 			warnings = append(warnings, model.Warning{SourceID: source.ID, Reasons: []string{"destination-owned card ID collision; skipped record"}})
 		default:
 			// An empty source worktree means there was no recognized Beads
-			// value. Keep the native field without making it source-owned.
-			if source.Worktree == "" {
-				source.Worktree = worktree
-			}
+			// value. card's conditional update and projection comparison preserve
+			// the native field. Do not copy it into source here: doing so would
+			// change the canonical source hash and make every later rerun write.
 			acceptedCards[source.ID] = true
 			effective.Cards = append(effective.Cards, source)
 		}
