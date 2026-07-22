@@ -32,9 +32,12 @@ type Issue struct {
 // Dependency and Comment expose the parts of issue exports that the mapping
 // layer needs first. Their Raw fields retain any later-added Beads fields.
 type Dependency struct {
-	IssueID string `json:"issue_id"`
-	Kind    string `json:"type"`
-	Raw     map[string]json.RawMessage
+	// IssueID identifies the issue that owns this dependency record. In bd
+	// 1.0.3, DependsOnID is the other endpoint of a blocks relationship.
+	IssueID     string `json:"issue_id"`
+	DependsOnID string `json:"depends_on_id"`
+	Kind        string `json:"type"`
+	Raw         map[string]json.RawMessage
 }
 
 type Comment struct {

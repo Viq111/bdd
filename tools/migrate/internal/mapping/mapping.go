@@ -211,9 +211,9 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 			if _, role := rolesForID(roles, v.ID); role {
 				for _, d := range v.Dependencies {
 					if d.Kind != "blocks" {
-						add(v.ID, "skipped dependency kind "+fmt.Sprintf("%q", d.Kind)+" to "+d.IssueID)
+						add(v.ID, "skipped dependency kind "+fmt.Sprintf("%q", d.Kind)+" to "+d.DependsOnID)
 					} else {
-						add(v.ID, "skipped dependency to "+d.IssueID+" because role is imported as a rune")
+						add(v.ID, "skipped dependency to "+d.DependsOnID+" because role is imported as a rune")
 					}
 				}
 			}
@@ -221,17 +221,17 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 		}
 		for _, d := range v.Dependencies {
 			if d.Kind != "blocks" {
-				add(v.ID, "skipped dependency kind "+fmt.Sprintf("%q", d.Kind)+" to "+d.IssueID)
+				add(v.ID, "skipped dependency kind "+fmt.Sprintf("%q", d.Kind)+" to "+d.DependsOnID)
 				continue
 			}
-			if !cards[d.IssueID] {
-				add(v.ID, "skipped dependency to "+d.IssueID+" because endpoint was not imported")
+			if !cards[d.DependsOnID] {
+				add(v.ID, "skipped dependency to "+d.DependsOnID+" because endpoint was not imported")
 				continue
 			}
-			if v.ID == d.IssueID {
+			if v.ID == d.DependsOnID {
 				return model.Plan{}, fmt.Errorf("dependency graph contains self-edge %s", v.ID)
 			}
-			p.Edges = append(p.Edges, model.EdgePlan{ParentID: d.IssueID, ChildID: v.ID})
+			p.Edges = append(p.Edges, model.EdgePlan{ParentID: d.DependsOnID, ChildID: v.ID})
 		}
 	}
 	if cyclic(p.Edges) {

@@ -343,7 +343,7 @@ func TestMappingSkipsUnsupportedStatusAndTypes(t *testing.T) {
 }
 
 func TestCardFieldsReproductionNotesAndEdges(t *testing.T) {
-	data := `{"_type":"issue","id":"child","title":"Bug","description":"intro\n## Steps TO reproduce\n1. run\n### detail\nx\n## Next\ny","status":"open","issue_type":"bug","priority":3,"assignee":"unclaimed","owner":"owner","created_by":"creator","external_ref":"ref","metadata":{"worktree":"wt"},"created_at":"2026-01-01T00:00:00+01:00","updated_at":null,"labels":["z","a"],"notes":"snapshot","comments":[{"id":"c","body":"comment","author":"me","created_at":"2026-01-02T00:00:00Z"}],"dependencies":[{"issue_id":"parent","type":"blocks"},{"issue_id":"other","type":"related"}]}
+	data := `{"_type":"issue","id":"child","title":"Bug","description":"intro\n## Steps TO reproduce\n1. run\n### detail\nx\n## Next\ny","status":"open","issue_type":"bug","priority":3,"assignee":"unclaimed","owner":"owner","created_by":"creator","external_ref":"ref","metadata":{"worktree":"wt"},"created_at":"2026-01-01T00:00:00+01:00","updated_at":null,"labels":["z","a"],"notes":"snapshot","comments":[{"id":"c","body":"comment","author":"me","created_at":"2026-01-02T00:00:00Z"}],"dependencies":[{"issue_id":"child","depends_on_id":"parent","type":"blocks"},{"issue_id":"child","depends_on_id":"other","type":"related"}]}
 {"_type":"issue","id":"parent","title":"P","status":"open","issue_type":"task"}`
 	r, _ := sourcebd.ParseJSONL(bytes.NewBufferString(data))
 	p, err := Map(r, Config{})
@@ -368,14 +368,14 @@ func TestCardFieldsReproductionNotesAndEdges(t *testing.T) {
 func TestRolesWarningsCyclesAndDeterminism(t *testing.T) {
 	data := `{"_type":"issue","id":"r1","title":"[ROLE] Programmer — implementation","description":"body","status":"closed","issue_type":"role"}
 {"_type":"issue","id":"r2","title":"[role] Programmer - duplicate","status":"open","issue_type":"role"}
-{"_type":"issue","id":"a","title":"a","status":"verified","issue_type":"custom","dependencies":[{"issue_id":"b","type":"blocks"}]}
-{"_type":"issue","id":"b","title":"b","status":"verified","issue_type":"custom","dependencies":[{"issue_id":"a","type":"blocks"}]}`
+{"_type":"issue","id":"a","title":"a","status":"verified","issue_type":"custom","dependencies":[{"issue_id":"a","depends_on_id":"b","type":"blocks"}]}
+{"_type":"issue","id":"b","title":"b","status":"verified","issue_type":"custom","dependencies":[{"issue_id":"b","depends_on_id":"a","type":"blocks"}]}`
 	r, _ := sourcebd.ParseJSONL(bytes.NewBufferString(data))
 	_, err := Map(r, Config{StatusCategories: map[string]string{"verified": "done"}, CustomTypes: map[string]bool{"custom": true}})
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("cycle error %v", err)
 	}
-	data = strings.Replace(data, `"dependencies":[{"issue_id":"a","type":"blocks"}]`, `"dependencies":[]`, 1)
+	data = strings.Replace(data, `"dependencies":[{"issue_id":"b","depends_on_id":"a","type":"blocks"}]`, `"dependencies":[]`, 1)
 	r, _ = sourcebd.ParseJSONL(bytes.NewBufferString(data))
 	p1, e := Map(r, Config{StatusCategories: map[string]string{"verified": "done"}, CustomTypes: map[string]bool{"custom": true}})
 	if e != nil {

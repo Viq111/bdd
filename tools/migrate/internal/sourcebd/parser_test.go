@@ -43,6 +43,21 @@ func TestParseJSONLRejectsIncompatibleEnvelope(t *testing.T) {
 	}
 }
 
+func TestParseJSONLParsesBD103DependencyEndpoints(t *testing.T) {
+	records, err := ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"bdd-8urh","dependencies":[{"issue_id":"bdd-8urh","depends_on_id":"bdd-4s2w","type":"blocks"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, ok := records[0].(Issue)
+	if !ok || len(issue.Dependencies) != 1 {
+		t.Fatalf("record = %#v, want issue with one dependency", records[0])
+	}
+	dependency := issue.Dependencies[0]
+	if dependency.IssueID != "bdd-8urh" || dependency.DependsOnID != "bdd-4s2w" || dependency.Kind != "blocks" {
+		t.Fatalf("dependency = %#v", dependency)
+	}
+}
+
 func TestParseJSONLRetainsUnsupportedIssueAndContinues(t *testing.T) {
 	input := `{"_type":"issue","id":"valid","labels":["ok"]}
 {"_type":"issue","id":"unsupported","labels":"not-an-array"}
