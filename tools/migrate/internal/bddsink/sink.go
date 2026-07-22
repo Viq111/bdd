@@ -299,9 +299,10 @@ func card(ctx context.Context, tx *sql.Tx, v model.CardPlan, now string) error {
 }
 
 // cardProjectionMatches detects a native edit to a mapped field even when
-// the source hash is unchanged.  Destination-only worktree data and omitted
-// source timestamps are normalized away before hashing, so they do not turn
-// an otherwise identical rerun into a write.
+// the source hash is unchanged. Destination-only worktree data and omitted
+// created/updated timestamps are normalized away before hashing, so they do
+// not turn an otherwise identical rerun into a write. Closed and deferred
+// timestamps remain source-owned even when NULL.
 func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan) (bool, error) {
 	var got model.CardPlan
 	var created, updated string
@@ -328,7 +329,7 @@ func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan)
 	if err := rows.Err(); err != nil {
 		return false, err
 	}
-	// Only source-provided timestamp values participate in the projection.
+	// Source-provided created/updated timestamps participate in the projection.
 	// Read those values from storage so native drift is reconciled even when
 	// the source hash itself is unchanged.
 	if want.CreatedAt != nil {
@@ -343,13 +344,15 @@ func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan)
 			return false, err
 		}
 	}
-	if want.ClosedAt != nil && closed.Valid {
+	// ClosedAt and DeferUntil are source-owned options: a source NULL must
+	// therefore compare unequal to a non-NULL destination value and clear it.
+	if closed.Valid {
 		got.ClosedAt, err = parseTimestamp(closed.String)
 		if err != nil {
 			return false, err
 		}
 	}
-	if want.DeferUntil != nil && deferUntil.Valid {
+	if deferUntil.Valid {
 		got.DeferUntil, err = parseTimestamp(deferUntil.String)
 		if err != nil {
 			return false, err

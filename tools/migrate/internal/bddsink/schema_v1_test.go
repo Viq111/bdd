@@ -59,6 +59,60 @@ func TestApplyRerunReconcilesSourceTimestamps(t *testing.T) {
 	checkCardTimestamps(t, ctx, path, changed)
 }
 
+func TestApplyRerunClearsSourceOwnedOptionalTimestamps(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bdd.sqlite")
+	plan := model.Plan{Cards: []model.CardPlan{{
+		ID: "src-1", Title: "source", Status: "open", Type: "task",
+	}}}
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.ExecContext(ctx, `UPDATE cards SET worktree='native-worktree', closed_at='2025-01-01T00:00:00Z', defer_until='2025-02-01T00:00:00Z' WHERE id='src-1'`)
+	if closeErr := raw.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatalf("source NULL timestamp reconciliation: %v", err)
+	}
+	raw, err = sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var closedAt, deferUntil sql.NullString
+	var worktree string
+	err = raw.QueryRowContext(ctx, `SELECT worktree, closed_at, defer_until FROM cards WHERE id='src-1'`).Scan(&worktree, &closedAt, &deferUntil)
+	if closeErr := raw.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closedAt.Valid || deferUntil.Valid {
+		t.Fatalf("source NULL timestamps = closed_at %#v, defer_until %#v; want both NULL", closedAt, deferUntil)
+	}
+	if worktree != "native-worktree" {
+		t.Fatalf("unrelated destination worktree = %q, want native-worktree", worktree)
+	}
+
+	before := sinkCounts(t, ctx, path)
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatalf("identical NULL timestamp rerun: %v", err)
+	}
+	if got := sinkCounts(t, ctx, path); got != before {
+		t.Fatalf("identical NULL timestamp rerun wrote logical rows: got %#v want %#v", got, before)
+	}
+}
+
 func checkCardTimestamps(t *testing.T, ctx context.Context, path string, want time.Time) {
 	t.Helper()
 	db, err := bdd.Open(ctx, bdd.OpenOptions{Path: path})
