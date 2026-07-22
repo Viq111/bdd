@@ -1,7 +1,7 @@
 project:
   name: bdd
   conventions-id: bdd-iux
-default_agent: codex
+#default_agent: codex
 dispatch:
   max-active: 3
 llm:
