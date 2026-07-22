@@ -122,7 +122,7 @@ installs it with a single `os.Rename` in the same directory (same
 filesystem, atomic). `Restore` stages the source into a private temp file
 before it does anything else — specifically so the common case of
 `BackupPath` and `Source` defaulting to the same path
-(`<workspace>/.bdd/backup.sqlite`) can't let the backup step clobber what
+(`<workspace>/bdd_backup.sqlite`) can't let the backup step clobber what
 was validated — then takes an OS-level exclusive SQLite lock
 (`acquireExclusive`, `PRAGMA locking_mode = EXCLUSIVE`) across the backup
 and the final rename, so a concurrent opener gets `SQLITE_BUSY`/`ErrBusy`
