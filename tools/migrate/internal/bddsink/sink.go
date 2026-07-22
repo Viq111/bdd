@@ -159,7 +159,7 @@ func card(ctx context.Context, tx *sql.Tx, v model.CardPlan, now string) error {
 	var exists int
 	err := tx.QueryRowContext(ctx, `SELECT 1 FROM cards WHERE id = ?`, v.ID).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
-		_, err = tx.ExecContext(ctx, `INSERT INTO cards (id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,dispatchable,created_at,updated_at,started_at,closed_at,defer_until,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,NULL,?,?,1)`, v.ID, v.Title, v.Worktree, v.Description, v.Reproduction, v.Design, v.Acceptance, v.Status, v.Priority, v.Type, v.ExternalRef, v.Assignee, v.Creator, 1, created, updated, timeValue(v.ClosedAt), timeValue(v.DeferUntil))
+		_, err = tx.ExecContext(ctx, `INSERT INTO cards (id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner,dispatchable,created_at,updated_at,started_at,closed_at,defer_until,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,1)`, v.ID, v.Title, v.Worktree, v.Description, v.Reproduction, v.Design, v.Acceptance, v.Status, v.Priority, v.Type, v.ExternalRef, v.Assignee, v.Creator, v.Owner, 1, created, updated, timeValue(v.ClosedAt), timeValue(v.DeferUntil))
 		if err != nil {
 			return err
 		}
