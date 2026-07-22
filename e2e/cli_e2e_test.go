@@ -398,9 +398,9 @@ func TestExitCodeContract(t *testing.T) {
 
 func TestProtectedRuneRequiresForce(t *testing.T) {
 	db := newWorkspace(t)
-	run(t, db, "rune", "put", "role/qa", "--kind", "role", "--title", "QA", "--body", "body", "--protected")
+	run(t, db, "rune", "set", "role/qa", "--kind", "role", "--title", "QA", "--body", "body", "--protected")
 
-	if r := run(t, db, "rune", "put", "role/qa", "--kind", "role", "--title", "QA2", "--body", "body2"); r.code != 4 {
+	if r := run(t, db, "rune", "set", "role/qa", "--kind", "role", "--title", "QA2", "--body", "body2"); r.code != 4 {
 		t.Fatalf("update without --force: code = %d, want 4", r.code)
 	}
 	if r := run(t, db, "rune", "disable", "role/qa"); r.code != 4 {
@@ -500,14 +500,13 @@ var allSubcommands = [][]string{
 	{"memory", "search"},
 	{"memory", "remove"},
 	{"rune"},
-	{"rune", "put"},
-	{"rune", "show"},
+	{"rune", "set"},
+	{"rune", "get"},
 	{"rune", "list"},
 	{"rune", "search"},
 	{"rune", "enable"},
 	{"rune", "disable"},
 	{"rune", "remove"},
-	{"rune", "export"},
 	{"create"},
 	{"show"},
 	{"list"},

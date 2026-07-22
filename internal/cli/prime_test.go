@@ -34,7 +34,7 @@ func TestPrimeHumanOutputListsSupportedCommandsAndMemories(t *testing.T) {
 	}
 
 	out := stdout.String()
-	for _, want := range []string{"update <id> --claim", "ready --explain", "note <id>", "rune put", "snapshot [--output", "restore <snapshot.sqlite>", "greeting"} {
+	for _, want := range []string{"update <id> --claim", "ready --explain", "note <id>", "rune set", "snapshot [--output", "restore <snapshot.sqlite>", "greeting"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("prime output missing %q; got:\n%s", want, out)
 		}

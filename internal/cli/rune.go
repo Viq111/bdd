@@ -12,7 +12,7 @@ import (
 	"github.com/viq111/bdd"
 )
 
-// RuneResult is the JSON/human result of `bdd rune put` and `bdd rune show`.
+// RuneResult is the JSON/human result of `bdd rune set` and `bdd rune get`.
 type RuneResult struct {
 	Key       string `json:"key"`
 	Kind      string `json:"kind"`
@@ -63,19 +63,19 @@ func toRuneSummaryResult(r bdd.RuneSummary) RuneSummaryResult {
 	}
 }
 
-// runRune implements `bdd rune put|show|list|search|enable|disable|remove|export`.
+// runRune implements `bdd rune set|get|list|search|enable|disable|remove`.
 func runRune(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) == 0 {
-		s.Errorf("bdd: rune: missing subcommand (put, show, list, search, enable, disable, remove, export)\n")
+		s.Errorf("bdd: rune: missing subcommand (set, get, list, search, enable, disable, remove)\n")
 		return ExitUsage
 	}
 	sub, rest := args[0], args[1:]
 
 	switch sub {
-	case "put":
-		return runRunePut(g, rest, s)
-	case "show":
-		return runRuneShow(g, rest, s)
+	case "set":
+		return runRuneSet(g, rest, s)
+	case "get":
+		return runRuneGet(g, rest, s)
 	case "list":
 		return runRuneList(g, rest, s)
 	case "search":
@@ -86,20 +86,18 @@ func runRune(g GlobalFlags, args []string, s *Streams) int {
 		return runRuneSetEnabled(g, rest, s, false, "rune disable")
 	case "remove":
 		return runRuneRemove(g, rest, s)
-	case "export":
-		return runRuneExport(g, rest, s)
 	default:
 		s.Errorf("bdd: rune: unknown subcommand %q\n", sub)
 		return ExitUsage
 	}
 }
 
-// runRunePut implements `bdd rune put <key> [--kind <kind>] [--title <title>]
+// runRuneSet implements `bdd rune set <key> [--kind <kind>] [--title <title>]
 // [--body <body>|--body-file <path>] [--metadata <json>] [--protected]
 // [--create-only] [--if-revision <n>] [--force]`.
-func runRunePut(g GlobalFlags, args []string, s *Streams) int {
+func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) == 0 {
-		s.Errorf("bdd: rune put: key is required\n")
+		s.Errorf("bdd: rune set: key is required\n")
 		return ExitUsage
 	}
 	key := args[0]
@@ -119,7 +117,7 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 		case "--kind":
 			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
 			if err != nil {
-				s.Errorf("bdd: rune put: %v\n", err)
+				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
 			}
 			kind = val
@@ -128,7 +126,7 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 		case "--title":
 			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
 			if err != nil {
-				s.Errorf("bdd: rune put: %v\n", err)
+				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
 			}
 			title, haveTitle = val, true
@@ -137,7 +135,7 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 		case "--body":
 			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
 			if err != nil {
-				s.Errorf("bdd: rune put: %v\n", err)
+				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
 			}
 			body, haveBody = val, true
@@ -146,7 +144,7 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 		case "--body-file":
 			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
 			if err != nil {
-				s.Errorf("bdd: rune put: %v\n", err)
+				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
 			}
 			bodyFile = val
@@ -155,7 +153,7 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 		case "--metadata":
 			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
 			if err != nil {
-				s.Errorf("bdd: rune put: %v\n", err)
+				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
 			}
 			metadata, haveMetadata = val, true
@@ -164,12 +162,12 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 		case "--if-revision":
 			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
 			if err != nil {
-				s.Errorf("bdd: rune put: %v\n", err)
+				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
 			}
 			n, parseErr := strconv.ParseInt(val, 10, 64)
 			if parseErr != nil {
-				s.Errorf("bdd: rune put: --if-revision must be an integer, got %q\n", val)
+				s.Errorf("bdd: rune set: --if-revision must be an integer, got %q\n", val)
 				return ExitUsage
 			}
 			expectedRevision = &n
@@ -188,32 +186,32 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 			i++
 			continue
 		default:
-			s.Errorf("bdd: rune put: unknown flag %q\n", arg)
+			s.Errorf("bdd: rune set: unknown flag %q\n", arg)
 			return ExitUsage
 		}
 	}
 
 	if bodyFile != "" {
 		if haveBody {
-			s.Errorf("bdd: rune put: cannot combine --body and --body-file\n")
+			s.Errorf("bdd: rune set: cannot combine --body and --body-file\n")
 			return ExitUsage
 		}
 		data, err := os.ReadFile(bodyFile)
 		if err != nil {
-			s.Errorf("bdd: rune put: reading %s: %v\n", bodyFile, err)
+			s.Errorf("bdd: rune set: reading %s: %v\n", bodyFile, err)
 			return ExitOther
 		}
 		body, haveBody = string(data), true
 	}
 
 	ctx := context.Background()
-	db, code := openDB(ctx, g, "rune put", s)
+	db, code := openDB(ctx, g, "rune set", s)
 	if db == nil {
 		return code
 	}
 	defer db.Close()
 
-	if code, blocked := checkRuneForceRequired(ctx, db, key, force, s, "rune put"); blocked {
+	if code, blocked := checkRuneForceRequired(ctx, db, key, force, s, "rune set"); blocked {
 		return code
 	}
 
@@ -239,22 +237,22 @@ func runRunePut(g GlobalFlags, args []string, s *Streams) int {
 		Actor: actor, Force: force,
 	})
 	if err != nil {
-		s.Errorf("bdd: rune put: %v\n", err)
+		s.Errorf("bdd: rune set: %v\n", err)
 		return ExitCode(err)
 	}
-	return emitRune(s, "rune put", r)
+	return emitRune(s, "rune set", r)
 }
 
-// runRuneShow implements `bdd rune show <key>`.
-func runRuneShow(g GlobalFlags, args []string, s *Streams) int {
+// runRuneGet implements `bdd rune get <key>`.
+func runRuneGet(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) != 1 {
-		s.Errorf("bdd: rune show: expected exactly one key argument\n")
+		s.Errorf("bdd: rune get: expected exactly one key argument\n")
 		return ExitUsage
 	}
 	key := args[0]
 
 	ctx := context.Background()
-	db, code := openDB(ctx, g, "rune show", s)
+	db, code := openDB(ctx, g, "rune get", s)
 	if db == nil {
 		return code
 	}
@@ -262,10 +260,10 @@ func runRuneShow(g GlobalFlags, args []string, s *Streams) int {
 
 	r, err := db.GetRune(ctx, key)
 	if err != nil {
-		s.Errorf("bdd: rune show: %v\n", err)
+		s.Errorf("bdd: rune get: %v\n", err)
 		return ExitCode(err)
 	}
-	return emitRune(s, "rune show", r)
+	return emitRune(s, "rune get", r)
 }
 
 // runRuneList implements `bdd rune list [--kind <kind>] [--all]`.
@@ -453,61 +451,11 @@ func runRuneRemove(g GlobalFlags, args []string, s *Streams) int {
 	return ExitSuccess
 }
 
-// runRuneExport implements `bdd rune export <key> [--format markdown|json]`.
-func runRuneExport(g GlobalFlags, args []string, s *Streams) int {
-	if len(args) == 0 {
-		s.Errorf("bdd: rune export: key is required\n")
-		return ExitUsage
-	}
-	key := args[0]
-	format := "markdown"
-
-	i := 1
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-		if name != "--format" {
-			s.Errorf("bdd: rune export: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		val, consumed, err := flagValue(name, inline, hasInline, args, i)
-		if err != nil {
-			s.Errorf("bdd: rune export: %v\n", err)
-			return ExitUsage
-		}
-		format = val
-		i += consumed
-	}
-	if format != "markdown" && format != "json" {
-		s.Errorf("bdd: rune export: --format must be markdown or json, got %q\n", format)
-		return ExitUsage
-	}
-
-	ctx := context.Background()
-	db, code := openDB(ctx, g, "rune export", s)
-	if db == nil {
-		return code
-	}
-	defer db.Close()
-
-	data, err := db.ExportRune(ctx, key, format)
-	if err != nil {
-		s.Errorf("bdd: rune export: %v\n", err)
-		return ExitCode(err)
-	}
-
-	s.Stdout.Write(data)
-	if len(data) == 0 || data[len(data)-1] != '\n' {
-		fmt.Fprintln(s.Stdout)
-	}
-	return ExitSuccess
-}
-
 // checkRuneForceRequired pre-flights a rune mutation targeting an existing
 // protected rune: it reports ExitConflict (per the CLI contract, protected
 // mutations without --force exit 4) rather than letting the library's
 // generic ErrInvalidArgument mapping (ExitUsage) apply. A key that doesn't
-// exist yet is not blocked here: `rune put` may still create it, and the
+// exist yet is not blocked here: `rune set` may still create it, and the
 // read/enable/disable/remove callers will surface their own ErrNotFound.
 func checkRuneForceRequired(ctx context.Context, db *bdd.DB, key string, force bool, s *Streams, cmdName string) (code int, blocked bool) {
 	existing, err := db.GetRune(ctx, key)

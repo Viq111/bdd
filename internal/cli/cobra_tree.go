@@ -196,13 +196,13 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 
 		newGroup("rune", "Manage rune records",
 			"Manage rune records: reusable, keyed documents (checklists, prompts,\nreference material) attached to the workspace rather than any one card.",
-			`  bdd rune put review-checklist --kind doc --title "Review checklist" --body "..."
+			`  bdd rune set review-checklist --kind doc --title "Review checklist" --body "..."
   bdd rune list --kind doc`,
 			runRune, global, streams,
-			newLeaf("put <key>", "Create or update a rune",
+			newLeaf("set <key>", "Create or update a rune",
 				"Create or update the rune at <key>. Supply the body directly with --body,\nor read it from a file with --body-file.",
-				`  bdd rune put review-checklist --kind doc --title "Review checklist" --body "..."`,
-				runRunePut, global, streams, func(f *pflag.FlagSet) {
+				`  bdd rune set review-checklist --kind doc --title "Review checklist" --body "..."`,
+				runRuneSet, global, streams, func(f *pflag.FlagSet) {
 					f.String("kind", "", "rune kind (e.g. doc, prompt, checklist)")
 					f.String("title", "", "rune title")
 					f.String("body", "", "rune body text")
@@ -213,8 +213,8 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 					f.Int64("if-revision", 0, "fail unless the rune is currently at this revision")
 					f.Bool("force", false, "acknowledge overwriting a protected rune")
 				}),
-			newLeaf("show <key>", "Show a rune's full record", "Print the full record for the rune at <key>.",
-				"  bdd rune show review-checklist", runRuneShow, global, streams, nil),
+			newLeaf("get <key>", "Get a rune's full record", "Print the full record for the rune at <key>.",
+				"  bdd rune get review-checklist", runRuneGet, global, streams, nil),
 			newLeaf("list", "List runes", "List rune summaries, optionally filtered by kind.",
 				"  bdd rune list --kind doc", runRuneList, global, streams, func(f *pflag.FlagSet) {
 					f.String("kind", "", "only list runes of this kind")
@@ -240,10 +240,6 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 			newLeaf("remove <key>", "Delete a rune", "Delete the rune at <key>.",
 				"  bdd rune remove review-checklist --force", runRuneRemove, global, streams, func(f *pflag.FlagSet) {
 					f.Bool("force", false, "acknowledge removing a protected rune")
-				}),
-			newLeaf("export <key>", "Export a rune", "Print the rune at <key> rendered as markdown or JSON.",
-				"  bdd rune export review-checklist --format json", runRuneExport, global, streams, func(f *pflag.FlagSet) {
-					f.String("format", "markdown", "output format: markdown or json")
 				}),
 		),
 

@@ -306,7 +306,7 @@ func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTi
 	if memory["body"] != wantMemory {
 		t.Fatalf("memory = %#v", memory)
 	}
-	rune := jsonObject(t, run(t, destination, "rune", "show", "role/operator", "--json"))
+	rune := jsonObject(t, run(t, destination, "rune", "get", "role/operator", "--json"))
 	metadataText, ok := rune["metadata"].(string)
 	metadata := map[string]any{}
 	if !ok || json.Unmarshal([]byte(metadataText), &metadata) != nil {
@@ -401,7 +401,7 @@ func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
 	if r.code != 0 || r.stdout != wroteTo(t, destination) || r.stderr != "" {
 		t.Fatalf("single-role migration = %#v", r)
 	}
-	rune := jsonObject(t, run(t, destination, "rune", "show", "role/operator", "--json"))
+	rune := jsonObject(t, run(t, destination, "rune", "get", "role/operator", "--json"))
 	if rune["protected"] != true {
 		t.Fatalf("migrated role is not protected: %#v", rune)
 	}
@@ -557,7 +557,7 @@ func TestMigrationDestinationOwnedCollisionsWarnAndPreserveRecords(t *testing.T)
 		t.Fatalf("create owned card: %#v", ownedCard)
 	}
 	ownedID := strings.TrimSpace(ownedCard.stdout)
-	ownedRune := run(t, destination, "rune", "put", "role/collision", "--kind", "role", "--title", "Native rune", "--body", "native")
+	ownedRune := run(t, destination, "rune", "set", "role/collision", "--kind", "role", "--title", "Native rune", "--body", "native")
 	if ownedRune.code != 0 {
 		t.Fatalf("create owned rune: %#v", ownedRune)
 	}
@@ -581,7 +581,7 @@ func TestMigrationDestinationOwnedCollisionsWarnAndPreserveRecords(t *testing.T)
 	if card["title"] != "Native card" {
 		t.Fatalf("destination-owned card overwritten: %#v", card)
 	}
-	rune := jsonObject(t, run(t, destination, "rune", "show", "role/collision", "--json"))
+	rune := jsonObject(t, run(t, destination, "rune", "get", "role/collision", "--json"))
 	if rune["title"] != "Native rune" || rune["protected"] != false {
 		t.Fatalf("destination-owned rune overwritten: %#v", rune)
 	}

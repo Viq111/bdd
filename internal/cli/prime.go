@@ -39,7 +39,7 @@ Note, memory, rune, and worktree commands:
   card. ` + "`memory set/get/list/search/remove`" + ` manage durable, keyed,
   workspace-scoped memories that survive across cards and sessions — this
   command's own memories section below lists what's currently stored.
-  ` + "`rune put/show/list/search/enable/disable/remove/export`" + ` manage rune
+  ` + "`rune set/get/list/search/enable/disable/remove`" + ` manage rune
   records. A card's worktree is a plain field, not a launched process: set it
   with ` + "`create --worktree <path>`" + ` or ` + "`update --worktree <path>`" + `
   (` + "`--clear-worktree`" + ` to unset).

@@ -22,7 +22,7 @@ const commandsReference = `  init [--prefix <prefix>] [path]   Create a new work
   statuses                          List built-in and custom statuses
   types                             List built-in and custom card types
   memory set|get|list|search|remove   Manage durable, keyed, workspace-scoped memories
-  rune put|show|list|search|enable|disable|remove|export   Manage rune records
+  rune set|get|list|search|enable|disable|remove   Manage rune records
   create [title] [flags]            Create a new card
   show <id>                         Show a card's full record
   list [flags]                      List cards matching filters

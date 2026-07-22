@@ -275,25 +275,24 @@ priority, scheduling, blocking, readiness, worktree, or close operation, and
 namespace addressed only through `bdd rune`.
 
 ```sh
-bdd rune put role/programmer \
+bdd rune set role/programmer \
   --kind role --title "Programmer" --body-file programmer.md --protected
 
-bdd rune show role/programmer
+bdd rune get role/programmer
 bdd rune list --kind role
 bdd rune search "Go implementation"
 bdd rune disable role/programmer
 bdd rune enable role/programmer
 bdd rune remove role/programmer --force
-bdd rune export role/programmer --format markdown
 ```
 
 Keys follow the `<kind>/<name>` grammar (lowercase; the key's first segment
 must equal the rune's kind), so a role can be addressed by a stable name
-instead of a random card ID. `put` creates or atomically updates a rune;
+instead of a random card ID. `set` creates or atomically updates a rune;
 `--create-only` rejects an existing key, and `--if-revision <n>` gives
 optimistic concurrency (a stale revision fails without writing). `disable`
 is the reversible way to retire a rune — there is no close operation — and
-a disabled rune stays directly readable via `show`, appearing in
+a disabled rune stays directly readable via `get`, appearing in
 `list`/`search` only with `--all`. Protected runes require `--force` for
 any update, enable/disable, or removal, and `remove` leaves a tombstone
 audit event behind.
