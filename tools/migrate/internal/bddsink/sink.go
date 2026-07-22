@@ -308,7 +308,7 @@ func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan)
 	if err != nil {
 		return false, err
 	}
-	if want.Worktree == "" {
+	if sourceOmittedWorktree(want) {
 		got.Worktree = ""
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT label FROM labels WHERE card_id=? ORDER BY label`, want.ID)
@@ -331,6 +331,18 @@ func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan)
 	p := model.Plan{Cards: []model.CardPlan{got}}
 	p.Canonicalize()
 	return p.Cards[0].Hash == want.Hash, nil
+}
+
+// sourceOmittedWorktree distinguishes a source-empty worktree from the
+// destination value carried into the effective plan by prepare. The latter is
+// needed for verification, but the provenance hash must continue to represent
+// the source projection rather than the preserved native value.
+func sourceOmittedWorktree(v model.CardPlan) bool {
+	withoutWorktree := v
+	withoutWorktree.Worktree = ""
+	p := model.Plan{Cards: []model.CardPlan{withoutWorktree}}
+	p.Canonicalize()
+	return p.Cards[0].Hash == v.Hash
 }
 
 func note(ctx context.Context, tx *sql.Tx, v model.NotePlan, now string) error {

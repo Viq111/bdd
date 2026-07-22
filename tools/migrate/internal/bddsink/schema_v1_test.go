@@ -59,6 +59,23 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 	if err != nil || managed.Title != "one" || managed.Worktree != "native-worktree" {
 		t.Fatalf("source authority/worktree preservation = %#v, %v", managed, err)
 	}
+	// The prior source-authority rerun preserved a destination-only worktree.
+	// Subsequent identical reruns must not turn that preserved value into a
+	// changed source projection and rewrite the card or related logical rows.
+	beforePreservedRerun := sinkCounts(t, ctx, path)
+	if warnings, err := ApplyWithWarnings(ctx, path, "src", plan); err != nil || len(warnings) != 0 {
+		t.Fatalf("first preserved-worktree rerun = %v, %v", warnings, err)
+	}
+	afterFirstPreservedRerun := sinkCounts(t, ctx, path)
+	if afterFirstPreservedRerun != beforePreservedRerun {
+		t.Fatalf("first preserved-worktree rerun wrote logical rows: got %#v want %#v", afterFirstPreservedRerun, beforePreservedRerun)
+	}
+	if warnings, err := ApplyWithWarnings(ctx, path, "src", plan); err != nil || len(warnings) != 0 {
+		t.Fatalf("second preserved-worktree rerun = %v, %v", warnings, err)
+	}
+	if got := sinkCounts(t, ctx, path); got != afterFirstPreservedRerun {
+		t.Fatalf("second preserved-worktree rerun wrote logical rows: got %#v want %#v", got, afterFirstPreservedRerun)
+	}
 	if _, err := raw.ExecContext(ctx, `INSERT INTO cards (id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner,dispatchable,created_at,updated_at,started_at,closed_at,defer_until,revision) VALUES ('native','native','','','','','','open',2,'task','','','','',1,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',NULL,NULL,NULL,1)`); err != nil {
 		t.Fatal(err)
 	}
