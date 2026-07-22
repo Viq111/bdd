@@ -38,8 +38,7 @@ func runSnapshot(g GlobalFlags, args []string, s *Streams) int {
 			continue
 		}
 
-		s.Errorf("bdd: snapshot: unknown argument %q\n", arg)
-		return ExitUsage
+		return reportUnknownArg(s, "snapshot", arg)
 	}
 
 	ctx := context.Background()

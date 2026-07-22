@@ -95,3 +95,18 @@ func flagValue(name, inline string, hasInline bool, args []string, i int) (value
 	}
 	return args[i+1], 2, nil
 }
+
+// reportUnknownArg reports an unrecognized token as an unknown flag if it
+// looks like one (leading "-", covering both "--foo" and "--foo=bar"
+// forms), or as an unknown positional argument otherwise. This is the
+// shared wording convention every bdd subcommand uses so removed or
+// mistyped flags (e.g. the removed global --db) are never misreported as
+// positional arguments.
+func reportUnknownArg(s *Streams, cmd, arg string) int {
+	if strings.HasPrefix(arg, "-") {
+		s.Errorf("bdd: %s: unknown flag %q\n", cmd, arg)
+	} else {
+		s.Errorf("bdd: %s: unknown argument %q\n", cmd, arg)
+	}
+	return ExitUsage
+}

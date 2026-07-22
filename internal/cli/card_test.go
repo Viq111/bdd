@@ -311,6 +311,50 @@ func TestListDefaultExcludesDoneCards(t *testing.T) {
 	}
 }
 
+func TestListUnknownFlagVsArgument(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	cases := []struct {
+		arg  string
+		want string
+	}{
+		{"--db", `unknown flag "--db"`},
+		{"--db=/tmp/example.sqlite", `unknown flag "--db=/tmp/example.sqlite"`},
+		{"bogus", `unknown argument "bogus"`},
+	}
+	for _, tc := range cases {
+		_, stderr := runCLI(t, dir, ExitUsage, "list", tc.arg)
+		if !strings.Contains(stderr, tc.want) {
+			t.Fatalf("Run(list %s) stderr = %q, want it to contain %q", tc.arg, stderr, tc.want)
+		}
+	}
+}
+
+func TestSearchUnknownFlagVsArgument(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	cases := []struct {
+		arg  string
+		want string
+	}{
+		{"--db", `unknown flag "--db"`},
+		{"--db=/tmp/example.sqlite", `unknown flag "--db=/tmp/example.sqlite"`},
+	}
+	for _, tc := range cases {
+		_, stderr := runCLI(t, dir, ExitUsage, "search", tc.arg)
+		if !strings.Contains(stderr, tc.want) {
+			t.Fatalf("Run(search %s) stderr = %q, want it to contain %q", tc.arg, stderr, tc.want)
+		}
+	}
+
+	// A second, trailing flag-shaped argument still hits the loop's own
+	// default case (as opposed to the leading-positional query check).
+	_, stderr := runCLI(t, dir, ExitUsage, "search", "query", "--db")
+	if want := `unknown flag "--db"`; !strings.Contains(stderr, want) {
+		t.Fatalf("Run(search query --db) stderr = %q, want it to contain %q", stderr, want)
+	}
+}
+
 func TestSearchMatchesTitle(t *testing.T) {
 	dir := initTestWorkspace(t)
 	id := createCard(t, dir, "--type", "chore", "findable-xyz")

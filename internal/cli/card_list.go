@@ -120,8 +120,7 @@ func runCardList(g GlobalFlags, args []string, s *Streams) int {
 			i += consumed
 			continue
 		default:
-			s.Errorf("bdd: list: unknown argument %q\n", arg)
-			return ExitUsage
+			return reportUnknownArg(s, "list", arg)
 		}
 	}
 
@@ -170,6 +169,9 @@ func runCardSearch(g GlobalFlags, args []string, s *Streams) int {
 		s.Errorf("bdd: search: query is required\n")
 		return ExitUsage
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "search", args[0])
+	}
 	query := args[0]
 	rest := args[1:]
 
@@ -216,8 +218,7 @@ func runCardSearch(g GlobalFlags, args []string, s *Streams) int {
 			i += consumed
 			continue
 		default:
-			s.Errorf("bdd: search: unknown argument %q\n", arg)
-			return ExitUsage
+			return reportUnknownArg(s, "search", arg)
 		}
 	}
 

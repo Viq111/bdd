@@ -583,55 +583,58 @@ func TestUnknownCommandAndFlagExitUsage(t *testing.T) {
 }
 
 // TestRemovedDBFlagRejected verifies the global --db flag (removed in
-// favor of --workspace and upward .bdd discovery) is no longer recognized.
+// favor of --workspace and upward .bdd discovery) is no longer recognized
+// and is identified as an unknown flag -- not a positional argument -- in
+// both its "--db <path>" and "--db=<path>" forms, and regardless of which
+// subcommand it precedes. Every subcommand listed here once had its own
+// arg-parsing loop that unconditionally reported any unrecognized token as
+// an "unknown argument", even flag-shaped ones like --db.
 func TestRemovedDBFlagRejected(t *testing.T) {
 	db := newWorkspace(t)
 
-	cmd := exec.Command(bddBinary, "--db", db, "status")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	code := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
-		} else {
-			t.Fatalf("run: %v", err)
-		}
+	cases := []struct {
+		name    string
+		dbArgs  []string // tokens preceding the subcommand
+		wantArg string   // flag token the error message must name
+		subArgs []string
+	}{
+		{"status/space", []string{"--db", db}, "--db", []string{"status"}},
+		{"status/equals", []string{"--db=" + db}, "--db=" + db, []string{"status"}},
+		{"list/space", []string{"--db", db}, "--db", []string{"list"}},
+		{"list/equals", []string{"--db=" + db}, "--db=" + db, []string{"list"}},
+		{"search/space", []string{"--db", db}, "--db", []string{"search", "query"}},
+		{"search/equals", []string{"--db=" + db}, "--db=" + db, []string{"search", "query"}},
+		{"prime/space", []string{"--db", db}, "--db", []string{"prime"}},
+		{"prime/equals", []string{"--db=" + db}, "--db=" + db, []string{"prime"}},
+		{"snapshot/space", []string{"--db", db}, "--db", []string{"snapshot"}},
+		{"snapshot/equals", []string{"--db=" + db}, "--db=" + db, []string{"snapshot"}},
+		{"rune-search/space", []string{"--db", db}, "--db", []string{"rune", "search", "query"}},
+		{"rune-search/equals", []string{"--db=" + db}, "--db=" + db, []string{"rune", "search", "query"}},
 	}
-	if code != 2 {
-		t.Fatalf("bdd --db %s status: code = %d, want 2 (unknown flag); stderr=%s", db, code, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), `unknown flag "--db"`) {
-		t.Fatalf("bdd --db %s status: stderr = %q, want it to identify --db as an unknown flag", db, stderr.String())
-	}
-}
 
-// TestRemovedDBEqualsFlagRejected verifies the removed global --db flag is
-// still identified as an unknown flag (not a positional argument) when
-// passed in its --db=<path> inline form.
-func TestRemovedDBEqualsFlagRejected(t *testing.T) {
-	db := newWorkspace(t)
-
-	arg := "--db=" + db
-	cmd := exec.Command(bddBinary, arg, "status")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	code := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
-		} else {
-			t.Fatalf("run: %v", err)
-		}
-	}
-	if code != 2 {
-		t.Fatalf("bdd %s status: code = %d, want 2 (unknown flag); stderr=%s", arg, code, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), `unknown flag "`+arg+`"`) {
-		t.Fatalf("bdd %s status: stderr = %q, want it to identify %s as an unknown flag", arg, stderr.String(), arg)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args := append(append([]string{}, tc.dbArgs...), tc.subArgs...)
+			cmd := exec.Command(bddBinary, args...)
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			err := cmd.Run()
+			code := 0
+			if err != nil {
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					code = exitErr.ExitCode()
+				} else {
+					t.Fatalf("run: %v", err)
+				}
+			}
+			if code != 2 {
+				t.Fatalf("bdd %v: code = %d, want 2 (unknown flag); stderr=%s", args, code, stderr.String())
+			}
+			want := `unknown flag "` + tc.wantArg + `"`
+			if !strings.Contains(stderr.String(), want) {
+				t.Fatalf("bdd %v: stderr = %q, want it to contain %q", args, stderr.String(), want)
+			}
+		})
 	}
 }

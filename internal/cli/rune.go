@@ -324,8 +324,7 @@ func runRuneSearch(g GlobalFlags, args []string, s *Streams) int {
 			continue
 		default:
 			if strings.HasPrefix(arg, "-") {
-				s.Errorf("bdd: rune search: unknown flag %q\n", arg)
-				return ExitUsage
+				return reportUnknownArg(s, "rune search", arg)
 			}
 			if haveText {
 				s.Errorf("bdd: rune search: unexpected argument %q\n", arg)

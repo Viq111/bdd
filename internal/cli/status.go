@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 )
 
 // StatusResult is the JSON/human result of `bdd status`.
@@ -26,12 +25,7 @@ func runStatus(g GlobalFlags, args []string, s *Streams) int {
 		case "--upgrade":
 			upgrade = true
 		default:
-			if strings.HasPrefix(arg, "-") {
-				s.Errorf("bdd: status: unknown flag %q\n", arg)
-			} else {
-				s.Errorf("bdd: status: unknown argument %q\n", arg)
-			}
-			return ExitUsage
+			return reportUnknownArg(s, "status", arg)
 		}
 	}
 

@@ -111,6 +111,28 @@ func TestRuneListAndSearch(t *testing.T) {
 	}
 }
 
+func TestRuneSearchUnknownFlagVsArgument(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	cases := []struct {
+		arg  string
+		want string
+	}{
+		{"--db", `unknown flag "--db"`},
+		{"--db=/tmp/example.sqlite", `unknown flag "--db=/tmp/example.sqlite"`},
+	}
+	for _, tc := range cases {
+		var stdout, stderr bytes.Buffer
+		code := Run([]string{"rune", "search", "--workspace", dir, tc.arg}, &stdout, &stderr, "dev", "unspecified")
+		if code != ExitUsage {
+			t.Fatalf("Run(rune search %s) exit = %d, want %d", tc.arg, code, ExitUsage)
+		}
+		if !strings.Contains(stderr.String(), tc.want) {
+			t.Fatalf("Run(rune search %s) stderr = %q, want it to contain %q", tc.arg, stderr.String(), tc.want)
+		}
+	}
+}
+
 func TestRuneEnableDisable(t *testing.T) {
 	dir := initTestWorkspace(t)
 

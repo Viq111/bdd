@@ -90,6 +90,30 @@ func TestSnapshotRejectsUnknownFlag(t *testing.T) {
 	}
 }
 
+func TestSnapshotUnknownFlagVsArgument(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	cases := []struct {
+		arg  string
+		want string
+	}{
+		{"--db", `unknown flag "--db"`},
+		{"--db=/tmp/example.sqlite", `unknown flag "--db=/tmp/example.sqlite"`},
+		{"bogus", `unknown argument "bogus"`},
+	}
+	for _, tc := range cases {
+		var stdout, stderr bytes.Buffer
+		code := Run([]string{"--workspace", dir, "snapshot", tc.arg}, &stdout, &stderr, "dev", "unspecified")
+		if code != ExitUsage {
+			t.Fatalf("Run(snapshot %s) exit = %d, want %d", tc.arg, code, ExitUsage)
+		}
+		if !strings.Contains(stderr.String(), tc.want) {
+			t.Fatalf("Run(snapshot %s) stderr = %q, want it to contain %q", tc.arg, stderr.String(), tc.want)
+		}
+	}
+}
+
 func TestRestoreRequiresForce(t *testing.T) {
 	dir := t.TempDir()
 	initWorkspace(t, dir)

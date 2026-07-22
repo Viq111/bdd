@@ -105,8 +105,7 @@ func runPrime(g GlobalFlags, args []string, s *Streams) int {
 			continue
 		}
 
-		s.Errorf("bdd: prime: unknown argument %q\n", arg)
-		return ExitUsage
+		return reportUnknownArg(s, "prime", arg)
 	}
 	if haveLimit && noMemories {
 		s.Errorf("bdd: prime: cannot combine --memory-limit with --no-memories\n")
