@@ -41,7 +41,10 @@ type Dependency struct {
 }
 
 type Comment struct {
-	ID   string `json:"id"`
+	ID string `json:"id"`
+	// Text is the comment content emitted by bd 1.0.3's live export.
+	// Body remains as a compatibility fallback for the pinned fixtures.
+	Text string `json:"text"`
 	Body string `json:"body"`
 	Raw  map[string]json.RawMessage
 }
@@ -118,6 +121,9 @@ func ParseJSONL(input io.Reader) ([]Record, error) {
 			}
 			for i := range v.Comments {
 				v.Comments[i].Raw = rawObject(raw["comments"], i)
+				if _, ok := v.Comments[i].Raw["text"]; ok {
+					v.Comments[i].Body = v.Comments[i].Text
+				}
 			}
 			records = append(records, Issue{base, v.ID, v.Title, v.Description, v.Design, v.AcceptanceCriteria, v.Notes, v.Status, v.IssueType, v.Labels, v.Dependencies, v.Comments})
 		case "memory":

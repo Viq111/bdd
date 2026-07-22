@@ -90,3 +90,17 @@ func TestParseJSONLUsesBD103DependsOnIDEndpoint(t *testing.T) {
 		t.Fatalf("dependency = %#v", got)
 	}
 }
+
+func TestParseJSONLUsesBD103CommentText(t *testing.T) {
+	records, err := ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"bdd-comment","comments":[{"id":"comment-1","text":"blocker comment"},{"id":"comment-2","text":"","body":"fixture-only fallback"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue := records[0].(Issue)
+	if got := issue.Comments[0].Body; got != "blocker comment" {
+		t.Fatalf("comment body = %q, want %q", got, "blocker comment")
+	}
+	if got := issue.Comments[1].Body; got != "" {
+		t.Fatalf("empty live comment body = %q, want empty", got)
+	}
+}
