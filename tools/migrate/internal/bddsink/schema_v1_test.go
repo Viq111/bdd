@@ -41,6 +41,17 @@ func TestApplyInitialImportIsPubliclyReadable(t *testing.T) {
 	if err != nil || len(notes) != 1 || notes[0].Body != "note" {
 		t.Fatalf("notes=%#v err=%v", notes, err)
 	}
+	// Exercise the normal store query surface against rows that were inserted
+	// through the migration sink rather than bdd's create path.
+	if cards, err := db.ListCards(ctx, bdd.ListOptions{}); err != nil || len(cards) != 2 {
+		t.Fatalf("ListCards() = %#v, %v", cards, err)
+	}
+	if cards, err := db.ReadyCards(ctx, bdd.ReadyOptions{}); err != nil || len(cards) != 1 || cards[0].ID != "ocp-123" {
+		t.Fatalf("ReadyCards() = %#v, %v", cards, err)
+	}
+	if cards, err := db.SearchCards(ctx, bdd.SearchOptions{Query: "imported"}); err != nil || len(cards) != 1 || cards[0].ID != "ocp-123" {
+		t.Fatalf("SearchCards() = %#v, %v", cards, err)
+	}
 	beforeRune, err := db.GetRune(ctx, "role/programmer")
 	if err != nil {
 		t.Fatal(err)
