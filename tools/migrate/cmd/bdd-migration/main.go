@@ -50,7 +50,7 @@ func runMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if opts.showVersion {
-		_, _ = fmt.Fprintln(stdout, version)
+		_, _ = fmt.Fprintf(stdout, "bdd-migration version %s (%s)\n", version, commit)
 		return 0
 	}
 	warningsFound, err := run(ctx, opts)

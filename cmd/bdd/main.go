@@ -14,5 +14,5 @@ func main() {
 // run implements the CLI entry point, delegating flag parsing, dispatch,
 // and rendering to internal/cli.
 func run(args []string, stdout, stderr *os.File) int {
-	return cli.Run(args, stdout, stderr, version)
+	return cli.Run(args, stdout, stderr, version, commit)
 }

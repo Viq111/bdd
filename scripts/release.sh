@@ -23,6 +23,7 @@ PLATFORMS=(
 )
 
 VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unspecified)}"
 
 # SOURCE_DATE_EPOCH (https://reproducible-builds.org/specs/source-date-epoch/):
 # every archive entry's timestamp is pinned to this value instead of the
@@ -56,7 +57,7 @@ for platform in "${PLATFORMS[@]}"; do
   echo "Building ${os}/${arch}..."
   GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build \
     -trimpath \
-    -ldflags "-X main.version=${VERSION} -s -w" \
+    -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -s -w" \
     -o "${build_dir}/${bin_name}" \
     "$MODULE"
 

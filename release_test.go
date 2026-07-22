@@ -35,17 +35,21 @@ func TestReleaseVersionWiringMatchesMain(t *testing.T) {
 		if !strings.Contains(string(contents), `var version = "dev"`) {
 			t.Fatalf("%s no longer declares version; update the -ldflags -X main.version= target", versionFile)
 		}
+		if !strings.Contains(string(contents), `var commit = "unspecified"`) {
+			t.Fatalf("%s no longer declares commit; update the -ldflags -X main.commit= target", versionFile)
+		}
 	}
 
 	const ldflagsTarget = "-X main.version="
+	const commitLDFlagsTarget = "-X main.commit="
 
 	buildScript, err := os.ReadFile("tools/build.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, buildCommand := range []string{
-		`go build -trimpath -ldflags "-X main.version=$VERSION" -o "$BIN_DIR/bdd" ./cmd/bdd`,
-		`go build -trimpath -ldflags "-X main.version=$VERSION" -o "$BIN_DIR/bdd-migration" ./tools/migrate/cmd/bdd-migration`,
+		`go build -trimpath -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" -o "$BIN_DIR/bdd" ./cmd/bdd`,
+		`go build -trimpath -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" -o "$BIN_DIR/bdd-migration" ./tools/migrate/cmd/bdd-migration`,
 	} {
 		if !strings.Contains(string(buildScript), buildCommand) {
 			t.Fatalf("tools/build.sh no longer stamps %s: missing %q", ldflagsTarget, buildCommand)
@@ -58,6 +62,9 @@ func TestReleaseVersionWiringMatchesMain(t *testing.T) {
 	}
 	if !strings.Contains(string(release), ldflagsTarget) {
 		t.Fatalf("scripts/release.sh no longer stamps %s; release archives would report the wrong version", ldflagsTarget)
+	}
+	if !strings.Contains(string(release), commitLDFlagsTarget) {
+		t.Fatalf("scripts/release.sh no longer stamps %s; release archives would report the wrong commit", commitLDFlagsTarget)
 	}
 }
 

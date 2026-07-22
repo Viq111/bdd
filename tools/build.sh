@@ -10,12 +10,13 @@ FIXTURE="$BENCH_DIR/fixture-10k.sqlite"
 MANIFEST="$BENCH_DIR/fixture-10k.manifest.json"
 REPORT="$BENCH_DIR/report.json"
 VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unspecified)}"
 FUZZTIME=3s
 
 build() {
   mkdir -p "$BIN_DIR"
-  go build -trimpath -ldflags "-X main.version=$VERSION" -o "$BIN_DIR/bdd" ./cmd/bdd
-  go build -trimpath -ldflags "-X main.version=$VERSION" -o "$BIN_DIR/bdd-migration" ./tools/migrate/cmd/bdd-migration
+  go build -trimpath -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" -o "$BIN_DIR/bdd" ./cmd/bdd
+  go build -trimpath -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" -o "$BIN_DIR/bdd-migration" ./tools/migrate/cmd/bdd-migration
 }
 
 fuzz_short() {

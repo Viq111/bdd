@@ -39,8 +39,9 @@ func TestVersionCommand(t *testing.T) {
 	if stderr != "" {
 		t.Fatalf("stderr = %q, want empty", stderr)
 	}
-	if strings.TrimSpace(stdout) != version {
-		t.Fatalf("stdout = %q, want %q", stdout, version)
+	want := "bdd version " + version + " (" + commit + ")"
+	if strings.TrimSpace(stdout) != want {
+		t.Fatalf("stdout = %q, want %q", stdout, want)
 	}
 }
 

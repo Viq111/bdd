@@ -31,7 +31,7 @@ func TestVersionDoesNotTouchWorkspaceOrDestination(t *testing.T) {
 	if got := runMain(context.Background(), []string{"--version"}, &stdout, &stderr); got != 0 {
 		t.Fatalf("version exit = %d, want 0", got)
 	}
-	if stdout.String() != version+"\n" || stderr.Len() != 0 {
+	if stdout.String() != "bdd-migration version "+version+" ("+commit+")\n" || stderr.Len() != 0 {
 		t.Fatalf("version streams = (%q, %q)", stdout.String(), stderr.String())
 	}
 }

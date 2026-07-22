@@ -10,12 +10,12 @@ func TestRunVersionFastPathIgnoresWorkspace(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	// A workspace flag pointing nowhere real must not force discovery or a
 	// SQLite open for version/help.
-	code := Run([]string{"--workspace", "/does/not/exist", "version"}, &stdout, &stderr, "1.2.3")
+	code := Run([]string{"--workspace", "/does/not/exist", "version"}, &stdout, &stderr, "1.2.3", "abc1234")
 	if code != ExitSuccess {
 		t.Fatalf("Run(version) exit = %d, stderr = %q", code, stderr.String())
 	}
-	if strings.TrimSpace(stdout.String()) != "1.2.3" {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), "1.2.3")
+	if strings.TrimSpace(stdout.String()) != "bdd version 1.2.3 (abc1234)" {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), "bdd version 1.2.3 (abc1234)")
 	}
 }
 
@@ -46,12 +46,12 @@ func TestRunUnknownCommand(t *testing.T) {
 
 func TestRunGlobalFlagBeforeCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--json", "version"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--json", "version"}, &stdout, &stderr, "dev", "abc1234")
 	if code != ExitSuccess {
 		t.Fatalf("Run() exit = %d, stderr = %q", code, stderr.String())
 	}
-	if strings.TrimSpace(stdout.String()) != "dev" {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), "dev")
+	if strings.TrimSpace(stdout.String()) != "bdd version dev (abc1234)" {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), "bdd version dev (abc1234)")
 	}
 }
 
