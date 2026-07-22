@@ -21,10 +21,7 @@ const commandsReference = `  init [--prefix <prefix>] [path]   Create a new work
   config get|set|unset|list         Read or write workspace configuration
   statuses                          List built-in and custom statuses
   types                             List built-in and custom card types
-  remember [body] [--key <key>] [--stdin]   Create or update a memory
-  memories [query]                  List memories, optionally filtered by text
-  recall <key>                      Show a memory's full record
-  forget <key>                      Delete a memory
+  memory set|get|list|search|remove   Manage durable, keyed, workspace-scoped memories
   rune put|show|list|search|enable|disable|remove|export   Manage rune records
   create [title] [flags]            Create a new card
   show <id>                         Show a card's full record

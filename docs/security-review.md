@@ -95,7 +95,7 @@ rather than fixed inline here: bd bdd-l4v.
 
 ### 4. Unbounded stdin/file reads (documented, out of scope)
 
-`--stdin` (create/update/note/remember) and `--description-file` and
+`--stdin` (create/update/note/memory set) and `--description-file` and
 friends read the full input with `io.ReadAll`/`os.ReadFile` with no size
 cap. This is a real resource-exhaustion vector for a maliciously large
 input, but the task's scope explicitly excludes "DoS-hardening beyond input

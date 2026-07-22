@@ -166,26 +166,33 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 			"List every card type known to the workspace, built-in and custom.",
 			"  bdd types", runTypes, global, streams, nil),
 
-		newLeaf("remember [body]", "Create or update a memory",
-			"Create or update a durable, keyed, workspace-scoped memory. Supply the body\nas a positional argument, or pipe it via --stdin.",
-			`  bdd remember "prefer small PRs" --key style
-  echo "prefer small PRs" | bdd remember --key style --stdin`,
-			runRemember, global, streams, func(f *pflag.FlagSet) {
-				f.String("key", "", "memory key (generated if omitted)")
-				f.Bool("stdin", false, "read the body from stdin instead of a positional argument")
-			}),
-
-		newLeaf("memories [query]", "List memories, optionally filtered by text",
-			"List every memory, or only those whose key or body contains <query>.",
-			"  bdd memories\n  bdd memories style", runMemories, global, streams, nil),
-
-		newLeaf("recall <key>", "Show a memory's full record",
-			"Print the full body of the memory stored at <key>.",
-			"  bdd recall style", runRecall, global, streams, nil),
-
-		newLeaf("forget <key>", "Delete a memory",
-			"Delete the memory stored at <key>.",
-			"  bdd forget style", runForget, global, streams, nil),
+		newGroup("memory", "Manage durable, keyed, workspace-scoped memories",
+			"Create, read, list, search, and remove durable, keyed, workspace-scoped\nmemories.",
+			`  bdd memory set "prefer small PRs" --key style
+  bdd memory get style
+  bdd memory search style`,
+			runMemory, global, streams,
+			newLeaf("set [body]", "Create or update a memory",
+				"Create or update a durable, keyed, workspace-scoped memory. Supply the body\nas a positional argument, or pipe it via --stdin.",
+				`  bdd memory set "prefer small PRs" --key style
+  echo "prefer small PRs" | bdd memory set --key style --stdin`,
+				runMemorySet, global, streams, func(f *pflag.FlagSet) {
+					f.String("key", "", "memory key (generated if omitted)")
+					f.Bool("stdin", false, "read the body from stdin instead of a positional argument")
+				}),
+			newLeaf("get <key>", "Show a memory's full record",
+				"Print the full body of the memory stored at <key>.",
+				"  bdd memory get style", runMemoryGet, global, streams, nil),
+			newLeaf("list", "List all memories",
+				"List every memory.",
+				"  bdd memory list", runMemoryList, global, streams, nil),
+			newLeaf("search <query>", "Search memories by text",
+				"List memories whose key or body contains <query>.",
+				"  bdd memory search style", runMemorySearch, global, streams, nil),
+			newLeaf("remove <key>", "Delete a memory",
+				"Delete the memory stored at <key>.",
+				"  bdd memory remove style", runMemoryRemove, global, streams, nil),
+		),
 
 		newGroup("rune", "Manage rune records",
 			"Manage rune records: reusable, keyed documents (checklists, prompts,\nreference material) attached to the workspace rather than any one card.",

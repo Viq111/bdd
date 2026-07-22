@@ -418,8 +418,8 @@ func TestProtectedRuneRequiresForce(t *testing.T) {
 
 func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 	db := newWorkspace(t)
-	run(t, db, "remember", "first memory body", "--key", "k1")
-	run(t, db, "remember", "second memory body", "--key", "k2")
+	run(t, db, "memory", "set", "first memory body", "--key", "k1")
+	run(t, db, "memory", "set", "second memory body", "--key", "k2")
 
 	full := run(t, db, "prime")
 	if full.code != 0 {
@@ -493,10 +493,12 @@ var allSubcommands = [][]string{
 	{"config", "list"},
 	{"statuses"},
 	{"types"},
-	{"remember"},
-	{"memories"},
-	{"recall"},
-	{"forget"},
+	{"memory"},
+	{"memory", "set"},
+	{"memory", "get"},
+	{"memory", "list"},
+	{"memory", "search"},
+	{"memory", "remove"},
 	{"rune"},
 	{"rune", "put"},
 	{"rune", "show"},

@@ -252,14 +252,14 @@ survives sessions and agent/account rotation — unlike a card `note`, which
 is append-only and scoped to one card, a memory is keyed and updatable.
 
 ```sh
-bdd remember "Always run the race tests" --key testing-race
-bdd memories            # list every memory
-bdd memories "race"     # search key and body, case-insensitively
-bdd recall testing-race
-bdd forget testing-race
+bdd memory set "Always run the race tests" --key testing-race
+bdd memory list          # list every memory
+bdd memory search "race" # search key and body, case-insensitively
+bdd memory get testing-race
+bdd memory remove testing-race
 ```
 
-Without `--key`, `remember` derives a readable slug plus a short content
+Without `--key`, `memory set` derives a readable slug plus a short content
 hash and prints the generated key, so repeated calls with identical
 untitled content converge on one record instead of piling up duplicates.
 Every write or delete is audited. `bdd prime` includes all memories by

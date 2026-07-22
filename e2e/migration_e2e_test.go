@@ -302,7 +302,7 @@ func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTi
 	if types.code != 0 || !strings.Contains(types.stdout, "incident") || statuses.code != 0 || !strings.Contains(statuses.stdout, "awaiting_review") {
 		t.Fatalf("custom definitions missing: types=%#v statuses=%#v", types, statuses)
 	}
-	memory := jsonObject(t, run(t, destination, "recall", "migration/seed", "--json"))
+	memory := jsonObject(t, run(t, destination, "memory", "get", "migration/seed", "--json"))
 	if memory["body"] != wantMemory {
 		t.Fatalf("memory = %#v", memory)
 	}

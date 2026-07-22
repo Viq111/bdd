@@ -8,7 +8,7 @@ import (
 )
 
 // KeyResult is the JSON result of a command whose only output is the key it
-// operated on (bdd forget, bdd rune remove, and similar deletions).
+// operated on (bdd memory remove, bdd rune remove, and similar deletions).
 type KeyResult struct {
 	Key string `json:"key"`
 }
@@ -17,7 +17,7 @@ type KeyResult struct {
 // and returning the mapped exit code on failure. Callers check for a nil db
 // to detect failure:
 //
-//	db, code := openDB(ctx, g, "remember", s)
+//	db, code := openDB(ctx, g, "memory set", s)
 //	if db == nil {
 //		return code
 //	}
