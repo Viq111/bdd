@@ -317,6 +317,28 @@ func TestMappingSkipsRolesWithConflictingLegacyID(t *testing.T) {
 	}
 }
 
+func TestMappingCollapsesRepeatedRoleExportRecords(t *testing.T) {
+	records, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"mig-role","title":"[role] Operator","description":"role body","status":"open","issue_type":"role"}
+{"_type":"issue","id":"mig-role","title":"[role] Operator","description":"role body","status":"open","issue_type":"role"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(records, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Runes) != 1 {
+		t.Fatalf("runes = %#v, want one collapsed role", p.Runes)
+	}
+	rune := p.Runes[0]
+	if rune.Key != "role/operator" || !rune.Protected || rune.Metadata["legacy_bd_id"] != "mig-role" {
+		t.Fatalf("rune = %#v", rune)
+	}
+	if got := warnings.Render(p.Warnings); got != "" {
+		t.Fatalf("warnings = %q, want none", got)
+	}
+}
+
 func TestMappingSkipsUnsupportedStatusAndTypes(t *testing.T) {
 	data := `{"_type":"issue","id":"supported","title":"supported","status":"verified","issue_type":"custom"}
 {"_type":"issue","id":"unknown-status","title":"unknown status","status":"missing-category","issue_type":"task"}

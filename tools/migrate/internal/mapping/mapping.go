@@ -125,8 +125,13 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 					add(id, "conflicting legacy ID maps to multiple rune keys; skipped role for rune key "+fmt.Sprintf("%q", key))
 					continue
 				}
-				if prior := roles[key]; prior != "" {
-					add(id, "duplicate rune key "+fmt.Sprintf("%q", key)+"; skipped record")
+				if prior, exists := roles[key]; exists {
+					// bd export --all can repeat a role issue in the same
+					// snapshot. The legacy ID identifies the source role, so a
+					// repeated ID for the same key is not a duplicate role.
+					if prior != id {
+						add(id, "duplicate rune key "+fmt.Sprintf("%q", key)+"; skipped record")
+					}
 					continue
 				}
 				roles[key] = id
