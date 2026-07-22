@@ -186,8 +186,9 @@ func prepare(ctx context.Context, tx *sql.Tx, plan model.Plan) (model.Plan, []mo
 	acceptedCards := make(map[string]bool, len(plan.Cards))
 	var warnings []model.Warning
 	for _, source := range plan.Cards {
+		var worktree string
 		var payload sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT e.payload_json FROM cards c LEFT JOIN events e ON e.subject_kind='card' AND e.subject_key=c.id AND e.action='migration.card' WHERE c.id=?`, source.ID).Scan(&payload)
+		err := tx.QueryRowContext(ctx, `SELECT c.worktree,e.payload_json FROM cards c LEFT JOIN events e ON e.subject_kind='card' AND e.subject_key=c.id AND e.action='migration.card' WHERE c.id=?`, source.ID).Scan(&worktree, &payload)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			acceptedCards[source.ID] = true
@@ -198,9 +199,11 @@ func prepare(ctx context.Context, tx *sql.Tx, plan model.Plan) (model.Plan, []mo
 			warnings = append(warnings, model.Warning{SourceID: source.ID, Reasons: []string{"destination-owned card ID collision; skipped record"}})
 		default:
 			// An empty source worktree means there was no recognized Beads
-			// value. card's conditional update and projection comparison preserve
-			// the native field. Do not copy it into source here: doing so would
-			// change the canonical source hash and make every later rerun write.
+			// value. Carry it for exact verification, while retaining the
+			// canonical source hash so it remains destination-owned.
+			if source.Worktree == "" {
+				source.Worktree = worktree
+			}
 			acceptedCards[source.ID] = true
 			effective.Cards = append(effective.Cards, source)
 		}
@@ -442,31 +445,14 @@ func effectiveNote(ctx context.Context, tx *sql.Tx, source model.NotePlan) (mode
 }
 
 func note(ctx context.Context, tx *sql.Tx, v model.NotePlan, now string) error {
-	var payload string
-	err := tx.QueryRowContext(ctx, `SELECT payload_json FROM events WHERE subject_kind='note' AND subject_key=? AND action='migration.note'`, v.SourceKey).Scan(&payload)
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM events WHERE subject_kind='note' AND subject_key=? AND action='migration.note' LIMIT 1`, v.SourceKey).Scan(&n)
 	if err == nil {
-		var previous struct {
-			SourceSystem string `json:"source_system"`
-			SourceKind   string `json:"source_kind"`
-			SourceID     string `json:"source_id"`
-			SourceKey    string `json:"source_key"`
-			Hash         string `json:"hash"`
-		}
-		if err := json.Unmarshal([]byte(payload), &previous); err != nil {
-			return fmt.Errorf("bdd migration sink: parse note provenance %q: %w", v.SourceKey, err)
-		}
-		if previous.SourceSystem != "beads" || previous.SourceKind != v.SourceKind || previous.SourceID != v.SourceID || previous.SourceKey != v.SourceKey {
-			return fmt.Errorf("bdd migration sink: note provenance ownership mismatch for %q", v.SourceKey)
-		}
-		if previous.Hash == v.Hash {
-			return nil
-		}
-	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	// bdd notes are append-only. If Beads edits an existing structured
-	// comment, retain the historical imported note and append one revised
-	// snapshot; updating the compact provenance hash makes later reruns no-op.
 	result, err := tx.ExecContext(ctx, `INSERT INTO notes (card_id,author,body,created_at) VALUES (?,?,?,?)`, v.CardID, nullString(v.Author), v.Body, timestamp(v.CreatedAt, now))
 	if err != nil {
 		return err
