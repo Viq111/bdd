@@ -55,7 +55,7 @@ func verifyCardTx(ctx context.Context, tx *sql.Tx, v model.CardPlan) error {
 	if err != nil {
 		return fmt.Errorf("bdd migration sink: card %q: %w", v.ID, err)
 	}
-	if got.ID != v.ID || got.Title != v.Title || (v.Worktree != "" && got.Worktree != v.Worktree) || got.Description != v.Description || got.Reproduction != v.Reproduction || got.Design != v.Design || got.Acceptance != v.Acceptance || got.Status != v.Status || got.Priority != v.Priority || got.Type != v.Type || got.ExternalRef != v.ExternalRef || got.Assignee != v.Assignee || got.Creator != v.Creator || got.Owner != v.Owner || !equalOptionalTime(got.Created, v.CreatedAt) || !equalOptionalTime(got.Updated, v.UpdatedAt) || !equalNullable(got.Closed, v.ClosedAt) || !equalNullable(got.Defer, v.DeferUntil) {
+	if got.ID != v.ID || got.Title != v.Title || got.Worktree != v.Worktree || got.Description != v.Description || got.Reproduction != v.Reproduction || got.Design != v.Design || got.Acceptance != v.Acceptance || got.Status != v.Status || got.Priority != v.Priority || got.Type != v.Type || got.ExternalRef != v.ExternalRef || got.Assignee != v.Assignee || got.Creator != v.Creator || got.Owner != v.Owner || !equalOptionalTime(got.Created, v.CreatedAt) || !equalOptionalTime(got.Updated, v.UpdatedAt) || !equalNullable(got.Closed, v.ClosedAt) || !equalNullable(got.Defer, v.DeferUntil) {
 		return fmt.Errorf("bdd migration sink: card projection mismatch for %q", v.ID)
 	}
 	return equalStringSet(ctx, tx, `SELECT label FROM labels WHERE card_id=?`, v.ID, v.Labels, "labels")
@@ -228,7 +228,7 @@ func verifyPublic(ctx context.Context, path string, plan model.Plan) error {
 		if e != nil {
 			return e
 		}
-		if c.ID != v.ID || c.Title != v.Title || string(c.Status) != v.Status || string(c.Type) != v.Type || c.Priority != v.Priority || c.Description != v.Description || c.Reproduction != v.Reproduction || c.Design != v.Design || c.Acceptance != v.Acceptance || c.ExternalRef != v.ExternalRef || (v.Worktree != "" && c.Worktree != v.Worktree) || c.Assignee != v.Assignee || c.CreatedBy != v.Creator || c.Owner != v.Owner || !equalStringSlices(c.Labels, v.Labels) || !equalOptionalTime(c.CreatedAt.Format(time.RFC3339Nano), v.CreatedAt) || !equalOptionalTime(c.UpdatedAt.Format(time.RFC3339Nano), v.UpdatedAt) || !equalPublicNullable(c.ClosedAt, v.ClosedAt) || !equalPublicNullable(c.DeferUntil, v.DeferUntil) {
+		if c.ID != v.ID || c.Title != v.Title || string(c.Status) != v.Status || string(c.Type) != v.Type || c.Priority != v.Priority || c.Description != v.Description || c.Reproduction != v.Reproduction || c.Design != v.Design || c.Acceptance != v.Acceptance || c.ExternalRef != v.ExternalRef || c.Worktree != v.Worktree || c.Assignee != v.Assignee || c.CreatedBy != v.Creator || c.Owner != v.Owner || !equalStringSlices(c.Labels, v.Labels) || !equalOptionalTime(c.CreatedAt.Format(time.RFC3339Nano), v.CreatedAt) || !equalOptionalTime(c.UpdatedAt.Format(time.RFC3339Nano), v.UpdatedAt) || !equalPublicNullable(c.ClosedAt, v.ClosedAt) || !equalPublicNullable(c.DeferUntil, v.DeferUntil) {
 			return fmt.Errorf("bdd migration sink: public card projection mismatch for %q", v.ID)
 		}
 		if err := verifyPublicLinks(c, v.ID, plan.Edges); err != nil {
