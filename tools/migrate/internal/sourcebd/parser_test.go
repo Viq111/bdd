@@ -79,3 +79,14 @@ func TestParseJSONLRetainsUnsupportedIssueAndContinues(t *testing.T) {
 		t.Fatalf("record after unsupported issue = %T, want Memory", records[2])
 	}
 }
+
+func TestParseJSONLUsesBD103DependsOnIDEndpoint(t *testing.T) {
+	records, err := ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"bdd-child","dependencies":[{"issue_id":"bdd-child","depends_on_id":"bdd-parent","type":"blocks"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue := records[0].(Issue)
+	if got := issue.Dependencies[0]; got.IssueID != "bdd-child" || got.DependsOnID != "bdd-parent" || got.Kind != "blocks" {
+		t.Fatalf("dependency = %#v", got)
+	}
+}

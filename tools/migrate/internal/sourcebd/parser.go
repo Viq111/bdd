@@ -109,6 +109,12 @@ func ParseJSONL(input io.Reader) ([]Record, error) {
 			}
 			for i := range v.Dependencies {
 				v.Dependencies[i].Raw = rawObject(raw["dependencies"], i)
+				// Early sanitized fixtures used issue_id as the endpoint. Keep
+				// that representation readable while production uses 1.0.3's
+				// explicit depends_on_id field.
+				if v.Dependencies[i].DependsOnID == "" {
+					v.Dependencies[i].DependsOnID = v.Dependencies[i].IssueID
+				}
 			}
 			for i := range v.Comments {
 				v.Comments[i].Raw = rawObject(raw["comments"], i)

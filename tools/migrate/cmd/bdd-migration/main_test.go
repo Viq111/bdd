@@ -88,7 +88,7 @@ version) printf 'bd version 1.0.3\n' ;;
 statuses) printf '%s\n' '{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[{"name":"awaiting_review","category":"wip"}],"schema_version":1}' ;;
 types) printf '%s\n' '{"core_types":[{"name":"task"}],"custom_types":["role"],"schema_version":1}' ;;
 config) case "$4" in status.custom) printf 'awaiting_review\n' ;; types.custom) printf 'role\n' ;; issue-prefix) printf 'demo\n' ;; esac ;;
-export) printf '%s\n' '{"_type":"issue","id":"demo-1","title":"import me","status":"open","issue_type":"task"}' ;;
+export) printf '%s\n' '{"_type":"issue","id":"demo-parent","title":"parent","status":"open","issue_type":"task"}' '{"_type":"issue","id":"demo-child","title":"child","status":"open","issue_type":"task","dependencies":[{"issue_id":"demo-child","depends_on_id":"demo-parent","type":"blocks"}]}' ;;
 esac
 `
 	if err := os.WriteFile(bd, []byte(script), 0o755); err != nil {
@@ -105,6 +105,14 @@ esac
 	}
 	if stdout.String() != "wrote to "+canonicalDestination+"\n" || stderr.Len() != 0 {
 		t.Fatalf("streams = (%q, %q)", stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if got := runMain(context.Background(), []string{"--workspace", workspace, "--bd", bd, "--destination", destination}, &stdout, &stderr); got != 0 {
+		t.Fatalf("rerun exit = %d, stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
+	}
+	if stdout.String() != "wrote to "+canonicalDestination+"\n" || stderr.Len() != 0 {
+		t.Fatalf("rerun streams = (%q, %q)", stdout.String(), stderr.String())
 	}
 }
 
