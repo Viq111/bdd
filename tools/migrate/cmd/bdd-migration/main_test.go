@@ -36,6 +36,33 @@ func TestArgumentErrorsAreExitTwoAndDoNotWriteStdout(t *testing.T) {
 	}
 }
 
+func TestDestinationFilesystemErrorsAreExitOneAndDoNotWriteStdout(t *testing.T) {
+	root := t.TempDir()
+	blockingFile := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(blockingFile, []byte("blocker"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(blockingFile, "store.sqlite")
+	var stdout, stderr bytes.Buffer
+
+	if got := runMain(context.Background(), []string{"--workspace", root, "--destination", destination}, &stdout, &stderr); got != 1 {
+		t.Fatalf("exit = %d, want 1; stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if stderr.String() != "error: resolve destination: not a directory\n" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	contents, err := os.ReadFile(blockingFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "blocker" {
+		t.Fatalf("blocking file contents = %q", contents)
+	}
+}
+
 func TestParseArgsCanonicalizesWorkspaceAndRelativeDestination(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".beads"), 0o755); err != nil {

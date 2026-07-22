@@ -99,7 +99,7 @@ func parseArgs(args []string, stdout io.Writer) (options, error) {
 		o.destination = filepath.Join(o.workspace, o.destination)
 	}
 	if o.destination, err = canonicalPath(o.destination); err != nil {
-		return o, usageError{fmt.Errorf("resolve destination: %w", err)}
+		return o, fmt.Errorf("resolve destination: %w", err)
 	}
 	return o, nil
 }
