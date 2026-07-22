@@ -233,20 +233,29 @@ func jsonObject(t *testing.T, r result) map[string]any {
 	return got
 }
 
-func hasString(values any, want string) bool {
+func assertStrings(t *testing.T, values any, want []string, field string) {
+	t.Helper()
 	items, ok := values.([]any)
-	if !ok {
-		return false
+	if !ok || len(items) != len(want) {
+		t.Fatalf("%s = %#v, want %#v", field, values, want)
 	}
-	for _, item := range items {
-		if item == want {
-			return true
+	got := make([]string, len(items))
+	for i, item := range items {
+		value, ok := item.(string)
+		if !ok {
+			t.Fatalf("%s = %#v, want strings %#v", field, values, want)
 		}
+		got[i] = value
 	}
-	return false
+	sort.Strings(got)
+	want = append([]string(nil), want...)
+	sort.Strings(want)
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("%s = %#v, want %#v", field, got, want)
+	}
 }
 
-func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTitle, wantBlockerDescription string, wantNotes int, wantChangedLabel bool) {
+func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTitle, wantBlockerDescription string, wantLabels, wantNotes []string) {
 	t.Helper()
 	blocker := jsonObject(t, run(t, destination, "show", "mig-blocker", "--json"))
 	for key, want := range map[string]string{
@@ -257,14 +266,28 @@ func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTi
 			t.Fatalf("blocker %s = %#v, want %q", key, blocker[key], want)
 		}
 	}
-	if !hasString(blocker["labels"], "source") || !hasString(blocker["labels"], "unicode:日本語") {
-		t.Fatalf("blocker labels = %#v", blocker["labels"])
+	assertStrings(t, blocker["labels"], wantLabels, "blocker labels")
+	notes, ok := blocker["notes"].([]any)
+	if !ok || len(notes) != len(wantNotes) {
+		t.Fatalf("blocker notes = %#v, want %d notes", blocker["notes"], len(wantNotes))
 	}
-	if hasString(blocker["labels"], "changed") != wantChangedLabel {
-		t.Fatalf("blocker changed label = %#v, want present=%t", blocker["labels"], wantChangedLabel)
+	gotNotes := make([]string, len(notes))
+	for i, note := range notes {
+		record, ok := note.(map[string]any)
+		if !ok {
+			t.Fatalf("blocker note = %#v", note)
+		}
+		body, ok := record["body"].(string)
+		if !ok {
+			t.Fatalf("blocker note = %#v", note)
+		}
+		gotNotes[i] = body
 	}
-	if notes, ok := blocker["notes"].([]any); !ok || len(notes) != wantNotes || !strings.Contains(notes[0].(map[string]any)["body"].(string), "blocker comment") {
-		t.Fatalf("blocker notes = %#v", blocker["notes"])
+	sort.Strings(gotNotes)
+	wantNotes = append([]string(nil), wantNotes...)
+	sort.Strings(wantNotes)
+	if strings.Join(gotNotes, "\x00") != strings.Join(wantNotes, "\x00") {
+		t.Fatalf("blocker notes = %#v, want %#v", gotNotes, wantNotes)
 	}
 	parents := run(t, destination, "parents", "mig-related", "--json")
 	if parents.code != 0 || !strings.Contains(parents.stdout, "mig-blocker") {
@@ -289,7 +312,7 @@ func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTi
 	if !ok || json.Unmarshal([]byte(metadataText), &metadata) != nil {
 		t.Fatalf("role metadata = %#v", rune["metadata"])
 	}
-	if rune["key"] != "role/operator" || rune["kind"] != "role" || rune["title"] != wantRoleTitle || rune["protected"] != true || metadata["legacy_bd_id"] != "mig-role" {
+	if rune["key"] != "role/operator" || rune["kind"] != "role" || rune["title"] != wantRoleTitle || rune["body"] != "role body" || rune["protected"] != true || metadata["legacy_bd_id"] != "mig-role" {
 		t.Fatalf("role rune = %#v", rune)
 	}
 }
@@ -305,7 +328,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 		t.Fatalf("first migration = %#v", first)
 	}
 	assertReadonlyCalls(t, log)
-	assertImportedPublicState(t, destination, "seed memory", "[role] Operator", "blocker description", 1, false)
+	assertImportedPublicState(t, destination, "seed memory", "[role] Operator", "blocker description", []string{"source", "unicode:日本語"}, []string{"blocker comment"})
 	beforeRerun, err := os.ReadFile(destination)
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +352,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"create", "--id", "mig-new", "--title", "New source card", "--labels", "new-label", "--silent"},
-		{"update", "mig-blocker", "--description", "changed blocker description", "--add-label", "changed"},
+		{"update", "mig-blocker", "--description", "changed blocker description", "--remove-label", "source", "--add-label", "changed"},
 		{"comment", "mig-blocker", "second blocker comment"},
 		{"update", "mig-role", "--title", "[role] Updated Operator", "--add-label", "changed"},
 		{"comment", "mig-role", "second comment"},
@@ -345,7 +368,11 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	if third.code != 0 {
 		t.Fatalf("mutated migration: %#v", third)
 	}
-	assertImportedPublicState(t, destination, "changed memory", "[role] Updated Operator", "changed blocker description", 2, true)
+	assertImportedPublicState(t, destination, "changed memory", "[role] Updated Operator", "changed blocker description", []string{"changed", "unicode:日本語"}, []string{"blocker comment", "second blocker comment"})
+	newParents := run(t, destination, "parents", "mig-new", "--json")
+	if newParents.code != 0 || !strings.Contains(newParents.stdout, "mig-blocker") {
+		t.Fatalf("mutated public edge read = %#v", newParents)
+	}
 	listed := run(t, destination, "list", "--json")
 	if listed.code != 0 || !strings.Contains(listed.stdout, "mig-new") || !strings.Contains(listed.stdout, strings.TrimSpace(owned.stdout)) {
 		t.Fatalf("destination did not converge or preserve owned data: %#v", listed)
@@ -364,6 +391,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	if !strings.Contains(listed.stdout, "mig-new") {
 		t.Fatalf("source deletion removed destination record: %s", listed.stdout)
 	}
+	assertReadonlyCalls(t, log)
 }
 
 func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
@@ -417,15 +445,21 @@ func TestMigrationHelpFailureAndArchitectureContracts(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "bd.calls")
 	shim := recordingBD(t, migrationBD(t), log)
 	destination := filepath.Join(t.TempDir(), "not-created", "store.sqlite")
-	help := runCommand(t, "", migrationBinary, "--help", "--workspace", workspace, "--bd", shim, "--destination", destination)
-	if help.code != 0 || help.stderr != "" || !strings.HasPrefix(help.stdout, "Usage:") {
-		t.Fatalf("help = %#v", help)
+	for _, flag := range []string{"--help", "-h"} {
+		help := runCommand(t, "", migrationBinary, flag, "--workspace", workspace, "--bd", shim, "--destination", destination)
+		if help.code != 0 || help.stderr != "" || !strings.HasPrefix(help.stdout, "Usage:") {
+			t.Fatalf("help %s = %#v", flag, help)
+		}
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {
 		t.Fatalf("help invoked bd or otherwise accessed the source: %v", err)
 	}
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
 		t.Fatalf("help touched destination: %v", err)
+	}
+	badArgs := runCommand(t, "", migrationBinary, "--not-a-real-flag")
+	if badArgs.code != 2 || badArgs.stdout != "" || !strings.Contains(badArgs.stderr, "flag provided but not defined") {
+		t.Fatalf("bad arguments = %#v", badArgs)
 	}
 	missing := filepath.Join(t.TempDir(), "missing")
 	bad := runCommand(t, "", migrationBinary, "--workspace", missing)
@@ -448,6 +482,8 @@ func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) 
 	for _, args := range [][]string{
 		{"create", "--id", "mig-supported", "--title", "Supported card", "--silent"},
 		{"create", "--id", "mig-malformed", "--title", "[role]", "--type", "role", "--silent"},
+		{"config", "set", "types.custom", "role,incident,infrastructure"},
+		{"create", "--id", "mig-infrastructure", "--title", "Infrastructure", "--type", "infrastructure", "--silent"},
 	} {
 		r := runCommand(t, workspace, bd, args...)
 		if r.code != 0 {
@@ -461,7 +497,8 @@ func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) 
 	}
 	// Lines are sorted by source ID and reasons within each ID are stable. A
 	// malformed role is non-fatal while the ordinary card remains importable.
-	wantWarnings := "warning: mig-malformed: role title does not produce a valid rune key; skipped record\n" +
+	wantWarnings := "warning: mig-infrastructure: unsupported issue type \"infrastructure\"; skipped record\n" +
+		"warning: mig-malformed: role title does not produce a valid rune key; skipped record\n" +
 		expectedRoleWarnings
 	if r.stderr != wantWarnings {
 		t.Fatalf("warning output = %q, want %q", r.stderr, wantWarnings)
@@ -534,8 +571,10 @@ func TestMigrationDestinationOwnedCollisionsWarnAndPreserveRecords(t *testing.T)
 		}
 	}
 	r := runMigration(t, workspace, bd, destination)
-	if r.code != 0 || !strings.Contains(r.stderr, "warning: "+ownedID+": destination-owned card ID collision; skipped record") ||
-		!strings.Contains(r.stderr, "warning: mig-role-collision: destination-owned rune key collision; skipped record") {
+	wantWarnings := "warning: " + ownedID + ": destination-owned card ID collision; skipped record\n" +
+		expectedRoleWarnings +
+		"warning: mig-role-collision: destination-owned rune key collision; skipped record\n"
+	if r.code != 0 || r.stderr != wantWarnings || r.stdout != wroteTo(t, destination) {
 		t.Fatalf("collision migration = %#v", r)
 	}
 	card := jsonObject(t, run(t, destination, "show", ownedID, "--json"))
@@ -592,5 +631,26 @@ func TestMigrationTransactionFailureRollsBackEarlierUpserts(t *testing.T) {
 		if got := run(t, destination, "show", id, "--json"); got.code == 0 {
 			t.Fatalf("transaction failure left partial source record %s: %#v", id, got)
 		}
+	}
+	db, err = sql.Open("sqlite", destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DROP TRIGGER migration_fail_before_card`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	retry := runMigration(t, workspace, bd, destination)
+	if retry.code != 0 || retry.stdout != wroteTo(t, destination) {
+		t.Fatalf("retry after rollback = %#v", retry)
+	}
+	if got := run(t, destination, "show", nativeID, "--json"); got.code != 0 || got.stdout != before.stdout {
+		t.Fatalf("retry changed native destination record: before=%#v after=%#v", before, got)
+	}
+	if got := run(t, destination, "show", "mig-fail", "--json"); got.code != 0 {
+		t.Fatalf("retry did not converge imported source record: %#v", got)
 	}
 }
