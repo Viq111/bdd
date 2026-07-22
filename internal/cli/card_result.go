@@ -175,8 +175,9 @@ func toNoteResults(notes []bdd.Note) []NoteResult {
 }
 
 // emitCard writes the result of a single-card command: JSON encodes the
-// full object, --silent prints just the ID, and the human default renders
-// the full card block.
+// full object, --silent prints just the ID, and the human default prints a
+// one-line confirmation naming the verb (the caller already knows the
+// fields it just wrote).
 func emitCard(s *Streams, cmdName string, r CardResult) int {
 	if s.JSON {
 		if err := NewJSONEncoder(s.Stdout).Object(r); err != nil {
@@ -189,8 +190,27 @@ func emitCard(s *Streams, cmdName string, r CardResult) int {
 		fmt.Fprintln(s.Stdout, r.ID)
 		return ExitSuccess
 	}
-	renderCard(s.Stdout, r)
+	fmt.Fprintln(s.Stdout, cardMutationLine(cmdName, r.ID))
 	return ExitSuccess
+}
+
+// cardMutationLine picks the past-tense confirmation word for cmdName. create
+// has no prior state to confirm, so it reads as `id: <id>` instead.
+func cardMutationLine(cmdName, id string) string {
+	switch cmdName {
+	case "create":
+		return fmt.Sprintf("id: %s", id)
+	case "close":
+		return fmt.Sprintf("closed %s", id)
+	case "reopen":
+		return fmt.Sprintf("reopened %s", id)
+	case "defer":
+		return fmt.Sprintf("deferred %s", id)
+	case "human":
+		return fmt.Sprintf("blocked-on-human %s", id)
+	default:
+		return fmt.Sprintf("updated %s", id)
+	}
 }
 
 // emitShow writes the result of `bdd show`.
@@ -305,15 +325,7 @@ func formatWorktreeDisplay(wt string) string {
 // renderCardSummaryLine writes one compact line for a list/search/ready
 // result entry.
 func renderCardSummaryLine(w io.Writer, c CardSummaryResult) {
-	labels := ""
-	if len(c.Labels) > 0 {
-		labels = " [" + strings.Join(c.Labels, ",") + "]"
-	}
-	assignee := ""
-	if c.Assignee != "" {
-		assignee = " @" + c.Assignee
-	}
-	fmt.Fprintf(w, "%s\tP%d\t%-10s %-12s %s%s%s\n", c.ID, c.Priority, c.Type, c.Status, sanitizeForTerminal(c.Title), sanitizeForTerminal(assignee), sanitizeForTerminal(labels))
+	fmt.Fprintf(w, "%s - %s\n", c.ID, sanitizeForTerminal(c.Title))
 }
 
 // emitCardSummaries writes a list/search/ready result set.
