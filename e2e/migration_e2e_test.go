@@ -413,15 +413,21 @@ func TestMigrationReconcilesSourceTimestamps(t *testing.T) {
 }
 
 func TestMigrationHelpFailureAndArchitectureContracts(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "missing")
+	workspace := seedMigrationWorkspace(t)
+	log := filepath.Join(t.TempDir(), "bd.calls")
+	shim := recordingBD(t, migrationBD(t), log)
 	destination := filepath.Join(t.TempDir(), "not-created", "store.sqlite")
-	help := runCommand(t, "", migrationBinary, "--help", "--workspace", missing, "--destination", destination)
+	help := runCommand(t, "", migrationBinary, "--help", "--workspace", workspace, "--bd", shim, "--destination", destination)
 	if help.code != 0 || help.stderr != "" || !strings.HasPrefix(help.stdout, "Usage:") {
 		t.Fatalf("help = %#v", help)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatalf("help invoked bd or otherwise accessed the source: %v", err)
 	}
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
 		t.Fatalf("help touched destination: %v", err)
 	}
+	missing := filepath.Join(t.TempDir(), "missing")
 	bad := runCommand(t, "", migrationBinary, "--workspace", missing)
 	if bad.code != 2 || bad.stdout != "" || !strings.Contains(bad.stderr, "no .beads directory") {
 		t.Fatalf("missing source = %#v", bad)
@@ -483,6 +489,22 @@ func TestMigrationCorruptDestinationDoesNotPartiallyUpsert(t *testing.T) {
 	}
 	if !bytes.Equal(contents, after) {
 		t.Fatal("failed migration modified corrupt destination")
+	}
+}
+
+func TestMigrationNewDestinationPublicationFailureLeavesNoArtifact(t *testing.T) {
+	workspace := seedMigrationWorkspace(t)
+	parentFile := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(parentFile, []byte("destination parent blocker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(parentFile, "store.sqlite")
+	r := runMigration(t, workspace, migrationBD(t), destination)
+	if r.code != 1 || r.stdout != "" {
+		t.Fatalf("new destination publication failure = %#v", r)
+	}
+	if contents, err := os.ReadFile(parentFile); err != nil || string(contents) != "destination parent blocker" {
+		t.Fatalf("failed new destination migration changed its parent blocker: contents=%q err=%v", contents, err)
 	}
 }
 
