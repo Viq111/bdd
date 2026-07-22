@@ -3,6 +3,7 @@ package bdd
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -156,6 +157,9 @@ func TestPutRuneExpectedRevisionStaleFails(t *testing.T) {
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("PutRune(stale ExpectedRevision) error = %v, want ErrInvalidArgument", err)
 	}
+	if strings.Contains(err.Error(), "put rune") {
+		t.Fatalf("PutRune(stale ExpectedRevision) error = %v, must not mention retired %q wording", err, "put rune")
+	}
 
 	got, err := db.GetRune(ctx, "role/programmer")
 	if err != nil {
@@ -182,6 +186,9 @@ func TestPutRuneProtectedRequiresForce(t *testing.T) {
 	_, err := db.PutRune(ctx, PutRune{Key: "role/programmer", Kind: "role", Mutation: RuneMutation{Body: ptr("v2")}, Actor: "alice"})
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("PutRune(protected, no Force) error = %v, want ErrInvalidArgument", err)
+	}
+	if strings.Contains(err.Error(), "put rune") {
+		t.Fatalf("PutRune(protected, no Force) error = %v, must not mention retired %q wording", err, "put rune")
 	}
 
 	updated, err := db.PutRune(ctx, PutRune{Key: "role/programmer", Kind: "role", Mutation: RuneMutation{Body: ptr("v2")}, Actor: "alice", Force: true})

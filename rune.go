@@ -122,7 +122,7 @@ func (db *DB) PutRune(ctx context.Context, in PutRune) (*Rune, error) {
 		return nil, err
 	}
 	if db.opts.ReadOnly {
-		return nil, fmt.Errorf("bdd: put rune: database is read-only: %w", ErrInvalidArgument)
+		return nil, fmt.Errorf("bdd: set rune: database is read-only: %w", ErrInvalidArgument)
 	}
 
 	kind, _, err := parseRuneKey(in.Key)
@@ -161,10 +161,10 @@ func (db *DB) PutRune(ctx context.Context, in PutRune) (*Rune, error) {
 				return ErrAlreadyExists
 			}
 			if in.ExpectedRevision != nil && *in.ExpectedRevision != existing.Revision {
-				return fmt.Errorf("bdd: put rune: expected revision %d, found %d: %w", *in.ExpectedRevision, existing.Revision, ErrInvalidArgument)
+				return fmt.Errorf("bdd: set rune: expected revision %d, found %d: %w", *in.ExpectedRevision, existing.Revision, ErrInvalidArgument)
 			}
 			if existing.Protected && !in.Force {
-				return fmt.Errorf("bdd: put rune: %s is protected, Force required: %w", in.Key, ErrInvalidArgument)
+				return fmt.Errorf("bdd: set rune: %s is protected, Force required: %w", in.Key, ErrInvalidArgument)
 			}
 			r, err := updateRuneTx(ctx, tx, existing, in, now)
 			if err != nil {
@@ -203,7 +203,7 @@ func createRuneTx(ctx context.Context, tx *sql.Tx, in PutRune, now time.Time) (*
 		protected = *in.Mutation.Protected
 	}
 	if in.ExpectedRevision != nil {
-		return nil, fmt.Errorf("bdd: put rune: %s does not exist, cannot check expected revision: %w", in.Key, ErrInvalidArgument)
+		return nil, fmt.Errorf("bdd: set rune: %s does not exist, cannot check expected revision: %w", in.Key, ErrInvalidArgument)
 	}
 
 	nowStr := now.Format(time.RFC3339Nano)
