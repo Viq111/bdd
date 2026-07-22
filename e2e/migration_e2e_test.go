@@ -196,7 +196,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	if third.code != 0 {
 		t.Fatalf("mutated migration: %#v", third)
 	}
-	listed := run(t, destination, "list", "--status", "all", "--json")
+	listed := run(t, destination, "list", "--json")
 	if listed.code != 0 || !strings.Contains(listed.stdout, "mig-new") || !strings.Contains(listed.stdout, strings.TrimSpace(owned.stdout)) {
 		t.Fatalf("destination did not converge or preserve owned data: %#v", listed)
 	}
@@ -210,7 +210,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	if fourth.code != 0 {
 		t.Fatalf("post-delete migration: %#v", fourth)
 	}
-	listed = run(t, destination, "list", "--status", "all", "--json")
+	listed = run(t, destination, "list", "--json")
 	if !strings.Contains(listed.stdout, "mig-new") {
 		t.Fatalf("source deletion removed destination record: %s", listed.stdout)
 	}
@@ -264,7 +264,7 @@ func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) 
 	if r.stderr != wantWarnings {
 		t.Fatalf("warning output = %q, want %q", r.stderr, wantWarnings)
 	}
-	listed := run(t, destination, "list", "--status", "all", "--json")
+	listed := run(t, destination, "list", "--json")
 	if listed.code != 0 || !strings.Contains(listed.stdout, "mig-supported") {
 		t.Fatalf("supported record was not imported: %#v", listed)
 	}
