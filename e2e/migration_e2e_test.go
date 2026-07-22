@@ -137,6 +137,32 @@ func recordingBD(t *testing.T, real, log string) string {
 	return path
 }
 
+// timestampBD keeps every source operation real and read-only, but makes the
+// export snapshot's otherwise clock-dependent timestamps explicit. The
+// counter is outside the workspace, so the shim cannot mask a source write.
+func timestampBD(t *testing.T, real string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "timestamp-bd")
+	count := filepath.Join(dir, "exports")
+	script := `#!/bin/sh
+count=0
+if [ -f '` + count + `' ]; then count=$(cat '` + count + `'); fi
+if [ "$2" = export ]; then
+  count=$((count + 1))
+  printf '%s\n' "$count" > '` + count + `'
+  if [ "$count" -eq 1 ]; then stamp=2020-01-02T03:04:05Z; else stamp=2021-02-03T04:05:06Z; fi
+  '` + real + `' "$@" | sed -E "s/(\\\"(created_at|updated_at)\\\":\\\")[^\\\"]+\\\"/\\1${stamp}\\\"/g"
+  exit ${PIPESTATUS:-0}
+fi
+exec '` + real + `' "$@"
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func runMigration(t *testing.T, workspace, bd, destination string) result {
 	t.Helper()
 	before := beadsDigest(t, workspace)
@@ -167,6 +193,15 @@ func runMigrationFromWorkspace(t *testing.T, workspace, bd, destination string) 
 		t.Fatalf("migration changed source .beads: before=%s after=%s", before, after)
 	}
 	return r
+}
+
+func wroteTo(t *testing.T, destination string) string {
+	t.Helper()
+	parent, err := filepath.EvalSymlinks(filepath.Dir(destination))
+	if err != nil {
+		t.Fatalf("canonicalize destination parent: %v", err)
+	}
+	return "wrote to " + filepath.Join(parent, filepath.Base(destination)) + "\n"
 }
 
 func assertReadonlyCalls(t *testing.T, log string) {
@@ -266,7 +301,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "destination.sqlite")
 
 	first := runMigrationFromWorkspace(t, workspace, shim, destination)
-	if first.code != 0 || first.stderr != expectedRoleWarnings || first.stdout != "wrote to "+canonicalDestination(t, destination)+"\n" {
+	if first.code != 0 || first.stderr != expectedRoleWarnings || first.stdout != wroteTo(t, destination) {
 		t.Fatalf("first migration = %#v", first)
 	}
 	assertReadonlyCalls(t, log)
@@ -335,12 +370,45 @@ func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
 	workspace := seedSingleRoleWorkspace(t)
 	destination := filepath.Join(t.TempDir(), "destination.sqlite")
 	r := runMigration(t, workspace, migrationBD(t), destination)
-	if r.code != 0 || r.stdout != "wrote to "+destination+"\n" || r.stderr != "" {
+	if r.code != 0 || r.stdout != wroteTo(t, destination) || r.stderr != "" {
 		t.Fatalf("single-role migration = %#v", r)
 	}
 	rune := jsonObject(t, run(t, destination, "rune", "show", "role/operator", "--json"))
 	if rune["protected"] != true {
 		t.Fatalf("migrated role is not protected: %#v", rune)
+	}
+}
+
+func TestMigrationReconcilesSourceTimestamps(t *testing.T) {
+	workspace := seedMigrationWorkspace(t)
+	shim := timestampBD(t, migrationBD(t))
+	destination := filepath.Join(t.TempDir(), "destination.sqlite")
+	first := runMigration(t, workspace, shim, destination)
+	if first.code != 0 || first.stdout != wroteTo(t, destination) {
+		t.Fatalf("timestamp initial migration = %#v", first)
+	}
+	initial := jsonObject(t, run(t, destination, "show", "mig-blocker", "--json"))
+	for _, field := range []string{"created_at", "updated_at"} {
+		if initial[field] != "2020-01-02T03:04:05Z" {
+			t.Fatalf("initial %s = %#v, want fixture timestamp", field, initial[field])
+		}
+	}
+	changed := runCommand(t, workspace, migrationBD(t), "update", "mig-blocker", "--title", "Timestamp changed")
+	if changed.code != 0 {
+		t.Fatalf("mutate timestamp source: %#v", changed)
+	}
+	second := runMigration(t, workspace, shim, destination)
+	if second.code != 0 || second.stdout != wroteTo(t, destination) {
+		t.Fatalf("timestamp rerun = %#v", second)
+	}
+	reconciled := jsonObject(t, run(t, destination, "show", "mig-blocker", "--json"))
+	if reconciled["title"] != "Timestamp changed" {
+		t.Fatalf("timestamp source mutation did not upsert card: %#v", reconciled)
+	}
+	for _, field := range []string{"created_at", "updated_at"} {
+		if reconciled[field] != "2021-02-03T04:05:06Z" {
+			t.Fatalf("reconciled %s = %#v, want fixture timestamp", field, reconciled[field])
+		}
 	}
 }
 
@@ -382,7 +450,7 @@ func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) 
 	}
 	destination := filepath.Join(t.TempDir(), "destination.sqlite")
 	r := runMigration(t, workspace, bd, destination)
-	if r.code != 0 || r.stdout != "wrote to "+canonicalDestination(t, destination)+"\n" {
+	if r.code != 0 || r.stdout != wroteTo(t, destination) {
 		t.Fatalf("unsupported-record migration = %#v", r)
 	}
 	// Lines are sorted by source ID and reasons within each ID are stable. A
@@ -473,6 +541,11 @@ func TestMigrationTransactionFailureRollsBackEarlierUpserts(t *testing.T) {
 	if native.code != 0 {
 		t.Fatalf("create native card: %#v", native)
 	}
+	nativeID := strings.TrimSpace(native.stdout)
+	before := run(t, destination, "show", nativeID, "--json")
+	if before.code != 0 || !strings.Contains(before.stdout, nativeID) {
+		t.Fatalf("pre-failure destination does not contain native card: %#v", before)
+	}
 	// The trigger is harness-only fault injection. It fires after the sorted
 	// import has already attempted earlier cards, exercising SQLite rollback in
 	// the real compiled migration executable rather than a sink test seam.
@@ -489,8 +562,13 @@ func TestMigrationTransactionFailureRollsBackEarlierUpserts(t *testing.T) {
 	if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "injected transaction failure") {
 		t.Fatalf("injected failure = %#v", r)
 	}
-	listed := run(t, destination, "list", "--status", "all", "--json")
-	if listed.code != 0 || !strings.Contains(listed.stdout, strings.TrimSpace(native.stdout)) || strings.Contains(listed.stdout, "mig-blocker") || strings.Contains(listed.stdout, "mig-fail") {
-		t.Fatalf("transaction failure left partial upserts: %#v", listed)
+	after := run(t, destination, "show", nativeID, "--json")
+	if after.code != 0 || after.stdout != before.stdout {
+		t.Fatalf("transaction failure changed native card: before=%#v after=%#v", before, after)
+	}
+	for _, id := range []string{"mig-blocker", "mig-fail"} {
+		if got := run(t, destination, "show", id, "--json"); got.code == 0 {
+			t.Fatalf("transaction failure left partial source record %s: %#v", id, got)
+		}
 	}
 }
