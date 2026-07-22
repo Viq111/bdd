@@ -17,14 +17,14 @@ parameters, including `_pragma` (runs an arbitrary `PRAGMA <value>`
 statement immediately after opening) and `vfs` (selects an alternate VFS).
 
 Every one of this project's DSN-producing paths ultimately traces back to a
-CLI-flag- or library-caller-supplied filesystem path: `--db`, `--workspace`
+CLI-flag- or library-caller-supplied filesystem path: `--workspace`
 discovery, `snapshot --output`, and `restore <source>`/the restore target.
 Most of those call sites `os.Stat` the literal path (including any `?`
 suffix) before opening it, which incidentally blocks the attack when the
-target must already exist — but `bdd init --db <path>` creates a *new* file,
-so `os.Stat` observes `IsNotExist` on the full string and falls through to
+target must already exist — but `bdd init` creates a *new* file, so
+`os.Stat` observes `IsNotExist` on the full string and falls through to
 `sqlite.Open` with the injected suffix intact. Confirmed exploitable before
-the fix:
+the fix, via the now-removed `--db` flag (bd bdd-0wx9):
 
 ```
 $ bdd --db "/tmp/x.sqlite?_pragma=journal_mode(delete)" init
