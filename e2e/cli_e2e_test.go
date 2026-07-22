@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var bddBinary string
+var bddBinary, migrationBinary string
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "bdd-e2e-bin-")
@@ -28,6 +28,11 @@ func TestMain(m *testing.M) {
 	build := exec.Command("go", "build", "-o", bddBinary, "../cmd/bdd")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("build bdd: " + err.Error() + "\n" + string(out))
+	}
+	migrationBinary = filepath.Join(dir, "bdd-migration")
+	build = exec.Command("go", "build", "-o", migrationBinary, "../tools/migrate/cmd/bdd-migration")
+	if out, err := build.CombinedOutput(); err != nil {
+		panic("build bdd-migration: " + err.Error() + "\n" + string(out))
 	}
 
 	os.Exit(m.Run())
