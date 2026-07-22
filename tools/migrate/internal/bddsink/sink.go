@@ -223,20 +223,52 @@ func prepare(ctx context.Context, tx *sql.Tx, plan model.Plan) (model.Plan, []mo
 		}
 	}
 	for _, source := range plan.Runes {
-		var metadata string
-		err := tx.QueryRowContext(ctx, `SELECT metadata_json FROM runes WHERE key=?`, source.Key).Scan(&metadata)
+		legacyID := source.Metadata["legacy_bd_id"]
+		var existingKey, metadata string
+		err := tx.QueryRowContext(ctx, `SELECT key,metadata_json FROM runes WHERE key=?`, source.Key).Scan(&existingKey, &metadata)
 		if errors.Is(err, sql.ErrNoRows) {
-			effective.Runes = append(effective.Runes, source)
-			continue
+			// A role rune key is derived from its source title, which can change.
+			// The legacy ID is stable, so use it to find and update the already
+			// imported rune rather than leaving the old key stale and creating a
+			// second rune at the newly-derived key.
+			rows, queryErr := tx.QueryContext(ctx, `SELECT key,metadata_json FROM runes`)
+			if queryErr != nil {
+				return model.Plan{}, nil, queryErr
+			}
+			for rows.Next() {
+				var key, candidate string
+				if scanErr := rows.Scan(&key, &candidate); scanErr != nil {
+					rows.Close()
+					return model.Plan{}, nil, scanErr
+				}
+				var existing map[string]string
+				if json.Unmarshal([]byte(candidate), &existing) == nil && legacyID != "" && existing["legacy_bd_id"] == legacyID {
+					existingKey, metadata = key, candidate
+					break
+				}
+			}
+			if rowsErr := rows.Err(); rowsErr != nil {
+				rows.Close()
+				return model.Plan{}, nil, rowsErr
+			}
+			if closeErr := rows.Close(); closeErr != nil {
+				return model.Plan{}, nil, closeErr
+			}
+			if existingKey == "" {
+				effective.Runes = append(effective.Runes, source)
+				continue
+			}
+			err = nil
 		}
 		if err != nil {
 			return model.Plan{}, nil, err
 		}
 		var existing map[string]string
-		if json.Unmarshal([]byte(metadata), &existing) != nil || existing["legacy_bd_id"] != source.Metadata["legacy_bd_id"] {
-			warnings = append(warnings, model.Warning{SourceID: source.Metadata["legacy_bd_id"], Reasons: []string{"destination-owned rune key collision; skipped record"}})
+		if json.Unmarshal([]byte(metadata), &existing) != nil || existing["legacy_bd_id"] != legacyID {
+			warnings = append(warnings, model.Warning{SourceID: legacyID, Reasons: []string{"destination-owned rune key collision; skipped record"}})
 			continue
 		}
+		source.Key = existingKey
 		effective.Runes = append(effective.Runes, source)
 	}
 	return effective, canonicalWarnings(warnings), nil

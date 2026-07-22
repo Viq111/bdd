@@ -539,6 +539,38 @@ func TestApplyInitialImportIsPubliclyReadable(t *testing.T) {
 		t.Fatalf("memory after rerun=%#v err=%v", afterMemory, err)
 	}
 }
+
+func TestApplyRerunUpdatesImportedRuneAfterRoleTitleChange(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bdd.sqlite")
+	plan := model.Plan{Runes: []model.RunePlan{{
+		Key: "role/operator", Kind: "role", Title: "[role] Operator", Body: "role body", Enabled: true, Protected: true,
+		Metadata: map[string]string{"legacy_bd_id": "mig-role"},
+	}}}
+	if err := Apply(ctx, path, "mig", plan); err != nil {
+		t.Fatal(err)
+	}
+
+	plan.Runes[0].Key = "role/updated-operator"
+	plan.Runes[0].Title = "[role] Updated Operator"
+	if err := Apply(ctx, path, "mig", plan); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := bdd.Open(ctx, bdd.OpenOptions{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rune, err := db.GetRune(ctx, "role/operator")
+	if err != nil || rune.Title != "[role] Updated Operator" {
+		t.Fatalf("original rune = %#v, %v", rune, err)
+	}
+	if _, err := db.GetRune(ctx, "role/updated-operator"); err == nil {
+		t.Fatal("title change created a second imported rune")
+	}
+}
+
 func TestSchemaContractRejectsDoctoredDatabase(t *testing.T) {
 	ctx := context.Background()
 	for name, doctor := range map[string]func(*sql.DB) error{
