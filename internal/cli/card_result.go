@@ -24,6 +24,7 @@ type CardResult struct {
 	Priority     int32           `json:"priority"`
 	Worktree     string          `json:"worktree"`
 	Assignee     string          `json:"assignee"`
+	Owner        string          `json:"owner"`
 	Dispatchable bool            `json:"dispatchable"`
 	Labels       []string        `json:"labels"`
 	Description  string          `json:"description"`
@@ -125,6 +126,7 @@ func toCardResult(c *bdd.Card) CardResult {
 		Priority:     c.Priority,
 		Worktree:     c.Worktree,
 		Assignee:     c.Assignee,
+		Owner:        c.Owner,
 		Dispatchable: c.Dispatchable,
 		Labels:       nonNilLabels(c.Labels),
 		Description:  c.Description,
@@ -233,6 +235,7 @@ func renderCard(w io.Writer, r CardResult) {
 	fmt.Fprintf(w, "priority:     %d\n", r.Priority)
 	fmt.Fprintf(w, "worktree:     %s\n", sanitizeForTerminal(formatWorktreeDisplay(r.Worktree)))
 	fmt.Fprintf(w, "assignee:     %s\n", sanitizeForTerminal(emptyDash(r.Assignee)))
+	fmt.Fprintf(w, "owner:        %s\n", sanitizeForTerminal(emptyDash(r.Owner)))
 	fmt.Fprintf(w, "dispatchable: %t\n", r.Dispatchable)
 	fmt.Fprintf(w, "labels:       %s\n", sanitizeForTerminal(emptyDash(strings.Join(r.Labels, ", "))))
 	if len(r.Parents) > 0 {

@@ -40,6 +40,30 @@ func TestCreateCardChoreNeedsOnlyTitle(t *testing.T) {
 	if card.CreatedBy != "alice" {
 		t.Fatalf("card.CreatedBy = %q, want alice", card.CreatedBy)
 	}
+	if card.Owner != "" {
+		t.Fatalf("card.Owner = %q, want empty by default", card.Owner)
+	}
+}
+
+func TestCreateCardPreservesOwner(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "Preserve source owner", Type: CardTypeChore, CreatedBy: "creator", Owner: "source-owner"})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	if created.Owner != "source-owner" {
+		t.Fatalf("created.Owner = %q, want source-owner", created.Owner)
+	}
+
+	got, err := db.GetCard(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if got.Owner != "source-owner" {
+		t.Fatalf("GetCard().Owner = %q, want source-owner", got.Owner)
+	}
 }
 
 func hasPrefix(s, p string) bool { return len(s) >= len(p) && s[:len(p)] == p }
@@ -460,6 +484,7 @@ func TestCreateCardRejectsInvalidUTF8(t *testing.T) {
 		{"external_ref", CreateCard{Title: "x", Type: CardTypeChore, ExternalRef: ptr("bad \xff\xfe")}},
 		{"worktree", CreateCard{Title: "x", Type: CardTypeChore, Worktree: ptr("bad \xff\xfe")}},
 		{"notes", CreateCard{Title: "x", Type: CardTypeChore, Notes: ptr("bad \xff\xfe")}},
+		{"owner", CreateCard{Title: "x", Type: CardTypeChore, Owner: "bad \xff\xfe"}},
 	}
 
 	for _, tc := range tests {
