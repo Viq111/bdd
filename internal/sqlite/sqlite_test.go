@@ -42,8 +42,8 @@ func TestOpenAppliesPragmas(t *testing.T) {
 // treats the remainder as connection parameters (_pragma runs an arbitrary
 // PRAGMA statement, vfs selects an alternate VFS). Since every path Open
 // receives ultimately traces back to a caller- or flag-supplied filesystem
-// path (--db, snapshot/restore paths), a path containing '?' must be
-// rejected rather than silently reinterpreted.
+// path (--workspace discovery, snapshot/restore paths), a path containing
+// '?' must be rejected rather than silently reinterpreted.
 func TestOpenRejectsQueryStringInjection(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

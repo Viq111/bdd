@@ -158,8 +158,8 @@ func IsBusy(err error) bool {
 // parses the remainder as query parameters — including "_pragma", which
 // runs an arbitrary "PRAGMA <value>" statement on open, and "vfs", which
 // selects an alternate VFS. Every caller in this package builds its DSN
-// directly from a caller- or flag-supplied filesystem path (--db,
-// --workspace discovery, snapshot/restore paths), so a path containing '?'
+// directly from a caller- or flag-supplied filesystem path (--workspace
+// discovery, snapshot/restore paths), so a path containing '?'
 // would let whoever controls that path smuggle arbitrary PRAGMA execution
 // or VFS selection into the open call. Legitimate SQLite filenames have no
 // need for '?', so Open rejects it outright rather than attempting lossy

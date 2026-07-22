@@ -68,8 +68,7 @@ All workspace configuration — the ID prefix, custom statuses, custom types,
 and memories — lives in that one SQLite file; there is no separate
 JSON/YAML config file to parse before opening the database. The CLI starts
 at `--workspace`/`-C` (default: the current directory) and walks upward
-looking for `.bdd/bdd.sqlite`, stopping at the filesystem root. `--db <path>`
-opens an explicit database file instead, taking precedence over discovery.
+looking for `.bdd/bdd.sqlite`, stopping at the filesystem root.
 `bdd status` prints the resolved workspace and database path plus schema
 state; `bdd status --upgrade` applies pending schema migrations (a normal
 open only compares schema versions and never runs migrations itself).
@@ -81,7 +80,6 @@ open only compares schema versions and never runs migrations itself).
 | Flag | Meaning |
 |---|---|
 | `--workspace, -C <dir>` | Resolve the workspace starting from `<dir>` (default: cwd) |
-| `--db <path>` | Use this database file instead of workspace discovery |
 | `--actor <name>` | Actor recorded against mutations |
 | `--json` | Emit machine-readable JSON instead of human output |
 | `--silent` | Emit minimal output and suppress incidental diagnostics on success |

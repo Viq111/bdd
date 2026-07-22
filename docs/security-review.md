@@ -109,7 +109,7 @@ directory via repeated `filepath.Dir`, terminating correctly at the
 filesystem root (`parent == dir`) with no possibility of an infinite loop.
 `Init`/`Open`/`Snapshot`/`Restore` all resolve relative paths through
 `filepath.Abs`/`filepath.Join` before use; no unsanitized path
-concatenation or traversal pattern was found. `--db`, `--workspace`,
+concatenation or traversal pattern was found. `--workspace`,
 `snapshot --output`, and `restore`'s source/target paths all funnel through
 this same, reviewed set of helpers.
 
@@ -197,5 +197,5 @@ databases, snapshots) as the process's own user for every fuzz execution;
 run long local sessions in a container or otherwise disposable environment
 rather than directly against a machine you care about, since a fuzzer-found
 argument combination that happens to name a path outside the temp
-directory (e.g. via `--db`) would still be honored like any other CLI
+directory (e.g. via `--workspace`) would still be honored like any other CLI
 invocation.
