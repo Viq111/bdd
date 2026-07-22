@@ -787,3 +787,49 @@ func TestCardCommandsRejectRemovedDBFlag(t *testing.T) {
 		})
 	}
 }
+
+// TestCardOptionalTrailingFieldsRejectRemovedDBFlag covers commands whose
+// removed --db exposure isn't in the leading id but in an optional
+// free-form trailing positional (close/human's [reason]): --db there must
+// still be rejected as an unknown flag, not accepted as literal reason
+// text that lets the command mutate the card (bd bdd-md64).
+func TestCardOptionalTrailingFieldsRejectRemovedDBFlag(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	cases := []struct {
+		name    string
+		cmd     string
+		wantCmd string
+	}{
+		{"close", "close", "close"},
+		{"human", "human", "human"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id := createCard(t, dir, "--type", "chore", "trailing-db-"+tc.name)
+
+			_, stderr := runCLI(t, dir, ExitUsage, tc.cmd, id, "--db")
+			want := `bdd: ` + tc.wantCmd + `: unknown flag "--db"`
+			if !strings.Contains(stderr, want) {
+				t.Fatalf("Run(%s %s --db) stderr = %q, want it to contain %q", tc.cmd, id, stderr, want)
+			}
+
+			// The rejected command must not have mutated the card: it
+			// should still be open, and not flagged human, with --db
+			// nowhere in its state (reason, notes, or labels).
+			stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "show", id)
+			var show ShowResult
+			if err := json.Unmarshal([]byte(stdout), &show); err != nil {
+				t.Fatal(err)
+			}
+			if show.Status != "open" {
+				t.Fatalf("card %s status = %q after rejected %s --db, want %q (no mutation)", id, show.Status, tc.cmd, "open")
+			}
+			for _, l := range show.Labels {
+				if l == "human" {
+					t.Fatalf("card %s has human label after rejected %s --db, want no mutation", id, tc.cmd)
+				}
+			}
+		})
+	}
+}

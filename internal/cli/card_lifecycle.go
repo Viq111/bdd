@@ -87,12 +87,12 @@ func runCardNote(g GlobalFlags, args []string, s *Streams) int {
 
 // runCardClose implements `bdd close <id> [reason]`.
 func runCardClose(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "close", arg)
+	}
 	if len(args) == 0 {
 		s.Errorf("bdd: close: card id is required\n")
 		return ExitUsage
-	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "close", args[0])
 	}
 	id := args[0]
 	var reason string
@@ -206,12 +206,12 @@ func runCardDefer(g GlobalFlags, args []string, s *Streams) int {
 
 // runCardHuman implements `bdd human <id> [reason]`.
 func runCardHuman(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "human", arg)
+	}
 	if len(args) == 0 {
 		s.Errorf("bdd: human: card id is required\n")
 		return ExitUsage
-	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "human", args[0])
 	}
 	id := args[0]
 	var reason string

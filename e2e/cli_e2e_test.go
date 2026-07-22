@@ -638,3 +638,36 @@ func TestRemovedDBFlagRejected(t *testing.T) {
 		})
 	}
 }
+
+// TestRemovedDBFlagRejectedInTrailingPositional is a regression test for
+// bd bdd-md64: --db appearing after the required id, in an optional
+// free-form positional slot (close/human's [reason]), must be rejected as
+// an unknown flag before any mutation happens -- not accepted as literal
+// reason text.
+func TestRemovedDBFlagRejectedInTrailingPositional(t *testing.T) {
+	db := newWorkspace(t)
+	id := run(t, db, "create", "--type", "chore", "--silent", "trailing --db regression").stdout
+	id = strings.TrimSpace(id)
+
+	cases := []string{"close", "human"}
+	for _, cmd := range cases {
+		t.Run(cmd, func(t *testing.T) {
+			r := run(t, db, cmd, id, "--db")
+			if r.code != 2 {
+				t.Fatalf("bdd %s %s --db: code = %d, want 2 (unknown flag); stderr=%s", cmd, id, r.code, r.stderr)
+			}
+			want := `unknown flag "--db"`
+			if !strings.Contains(r.stderr, want) {
+				t.Fatalf("bdd %s %s --db: stderr = %q, want it to contain %q", cmd, id, r.stderr, want)
+			}
+
+			show := run(t, db, "show", id, "--json")
+			if show.code != 0 {
+				t.Fatalf("bdd show %s: code = %d, stderr=%s", id, show.code, show.stderr)
+			}
+			if strings.Contains(show.stdout, `"status":"closed"`) || strings.Contains(show.stdout, `"labels":["human"]`) {
+				t.Fatalf("bdd show %s after rejected %s --db: stdout = %q, want no mutation", id, cmd, show.stdout)
+			}
+		})
+	}
+}
