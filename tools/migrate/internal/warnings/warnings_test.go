@@ -1,6 +1,7 @@
 package warnings
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -25,5 +26,18 @@ func TestRenderEscapesLineTerminatorsInSourceID(t *testing.T) {
 	}
 	if strings.Count(got, "\n") != 0 {
 		t.Fatalf("Render() emitted more than one physical line: %q", got)
+	}
+}
+
+func TestRenderAggregatesDuplicateSourcesAndReasons(t *testing.T) {
+	values := []model.Warning{
+		{SourceID: "same", Reasons: []string{"second", "first", "first"}},
+		{SourceID: "same", Reasons: []string{"third", "second"}},
+	}
+	if got, want := Render(values), "warning: same: first; second; third"; got != want {
+		t.Fatalf("Render() = %q, want %q", got, want)
+	}
+	if got, want := values[0].Reasons, []string{"second", "first", "first"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Render mutated caller input: %#v", got)
 	}
 }

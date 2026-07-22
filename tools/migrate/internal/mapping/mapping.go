@@ -96,7 +96,15 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 	for _, r := range records {
 		switch v := r.(type) {
 		case sourcebd.Memory:
-			p.Memories = append(p.Memories, model.MemoryPlan{Key: v.Key, Body: v.Value, Actor: rawString(v.RawJSON(), "actor", "bdd-migration"), CreatedAt: rawTime(v.RawJSON(), "created_at")})
+			if strings.TrimSpace(v.Key) == "" {
+				add("workspace", "memory record has no key; skipped record")
+				continue
+			}
+			actor := rawString(v.RawJSON(), "actor", "")
+			if actor == "" {
+				actor = "bdd-migration"
+			}
+			p.Memories = append(p.Memories, model.MemoryPlan{Key: v.Key, Body: v.Value, Actor: actor, CreatedAt: rawTime(v.RawJSON(), "created_at")})
 		case sourcebd.Issue:
 			id := v.ID
 			if !safeID(id) {

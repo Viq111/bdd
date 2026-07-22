@@ -365,3 +365,21 @@ func TestNoReproductionIsNotWarning(t *testing.T) {
 		t.Fatalf("%q %v", got, err)
 	}
 }
+
+func TestMappingSkipsKeylessMemoriesAndDefaultsEmptyActors(t *testing.T) {
+	records, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"memory","key":"","value":"lost"}
+{"_type":"memory","key":"kept","value":"body","actor":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(records, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Memories) != 1 || p.Memories[0].Key != "kept" || p.Memories[0].Body != "body" || p.Memories[0].Actor != "bdd-migration" {
+		t.Fatalf("memory mapping = %#v", p.Memories)
+	}
+	if got, want := warnings.Render(p.Warnings), "warning: workspace: memory record has no key; skipped record"; got != want {
+		t.Fatalf("warnings = %q, want %q", got, want)
+	}
+}
