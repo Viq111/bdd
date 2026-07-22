@@ -71,11 +71,7 @@ workspace or database.
 // version and help parse and print without workspace discovery or opening
 // SQLite, keeping that fast path intact regardless of what global flags
 // precede them.
-func Run(args []string, stdout, stderr io.Writer, version string, commits ...string) int {
-	commit := "unspecified"
-	if len(commits) > 0 {
-		commit = commits[0]
-	}
+func Run(args []string, stdout, stderr io.Writer, version, commit string) int {
 	global, rest, err := ParseGlobalFlags(args)
 	if err != nil {
 		fmt.Fprintln(stderr, err)

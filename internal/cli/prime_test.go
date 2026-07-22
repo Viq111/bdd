@@ -12,14 +12,14 @@ func TestPrimeHumanOutputListsSupportedCommandsAndMemories(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "remember", "hello there", "--key", "greeting"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "remember", "hello there", "--key", "greeting"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(remember) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dir, "prime"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dir, "prime"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(prime) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -47,19 +47,19 @@ func TestPrimeJSONIncludesMemories(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "remember", "first", "--key", "a"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "remember", "first", "--key", "a"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(remember) exit = %d", code)
 	}
 	stdout.Reset()
-	code = Run([]string{"--workspace", dir, "remember", "second", "--key", "b"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dir, "remember", "second", "--key", "b"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(remember) exit = %d", code)
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dir, "prime", "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dir, "prime", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(prime --json) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -85,14 +85,14 @@ func TestPrimeMemoryLimit(t *testing.T) {
 
 	for _, key := range []string{"a", "b", "c"} {
 		var stdout, stderr bytes.Buffer
-		code := Run([]string{"--workspace", dir, "remember", "body-" + key, "--key", key}, &stdout, &stderr, "dev")
+		code := Run([]string{"--workspace", dir, "remember", "body-" + key, "--key", key}, &stdout, &stderr, "dev", "unspecified")
 		if code != ExitSuccess {
 			t.Fatalf("Run(remember) exit = %d", code)
 		}
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "prime", "--memory-limit", "1", "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "prime", "--memory-limit", "1", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(prime) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -117,14 +117,14 @@ func TestPrimeNoMemories(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "remember", "hidden", "--key", "secret"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "remember", "hidden", "--key", "secret"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(remember) exit = %d", code)
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dir, "prime", "--no-memories"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dir, "prime", "--no-memories"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(prime) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -134,7 +134,7 @@ func TestPrimeNoMemories(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dir, "prime", "--no-memories", "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dir, "prime", "--no-memories", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(prime --json) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -152,7 +152,7 @@ func TestPrimeRejectsCombiningLimitAndNoMemories(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "prime", "--memory-limit", "1", "--no-memories"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "prime", "--memory-limit", "1", "--no-memories"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(prime) exit = %d, want %d", code, ExitUsage)
 	}

@@ -14,14 +14,14 @@ func TestRunePutShowRoundTrip(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer",
-		"--kind", "role", "--title", "Programmer", "--body", "Implement things."}, &stdout, &stderr, "dev")
+		"--kind", "role", "--title", "Programmer", "--body", "Implement things."}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune put) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "show", "--workspace", dir, "--json", "role/programmer"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "show", "--workspace", dir, "--json", "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune show) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -49,14 +49,14 @@ func TestRunePutBodyFile(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"rune", "put", "--workspace", dir, "policy/conventions",
-		"--kind", "policy", "--title", "Conventions", "--body-file", bodyPath}, &stdout, &stderr, "dev")
+		"--kind", "policy", "--title", "Conventions", "--body-file", bodyPath}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune put --body-file) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "show", "--workspace", dir, "--json", "policy/conventions"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "show", "--workspace", dir, "--json", "policy/conventions"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune show) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -76,7 +76,7 @@ func TestRuneListAndSearch(t *testing.T) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
 		args := []string{"rune", "put", "--workspace", dir, key, "--kind", kind, "--title", title, "--body", body}
-		if code := Run(args, &stdout, &stderr, "dev"); code != ExitSuccess {
+		if code := Run(args, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 			t.Fatalf("Run(rune put %s) exit = %d, stderr = %q", key, code, stderr.String())
 		}
 	}
@@ -84,7 +84,7 @@ func TestRuneListAndSearch(t *testing.T) {
 	put("role/qa", "role", "QA", "Reviews changes.")
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"rune", "list", "--workspace", dir, "--json", "--kind", "role"}, &stdout, &stderr, "dev")
+	code := Run([]string{"rune", "list", "--workspace", dir, "--json", "--kind", "role"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune list) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -98,7 +98,7 @@ func TestRuneListAndSearch(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "search", "--workspace", dir, "--json", "Go implementation"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "search", "--workspace", dir, "--json", "Go implementation"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune search) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -115,13 +115,13 @@ func TestRuneEnableDisable(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "P", "--body", "b"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "P", "--body", "b"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(rune put) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"rune", "disable", "--workspace", dir, "--json", "role/programmer"}, &stdout, &stderr, "dev")
+	code := Run([]string{"rune", "disable", "--workspace", dir, "--json", "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune disable) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -136,7 +136,7 @@ func TestRuneEnableDisable(t *testing.T) {
 	// Disabled runes are excluded from list without --all.
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "list", "--workspace", dir, "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "list", "--workspace", dir, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune list) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -150,7 +150,7 @@ func TestRuneEnableDisable(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "list", "--workspace", dir, "--json", "--all"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "list", "--workspace", dir, "--json", "--all"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune list --all) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -163,7 +163,7 @@ func TestRuneEnableDisable(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "enable", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "enable", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune enable) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -173,20 +173,20 @@ func TestRuneRemove(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "P", "--body", "b"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "P", "--body", "b"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(rune put) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"rune", "remove", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev")
+	code := Run([]string{"rune", "remove", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune remove) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "show", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "show", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(rune show) after remove exit = %d, want %d", code, ExitNotFound)
 	}
@@ -197,7 +197,7 @@ func TestRuneProtectedRequiresForce(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer",
-		"--kind", "role", "--title", "P", "--body", "b", "--protected"}, &stdout, &stderr, "dev")
+		"--kind", "role", "--title", "P", "--body", "b", "--protected"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune put --protected) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -206,7 +206,7 @@ func TestRuneProtectedRequiresForce(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	code = Run([]string{"rune", "put", "--workspace", dir, "role/programmer",
-		"--kind", "role", "--body", "changed"}, &stdout, &stderr, "dev")
+		"--kind", "role", "--body", "changed"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitConflict {
 		t.Fatalf("Run(rune put, protected, no force) exit = %d, want %d, stderr = %q", code, ExitConflict, stderr.String())
 	}
@@ -217,7 +217,7 @@ func TestRuneProtectedRequiresForce(t *testing.T) {
 	// Disable without --force must also fail with ExitConflict.
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "disable", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "disable", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitConflict {
 		t.Fatalf("Run(rune disable, protected, no force) exit = %d, want %d", code, ExitConflict)
 	}
@@ -225,7 +225,7 @@ func TestRuneProtectedRequiresForce(t *testing.T) {
 	// Remove without --force must also fail with ExitConflict.
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "remove", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "remove", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitConflict {
 		t.Fatalf("Run(rune remove, protected, no force) exit = %d, want %d", code, ExitConflict)
 	}
@@ -234,7 +234,7 @@ func TestRuneProtectedRequiresForce(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	code = Run([]string{"rune", "put", "--workspace", dir, "role/programmer",
-		"--kind", "role", "--body", "changed", "--force"}, &stdout, &stderr, "dev")
+		"--kind", "role", "--body", "changed", "--force"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune put, protected, --force) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -244,13 +244,13 @@ func TestRuneExportMarkdown(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "Programmer", "--body", "Body text"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "Programmer", "--body", "Body text"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(rune put) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"rune", "export", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev")
+	code := Run([]string{"rune", "export", "--workspace", dir, "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune export) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -260,7 +260,7 @@ func TestRuneExportMarkdown(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"rune", "export", "--workspace", dir, "role/programmer", "--format", "json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"rune", "export", "--workspace", dir, "role/programmer", "--format", "json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune export --format json) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -277,7 +277,7 @@ func TestRuneShowMissingIsNotFound(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"rune", "show", "--workspace", dir, "role/nope"}, &stdout, &stderr, "dev")
+	code := Run([]string{"rune", "show", "--workspace", dir, "role/nope"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(rune show) exit = %d, want %d", code, ExitNotFound)
 	}
@@ -287,13 +287,13 @@ func TestRunePutCreateOnlyRejectsExisting(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "P", "--body", "b"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--title", "P", "--body", "b"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(rune put) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--body", "b2", "--create-only"}, &stdout, &stderr, "dev")
+	code := Run([]string{"rune", "put", "--workspace", dir, "role/programmer", "--kind", "role", "--body", "b2", "--create-only"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitConflict {
 		t.Fatalf("Run(rune put --create-only) exit = %d, want %d", code, ExitConflict)
 	}

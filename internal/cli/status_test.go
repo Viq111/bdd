@@ -18,12 +18,12 @@ func TestStatusUpToDateAfterInit(t *testing.T) {
 	dir := t.TempDir()
 
 	var initOut, initErr bytes.Buffer
-	if code := Run([]string{"init", "--prefix", "acme", dir}, &initOut, &initErr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"init", "--prefix", "acme", dir}, &initOut, &initErr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, initErr.String())
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"status", "--json", "--workspace", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"status", "--json", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(status) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -57,7 +57,7 @@ func TestStatusMissingDatabaseReturnsNotFound(t *testing.T) {
 	dir := t.TempDir()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"status", "--workspace", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"status", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(status) exit = %d, want %d", code, ExitNotFound)
 	}
@@ -90,7 +90,7 @@ func TestStatusUpgradeAppliesMigrations(t *testing.T) {
 	raw.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"status", "--json", "--workspace", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"status", "--json", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(status) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -107,7 +107,7 @@ func TestStatusUpgradeAppliesMigrations(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"status", "--json", "--workspace", dir, "--upgrade"}, &stdout, &stderr, "dev")
+	code = Run([]string{"status", "--json", "--workspace", dir, "--upgrade"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(status --upgrade) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -131,12 +131,12 @@ func TestStatusSilentEmitsOnlyDatabasePath(t *testing.T) {
 	dir := t.TempDir()
 
 	var initOut, initErr bytes.Buffer
-	if code := Run([]string{"init", "--prefix", "acme", dir}, &initOut, &initErr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"init", "--prefix", "acme", dir}, &initOut, &initErr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, initErr.String())
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"status", "--silent", "--workspace", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"status", "--silent", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(status) exit = %d, stderr = %q", code, stderr.String())
 	}

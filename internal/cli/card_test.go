@@ -15,7 +15,7 @@ func runCLI(t *testing.T, dir string, want int, args ...string) (stdout, stderr 
 	var out, errBuf bytes.Buffer
 	full := append([]string{}, args...)
 	full = append(full, "--workspace", dir)
-	code := Run(full, &out, &errBuf, "dev")
+	code := Run(full, &out, &errBuf, "dev", "unspecified")
 	if code != want {
 		t.Fatalf("Run(%v) exit = %d, want %d, stdout=%q stderr=%q", args, code, want, out.String(), errBuf.String())
 	}
@@ -74,7 +74,7 @@ func TestCreateSilentEmitsExactlyID(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var out, errBuf bytes.Buffer
-	code := Run([]string{"--workspace", dir, "--silent", "create", "--type", "chore", "a chore"}, &out, &errBuf, "dev")
+	code := Run([]string{"--workspace", dir, "--silent", "create", "--type", "chore", "a chore"}, &out, &errBuf, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("exit = %d, stderr = %q", code, errBuf.String())
 	}
@@ -180,7 +180,7 @@ func TestCreateStdinFillsSoleRequiredField(t *testing.T) {
 	defer func() { os.Stdin = origStdin }()
 
 	var out, errBuf bytes.Buffer
-	code := Run([]string{"--workspace", dir, "--json", "create", "--type", "task", "--title", "t", "--stdin"}, &out, &errBuf, "dev")
+	code := Run([]string{"--workspace", dir, "--json", "create", "--type", "task", "--title", "t", "--stdin"}, &out, &errBuf, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("exit = %d, stderr = %q", code, errBuf.String())
 	}
@@ -489,7 +489,7 @@ func TestNoteStdin(t *testing.T) {
 	defer func() { os.Stdin = origStdin }()
 
 	var out, errBuf bytes.Buffer
-	code := Run([]string{"--workspace", dir, "--json", "note", id, "--stdin"}, &out, &errBuf, "dev")
+	code := Run([]string{"--workspace", dir, "--json", "note", id, "--stdin"}, &out, &errBuf, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("exit = %d, stderr = %q", code, errBuf.String())
 	}

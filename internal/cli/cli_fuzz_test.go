@@ -97,7 +97,7 @@ func FuzzRun(f *testing.F) {
 		args = append([]string{"--workspace", dir}, args...)
 
 		var stdout, stderr bytes.Buffer
-		code := Run(args, &stdout, &stderr, "fuzz")
+		code := Run(args, &stdout, &stderr, "fuzz", "unspecified")
 		switch code {
 		case ExitSuccess, ExitOther, ExitUsage, ExitNotFound, ExitConflict:
 		default:

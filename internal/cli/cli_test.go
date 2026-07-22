@@ -21,7 +21,7 @@ func TestRunVersionFastPathIgnoresWorkspace(t *testing.T) {
 
 func TestRunHelpNoArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run(nil, &stdout, &stderr, "dev")
+	code := Run(nil, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run() exit = %d", code)
 	}
@@ -32,7 +32,7 @@ func TestRunHelpNoArgs(t *testing.T) {
 
 func TestRunUnknownCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"nope"}, &stdout, &stderr, "dev")
+	code := Run([]string{"nope"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(nope) exit = %d, want %d", code, ExitUsage)
 	}
@@ -61,14 +61,14 @@ func TestRunCobraUnknownSubcommandAndFlag(t *testing.T) {
 	// through cobra's own command tree rather than a legacy hand-rolled
 	// parser, and both must still map to ExitUsage.
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"config", "bogus"}, &stdout, &stderr, "dev")
+	code := Run([]string{"config", "bogus"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(config bogus) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"config", "--bogus"}, &stdout, &stderr, "dev")
+	code = Run([]string{"config", "--bogus"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(config --bogus) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
 	}
@@ -77,7 +77,7 @@ func TestRunCobraUnknownSubcommandAndFlag(t *testing.T) {
 func TestRunGlobalFlagAfterSubcommand(t *testing.T) {
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, stderr.String())
 	}
 
@@ -86,7 +86,7 @@ func TestRunGlobalFlagAfterSubcommand(t *testing.T) {
 	// cobra command tree built for "status" itself.
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"status", "--workspace", dir, "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"status", "--workspace", dir, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(status) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -97,7 +97,7 @@ func TestRunGlobalFlagAfterSubcommand(t *testing.T) {
 
 func TestRunSubcommandHelpShowsExample(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"create", "-h"}, &stdout, &stderr, "dev")
+	code := Run([]string{"create", "-h"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(create -h) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -114,7 +114,7 @@ func TestRunSubcommandHelpShowsExample(t *testing.T) {
 
 func TestRunSubcommandHelpShowsGlobalFlags(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"create", "-h"}, &stdout, &stderr, "dev")
+	code := Run([]string{"create", "-h"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(create -h) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -129,7 +129,7 @@ func TestRunSubcommandHelpShowsGlobalFlags(t *testing.T) {
 func TestRunGroupHelpShowsExample(t *testing.T) {
 	for _, group := range []string{"config", "rune", "label"} {
 		var stdout, stderr bytes.Buffer
-		code := Run([]string{group, "-h"}, &stdout, &stderr, "dev")
+		code := Run([]string{group, "-h"}, &stdout, &stderr, "dev", "unspecified")
 		if code != ExitSuccess {
 			t.Fatalf("Run(%s -h) exit = %d, stderr = %q", group, code, stderr.String())
 		}

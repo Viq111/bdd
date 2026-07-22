@@ -10,7 +10,7 @@ func TestStatusesListsBuiltins(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"statuses", "--workspace", dir, "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"statuses", "--workspace", dir, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(statuses) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -32,13 +32,13 @@ func TestStatusesIncludesCustomAfterConfigSet(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"config", "set", "--workspace", dir, "status.custom", "ready_to_ship:active"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"config", "set", "--workspace", dir, "status.custom", "ready_to_ship:active"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(config set) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"statuses", "--workspace", dir, "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"statuses", "--workspace", dir, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(statuses) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -67,7 +67,7 @@ func TestTypesListsBuiltins(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"types", "--workspace", dir, "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"types", "--workspace", dir, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(types) exit = %d, stderr = %q", code, stderr.String())
 	}

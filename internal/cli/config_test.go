@@ -13,7 +13,7 @@ func initTestWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, stderr.String())
 	}
 	return dir
@@ -23,7 +23,7 @@ func TestConfigSetGetUnsetRoundTrip(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"config", "set", "--workspace", dir, "greeting", "hello"}, &stdout, &stderr, "dev")
+	code := Run([]string{"config", "set", "--workspace", dir, "greeting", "hello"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(config set) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -36,7 +36,7 @@ func TestConfigSetGetUnsetRoundTrip(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"config", "get", "--workspace", dir, "--json", "greeting"}, &stdout, &stderr, "dev")
+	code = Run([]string{"config", "get", "--workspace", dir, "--json", "greeting"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(config get) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -50,14 +50,14 @@ func TestConfigSetGetUnsetRoundTrip(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"config", "unset", "--workspace", dir, "greeting"}, &stdout, &stderr, "dev")
+	code = Run([]string{"config", "unset", "--workspace", dir, "greeting"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(config unset) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"config", "get", "--workspace", dir, "greeting"}, &stdout, &stderr, "dev")
+	code = Run([]string{"config", "get", "--workspace", dir, "greeting"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(config get) after unset exit = %d, want %d", code, ExitNotFound)
 	}
@@ -67,18 +67,18 @@ func TestConfigListJSON(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"config", "set", "--workspace", dir, "a", "1"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"config", "set", "--workspace", dir, "a", "1"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(config set a) exit = %d, stderr = %q", code, stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"config", "set", "--workspace", dir, "b", "2"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"config", "set", "--workspace", dir, "b", "2"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(config set b) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"config", "list", "--workspace", dir, "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"config", "list", "--workspace", dir, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(config list) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -98,7 +98,7 @@ func TestConfigSetStatusCustomPreviewsReadinessImpact(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"config", "set", "--workspace", dir, "status.custom", "qa_testing:wip"}, &stdout, &stderr, "dev")
+	code := Run([]string{"config", "set", "--workspace", dir, "status.custom", "qa_testing:wip"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(config set status.custom) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -107,7 +107,7 @@ func TestConfigSetStatusCustomPreviewsReadinessImpact(t *testing.T) {
 	// impact.
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"config", "set", "--workspace", dir, "--json", "status.custom", "qa_testing:active"}, &stdout, &stderr, "dev")
+	code = Run([]string{"config", "set", "--workspace", dir, "--json", "status.custom", "qa_testing:active"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(config set status.custom) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -124,7 +124,7 @@ func TestConfigSetRejectsBadStatusCategory(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"config", "set", "--workspace", dir, "status.custom", "oops:not_a_category"}, &stdout, &stderr, "dev")
+	code := Run([]string{"config", "set", "--workspace", dir, "status.custom", "oops:not_a_category"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(config set) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
 	}
@@ -137,7 +137,7 @@ func TestConfigGetMissingKeyIsNotFound(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"config", "get", "--workspace", dir, "does.not.exist"}, &stdout, &stderr, "dev")
+	code := Run([]string{"config", "get", "--workspace", dir, "does.not.exist"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(config get) exit = %d, want %d", code, ExitNotFound)
 	}

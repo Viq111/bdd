@@ -12,7 +12,7 @@ import (
 func initWorkspace(t *testing.T, dir string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -23,7 +23,7 @@ func TestSnapshotDefaultOutputAndHumanOutput(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "snapshot"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "snapshot"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -46,7 +46,7 @@ func TestSnapshotExplicitOutputJSON(t *testing.T) {
 	out := filepath.Join(dir, "custom-backup.sqlite")
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "snapshot", "--output", out, "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "snapshot", "--output", out, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -68,7 +68,7 @@ func TestSnapshotSilentEmitsOnlyPath(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "snapshot", "--silent"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "snapshot", "--silent"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -84,7 +84,7 @@ func TestSnapshotRejectsUnknownFlag(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "snapshot", "--bogus"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "snapshot", "--bogus"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(snapshot) exit = %d, want %d", code, ExitUsage)
 	}
@@ -95,7 +95,7 @@ func TestRestoreRequiresForce(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "snapshot"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "snapshot"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -103,7 +103,7 @@ func TestRestoreRequiresForce(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dir, "restore", snapshotPath}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dir, "restore", snapshotPath}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(restore) exit = %d, want %d", code, ExitUsage)
 	}
@@ -120,7 +120,7 @@ func TestRestoreRequiresSourceArgument(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "restore", "--force"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "restore", "--force"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(restore) exit = %d, want %d", code, ExitUsage)
 	}
@@ -131,7 +131,7 @@ func TestRestoreMissingSnapshotIsNotFound(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "restore", filepath.Join(dir, "nope.sqlite"), "--force"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", dir, "restore", filepath.Join(dir, "nope.sqlite"), "--force"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(restore) exit = %d, want %d, stderr = %q", code, ExitNotFound, stderr.String())
 	}
@@ -142,14 +142,14 @@ func TestSnapshotThenRestoreRoundTrip(t *testing.T) {
 	initWorkspace(t, srcDir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", srcDir, "create", "--type", "chore", "hello world"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", srcDir, "create", "--type", "chore", "hello world"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(create) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", srcDir, "snapshot", "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", srcDir, "snapshot", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -161,7 +161,7 @@ func TestSnapshotThenRestoreRoundTrip(t *testing.T) {
 	dstDir := t.TempDir()
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dstDir, "restore", snap.Path, "--force", "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dstDir, "restore", snap.Path, "--force", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(restore) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -175,7 +175,7 @@ func TestSnapshotThenRestoreRoundTrip(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dstDir, "search", "hello", "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dstDir, "search", "hello", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(search) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -188,7 +188,7 @@ func TestRestoreBacksUpExistingTarget(t *testing.T) {
 	srcDir := t.TempDir()
 	initWorkspace(t, srcDir)
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", srcDir, "snapshot", "--json"}, &stdout, &stderr, "dev")
+	code := Run([]string{"--workspace", srcDir, "snapshot", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -202,7 +202,7 @@ func TestRestoreBacksUpExistingTarget(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"--workspace", dstDir, "restore", snap.Path, "--force", "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"--workspace", dstDir, "restore", snap.Path, "--force", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(restore) exit = %d, stderr = %q", code, stderr.String())
 	}

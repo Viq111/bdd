@@ -17,7 +17,7 @@ func TestInitDefaultPrefixAndHumanOutput(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"init", wsDir}, &stdout, &stderr, "dev")
+	code := Run([]string{"init", wsDir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -38,7 +38,7 @@ func TestInitExplicitPrefixJSON(t *testing.T) {
 	dir := t.TempDir()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"init", "--prefix", "acme", "--json", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"init", "--prefix", "acme", "--json", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -66,7 +66,7 @@ func TestInitSilentEmitsOnlyDatabasePath(t *testing.T) {
 	dir := t.TempDir()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"init", "--prefix", "acme", "--silent", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"init", "--prefix", "acme", "--silent", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(init) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -83,7 +83,7 @@ func TestInitHonorsExplicitDBFlag(t *testing.T) {
 	dbPath := filepath.Join(dbDir, "custom.sqlite")
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"init", "--db", dbPath, "--prefix", "qadb", "--json", workspaceDir}, &stdout, &stderr, "dev")
+	code := Run([]string{"init", "--db", dbPath, "--prefix", "qadb", "--json", workspaceDir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(init --db) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -110,7 +110,7 @@ func TestInitHonorsExplicitDBFlag(t *testing.T) {
 	// bdd status against the same --db path must resolve the same database.
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"status", "--db", dbPath, "--json"}, &stdout, &stderr, "dev")
+	code = Run([]string{"status", "--db", dbPath, "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(status --db) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -130,13 +130,13 @@ func TestInitFailsIfAlreadyExists(t *testing.T) {
 	dir := t.TempDir()
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("first Run(init) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"init", "--prefix", "acme", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitConflict {
 		t.Fatalf("second Run(init) exit = %d, want %d", code, ExitConflict)
 	}
@@ -152,7 +152,7 @@ func TestInitRejectsUnknownFlag(t *testing.T) {
 	dir := t.TempDir()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"init", "--bogus", dir}, &stdout, &stderr, "dev")
+	code := Run([]string{"init", "--bogus", dir}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(init) exit = %d, want %d", code, ExitUsage)
 	}

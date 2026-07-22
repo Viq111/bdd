@@ -12,7 +12,7 @@ func TestRememberWithKeyAndRecall(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"remember", "--workspace", dir, "--key", "testing-race", "Always run the race tests"}, &stdout, &stderr, "dev")
+	code := Run([]string{"remember", "--workspace", dir, "--key", "testing-race", "Always run the race tests"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(remember) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -22,7 +22,7 @@ func TestRememberWithKeyAndRecall(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"recall", "--workspace", dir, "testing-race"}, &stdout, &stderr, "dev")
+	code = Run([]string{"recall", "--workspace", dir, "testing-race"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(recall) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -35,7 +35,7 @@ func TestRememberWithoutKeyDerivesOne(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"remember", "--workspace", dir, "--json", "Some memorable body"}, &stdout, &stderr, "dev")
+	code := Run([]string{"remember", "--workspace", dir, "--json", "Some memorable body"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(remember) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -68,14 +68,14 @@ func TestRememberStdin(t *testing.T) {
 	defer func() { os.Stdin = origStdin }()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"remember", "--workspace", dir, "--key", "from-pipe", "--stdin"}, &stdout, &stderr, "dev")
+	code := Run([]string{"remember", "--workspace", dir, "--key", "from-pipe", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(remember --stdin) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"recall", "--workspace", dir, "from-pipe"}, &stdout, &stderr, "dev")
+	code = Run([]string{"recall", "--workspace", dir, "from-pipe"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(recall) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -88,7 +88,7 @@ func TestRememberRejectsBodyAndStdinTogether(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"remember", "--workspace", dir, "body", "--stdin"}, &stdout, &stderr, "dev")
+	code := Run([]string{"remember", "--workspace", dir, "body", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
 		t.Fatalf("Run(remember) exit = %d, want %d", code, ExitUsage)
 	}
@@ -101,7 +101,7 @@ func TestMemoriesQueryFiltersByKeyOrBody(t *testing.T) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
 		full := append([]string{"remember", "--workspace", dir}, args...)
-		if code := Run(full, &stdout, &stderr, "dev"); code != ExitSuccess {
+		if code := Run(full, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 			t.Fatalf("Run(remember %v) exit = %d, stderr = %q", args, code, stderr.String())
 		}
 	}
@@ -109,7 +109,7 @@ func TestMemoriesQueryFiltersByKeyOrBody(t *testing.T) {
 	run("--key", "beta", "about dogs")
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"memories", "--workspace", dir, "--json", "cats"}, &stdout, &stderr, "dev")
+	code := Run([]string{"memories", "--workspace", dir, "--json", "cats"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(memories) exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -126,20 +126,20 @@ func TestForgetDeletesMemory(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"remember", "--workspace", dir, "--key", "temp", "body"}, &stdout, &stderr, "dev"); code != ExitSuccess {
+	if code := Run([]string{"remember", "--workspace", dir, "--key", "temp", "body"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
 		t.Fatalf("Run(remember) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"forget", "--workspace", dir, "temp"}, &stdout, &stderr, "dev")
+	code := Run([]string{"forget", "--workspace", dir, "temp"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(forget) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"recall", "--workspace", dir, "temp"}, &stdout, &stderr, "dev")
+	code = Run([]string{"recall", "--workspace", dir, "temp"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(recall) after forget exit = %d, want %d", code, ExitNotFound)
 	}
@@ -149,7 +149,7 @@ func TestForgetMissingKeyIsNotFound(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"forget", "--workspace", dir, "does-not-exist"}, &stdout, &stderr, "dev")
+	code := Run([]string{"forget", "--workspace", dir, "does-not-exist"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitNotFound {
 		t.Fatalf("Run(forget) exit = %d, want %d", code, ExitNotFound)
 	}
