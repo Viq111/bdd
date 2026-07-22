@@ -113,6 +113,50 @@ func TestApplyRerunClearsSourceOwnedOptionalTimestamps(t *testing.T) {
 	}
 }
 
+func TestApplyRerunPreservesOriginalStructuredComment(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bdd.sqlite")
+	plan := model.Plan{
+		Cards: []model.CardPlan{{ID: "src-1", Title: "source", Status: "open", Type: "task"}},
+		Notes: []model.NotePlan{{CardID: "src-1", SourceKey: "src-1/comment/c1", SourceKind: "comment", SourceID: "c1", Body: "before"}},
+	}
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatal(err)
+	}
+	before := logicalProjection(t, ctx, path)
+
+	edited := plan
+	edited.Notes = []model.NotePlan{{CardID: "src-1", SourceKey: "src-1/comment/c1", SourceKind: "comment", SourceID: "c1", Body: "after"}}
+	if err := Apply(ctx, path, "src", edited); err != nil {
+		t.Fatalf("edited structured comment rerun: %v", err)
+	}
+	if got := logicalProjection(t, ctx, path); !bytes.Equal(got, before) {
+		t.Fatalf("edited structured comment changed append-only history:\n got %s\nwant %s", got, before)
+	}
+
+	db, err := bdd.Open(ctx, bdd.OpenOptions{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err := db.Notes(ctx, "src-1")
+	if closeErr := db.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || notes[0].Body != "before" {
+		t.Fatalf("structured comment projection = %#v; want one original note", notes)
+	}
+
+	if err := Apply(ctx, path, "src", edited); err != nil {
+		t.Fatalf("identical edited structured comment rerun: %v", err)
+	}
+	if got := logicalProjection(t, ctx, path); !bytes.Equal(got, before) {
+		t.Fatalf("identical edited structured comment rerun wrote logical rows:\n got %s\nwant %s", got, before)
+	}
+}
+
 func checkCardTimestamps(t *testing.T, ctx context.Context, path string, want time.Time) {
 	t.Helper()
 	db, err := bdd.Open(ctx, bdd.OpenOptions{Path: path})

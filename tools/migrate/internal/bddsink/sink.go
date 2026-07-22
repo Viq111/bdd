@@ -209,7 +209,11 @@ func prepare(ctx context.Context, tx *sql.Tx, plan model.Plan) (model.Plan, []mo
 	}
 	for _, source := range plan.Notes {
 		if acceptedCards[source.CardID] {
-			effective.Notes = append(effective.Notes, source)
+			note, err := effectiveNote(ctx, tx, source)
+			if err != nil {
+				return model.Plan{}, nil, err
+			}
+			effective.Notes = append(effective.Notes, note)
 		}
 	}
 	for _, source := range plan.Edges {
@@ -381,6 +385,62 @@ func sourceOmittedWorktree(v model.CardPlan) bool {
 	p := model.Plan{Cards: []model.CardPlan{withoutWorktree}}
 	p.Canonicalize()
 	return p.Cards[0].Hash == v.Hash
+}
+
+type noteProvenance struct {
+	SourceSystem string `json:"source_system"`
+	SourceKind   string `json:"source_kind"`
+	SourceID     string `json:"source_id"`
+	SourceKey    string `json:"source_key"`
+	NoteID       int64  `json:"note_id"`
+	HashVersion  int    `json:"hash_version"`
+	Hash         string `json:"hash"`
+}
+
+// effectiveNote preserves the first projection recorded for a source key.
+// Notes are append-only in the destination, so a structured source comment
+// whose stable key is later edited cannot replace its imported history or add
+// a duplicate.  Verification therefore uses that original projection too.
+func effectiveNote(ctx context.Context, tx *sql.Tx, source model.NotePlan) (model.NotePlan, error) {
+	var payload string
+	err := tx.QueryRowContext(ctx, `SELECT payload_json FROM events WHERE subject_kind='note' AND subject_key=? AND action='migration.note'`, source.SourceKey).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return source, nil
+	}
+	if err != nil {
+		return model.NotePlan{}, err
+	}
+	var existing noteProvenance
+	if err := json.Unmarshal([]byte(payload), &existing); err != nil {
+		return model.NotePlan{}, err
+	}
+	if existing.Hash == source.Hash && existing.HashVersion == source.HashVersion {
+		return source, nil
+	}
+	if existing.SourceSystem != "beads" || existing.SourceKind != source.SourceKind || existing.SourceID != source.SourceID || existing.SourceKey != source.SourceKey {
+		// Keep the incoming projection so verification retains its existing
+		// provenance-mismatch failure for a source-key collision.
+		return source, nil
+	}
+
+	var note model.NotePlan
+	var author sql.NullString
+	var created string
+	if err := tx.QueryRowContext(ctx, `SELECT card_id,author,body,created_at FROM notes WHERE id=?`, existing.NoteID).Scan(&note.CardID, &author, &note.Body, &created); err != nil {
+		return model.NotePlan{}, err
+	}
+	createdAt, err := parseTimestamp(created)
+	if err != nil {
+		return model.NotePlan{}, err
+	}
+	note.SourceKey = source.SourceKey
+	note.SourceKind = existing.SourceKind
+	note.SourceID = existing.SourceID
+	note.Author = author.String
+	note.CreatedAt = createdAt
+	note.HashVersion = existing.HashVersion
+	note.Hash = existing.Hash
+	return note, nil
 }
 
 func note(ctx context.Context, tx *sql.Tx, v model.NotePlan, now string) error {
