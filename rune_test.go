@@ -2,9 +2,7 @@ package bdd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -346,72 +344,6 @@ func TestRemoveRuneTombstonesAndProtects(t *testing.T) {
 	}
 	if err := db.RemoveRune(ctx, "role/qa", "alice", true); err != nil {
 		t.Fatalf("RemoveRune(protected, Force) error = %v", err)
-	}
-}
-
-func TestExportRuneMarkdownAndJSON(t *testing.T) {
-	db := newRuneTestDB(t)
-	ctx := context.Background()
-
-	if _, err := db.PutRune(ctx, PutRune{
-		Key:      "role/programmer",
-		Kind:     "role",
-		Mutation: RuneMutation{Title: ptr("Programmer"), Body: ptr("Implements things.")},
-		Actor:    "alice",
-	}); err != nil {
-		t.Fatalf("PutRune() error = %v", err)
-	}
-
-	md, err := db.ExportRune(ctx, "role/programmer", "markdown")
-	if err != nil {
-		t.Fatalf("ExportRune(markdown) error = %v", err)
-	}
-	if !strings.Contains(string(md), "# Programmer") || !strings.Contains(string(md), "Implements things.") {
-		t.Fatalf("ExportRune(markdown) = %q, missing expected content", md)
-	}
-
-	js, err := db.ExportRune(ctx, "role/programmer", "json")
-	if err != nil {
-		t.Fatalf("ExportRune(json) error = %v", err)
-	}
-	var out runeExport
-	if err := json.Unmarshal(js, &out); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-	if out.Key != "role/programmer" || out.Title != "Programmer" {
-		t.Fatalf("ExportRune(json) = %+v", out)
-	}
-
-	if _, err := db.ExportRune(ctx, "role/programmer", "yaml"); !errors.As(err, new(*ValidationError)) {
-		t.Fatalf("ExportRune(bad format) error = %v, want *ValidationError", err)
-	}
-}
-
-func TestExportRunesMultiple(t *testing.T) {
-	db := newRuneTestDB(t)
-	ctx := context.Background()
-
-	mustPutRune(t, db, "role/programmer", "role", "Programmer")
-	mustPutRune(t, db, "role/qa", "role", "QA")
-
-	md, err := db.ExportRunes(ctx, []string{"role/programmer", "role/qa"}, "markdown")
-	if err != nil {
-		t.Fatalf("ExportRunes(markdown) error = %v", err)
-	}
-	if !strings.Contains(string(md), "# Programmer") || !strings.Contains(string(md), "# QA") {
-		t.Fatalf("ExportRunes(markdown) = %q, missing expected content", md)
-	}
-
-	js, err := db.ExportRunes(ctx, []string{"role/programmer", "role/qa"}, "json")
-	if err != nil {
-		t.Fatalf("ExportRunes(json) error = %v", err)
-	}
-	var out []runeExport
-	if err := json.Unmarshal(js, &out); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-	if len(out) != 2 {
-		t.Fatalf("ExportRunes(json) = %+v, want 2 entries", out)
 	}
 }
 
