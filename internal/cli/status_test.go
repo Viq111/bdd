@@ -61,6 +61,7 @@ func TestStatusUnknownFlagVsArgument(t *testing.T) {
 		want string
 	}{
 		{"--db", `unknown flag "--db"`},
+		{"--db=/tmp/example.sqlite", `unknown flag "--db=/tmp/example.sqlite"`},
 		{"bogus", `unknown argument "bogus"`},
 	}
 	for _, tc := range cases {

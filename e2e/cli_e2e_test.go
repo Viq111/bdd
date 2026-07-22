@@ -607,3 +607,31 @@ func TestRemovedDBFlagRejected(t *testing.T) {
 		t.Fatalf("bdd --db %s status: stderr = %q, want it to identify --db as an unknown flag", db, stderr.String())
 	}
 }
+
+// TestRemovedDBEqualsFlagRejected verifies the removed global --db flag is
+// still identified as an unknown flag (not a positional argument) when
+// passed in its --db=<path> inline form.
+func TestRemovedDBEqualsFlagRejected(t *testing.T) {
+	db := newWorkspace(t)
+
+	arg := "--db=" + db
+	cmd := exec.Command(bddBinary, arg, "status")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			t.Fatalf("run: %v", err)
+		}
+	}
+	if code != 2 {
+		t.Fatalf("bdd %s status: code = %d, want 2 (unknown flag); stderr=%s", arg, code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `unknown flag "`+arg+`"`) {
+		t.Fatalf("bdd %s status: stderr = %q, want it to identify %s as an unknown flag", arg, stderr.String(), arg)
+	}
+}
