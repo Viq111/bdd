@@ -52,7 +52,6 @@ Usage:
 
 Global flags:
   --workspace, -C <dir>  Resolve the workspace starting from <dir> (default: cwd)
-  --db <path>             Use this database file instead of workspace discovery
   --actor <name>          Actor recorded against mutations (see BDD_ACTOR)
   --json                  Emit machine-readable JSON instead of human output
   --silent                Emit minimal output and suppress incidental diagnostics

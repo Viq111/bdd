@@ -44,11 +44,23 @@ type result struct {
 	code   int
 }
 
+// dbWorkspace derives the --workspace argument that resolves to db: the
+// grandparent directory when db follows the standard <workspace>/.bdd/
+// bdd.sqlite layout, or db's own parent directory otherwise (mirroring
+// internal/cli's workspaceDir).
+func dbWorkspace(db string) string {
+	dir := filepath.Dir(db)
+	if filepath.Base(dir) == ".bdd" {
+		return filepath.Dir(dir)
+	}
+	return dir
+}
+
 func run(t *testing.T, db string, args ...string) result {
 	t.Helper()
 	full := args
 	if db != "" {
-		full = append([]string{"--db", db}, args...)
+		full = append([]string{"--workspace", dbWorkspace(db)}, args...)
 	}
 	cmd := exec.Command(bddBinary, full...)
 	var stdout, stderr bytes.Buffer
@@ -69,7 +81,7 @@ func run(t *testing.T, db string, args ...string) result {
 
 func runStdin(t *testing.T, db string, stdin string, args ...string) result {
 	t.Helper()
-	full := append([]string{"--db", db}, args...)
+	full := append([]string{"--workspace", dbWorkspace(db)}, args...)
 	cmd := exec.Command(bddBinary, full...)
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
@@ -385,7 +397,10 @@ func TestExitCodeContract(t *testing.T) {
 		t.Fatalf("conflict case: code = %d, want 4", r.code)
 	}
 
-	garbage := filepath.Join(t.TempDir(), "not-a-db.sqlite")
+	garbage := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
+	if err := os.MkdirAll(filepath.Dir(garbage), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(garbage, []byte("not a sqlite file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -564,5 +579,28 @@ func TestUnknownCommandAndFlagExitUsage(t *testing.T) {
 	}
 	if r := run(t, db, "create", "--nope"); r.code != 2 {
 		t.Fatalf("unknown flag on real command: code = %d, want 2 (stderr=%s)", r.code, r.stderr)
+	}
+}
+
+// TestRemovedDBFlagRejected verifies the global --db flag (removed in
+// favor of --workspace and upward .bdd discovery) is no longer recognized.
+func TestRemovedDBFlagRejected(t *testing.T) {
+	db := newWorkspace(t)
+
+	cmd := exec.Command(bddBinary, "--db", db, "status")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			t.Fatalf("run: %v", err)
+		}
+	}
+	if code != 2 {
+		t.Fatalf("bdd --db %s status: code = %d, want 2 (unknown flag); stderr=%s", db, code, stderr.String())
 	}
 }

@@ -107,8 +107,7 @@ func emitStatus(s *Streams, r StatusResult) int {
 
 // workspaceDir derives the workspace directory a resolved database path
 // belongs to: the parent of the fixed .bdd/bdd.sqlite layout, or the
-// database's own directory if it doesn't follow that layout (an explicit
-// --db pointing elsewhere).
+// database's own directory if it doesn't follow that layout.
 func workspaceDir(dbPath string) string {
 	dir := filepath.Dir(dbPath)
 	if filepath.Base(dir) == ".bdd" {

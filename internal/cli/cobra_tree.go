@@ -89,7 +89,7 @@ func newGroup(use, short, long, example string, fallback func(GlobalFlags, []str
 	return cmd
 }
 
-// registerGlobalFlags declares the five flags shared by every bdd
+// registerGlobalFlags declares the four flags shared by every bdd
 // subcommand (see GlobalFlags in flags.go) on fs purely so cobra's
 // generated help text lists them; the values are never read back through
 // pflag. Run's pre-cobra ParseGlobalFlags pass (internal/cli/flags.go)
@@ -98,7 +98,6 @@ func newGroup(use, short, long, example string, fallback func(GlobalFlags, []str
 // registering them here cannot double-parse or conflict with that pass.
 func registerGlobalFlags(fs *pflag.FlagSet) {
 	fs.StringP("workspace", "C", "", "resolve the workspace starting from <dir> (default: cwd)")
-	fs.String("db", "", "use this database file instead of workspace discovery")
 	fs.String("actor", "", "actor recorded against mutations (see BDD_ACTOR)")
 	fs.Bool("json", false, "emit machine-readable JSON instead of human output")
 	fs.Bool("silent", false, "emit minimal output and suppress incidental diagnostics")
@@ -131,7 +130,7 @@ func buildRoot(global GlobalFlags, streams *Streams) *cobra.Command {
 func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 	cmds := []*cobra.Command{
 		newLeaf("init [path]", "Create a new workspace database",
-			"Create a new bdd workspace database at <path> (default: the current\ndirectory, or --workspace's directory), or at --db if given explicitly.",
+			"Create a new bdd workspace database at <path> (default: the current\ndirectory, or --workspace's directory).",
 			"  bdd init\n  bdd init --prefix acme ./acme-project",
 			runInit, global, streams, func(f *pflag.FlagSet) {
 				f.String("prefix", "", "workspace ID prefix (derived from the directory name if omitted)")

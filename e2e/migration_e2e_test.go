@@ -321,7 +321,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	workspace := seedMigrationWorkspace(t)
 	log := filepath.Join(t.TempDir(), "bd.calls")
 	shim := recordingBD(t, migrationBD(t), log)
-	destination := filepath.Join(t.TempDir(), "destination.sqlite")
+	destination := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
 
 	first := runMigrationFromWorkspace(t, workspace, shim, destination)
 	if first.code != 0 || first.stderr != expectedRoleWarnings || first.stdout != wroteTo(t, destination) {
@@ -396,7 +396,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 
 func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
 	workspace := seedSingleRoleWorkspace(t)
-	destination := filepath.Join(t.TempDir(), "destination.sqlite")
+	destination := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
 	r := runMigration(t, workspace, migrationBD(t), destination)
 	if r.code != 0 || r.stdout != wroteTo(t, destination) || r.stderr != "" {
 		t.Fatalf("single-role migration = %#v", r)
@@ -410,7 +410,7 @@ func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
 func TestMigrationReconcilesSourceTimestamps(t *testing.T) {
 	workspace := seedMigrationWorkspace(t)
 	shim := timestampBD(t, migrationBD(t))
-	destination := filepath.Join(t.TempDir(), "destination.sqlite")
+	destination := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
 	first := runMigration(t, workspace, shim, destination)
 	if first.code != 0 || first.stdout != wroteTo(t, destination) {
 		t.Fatalf("timestamp initial migration = %#v", first)
@@ -490,7 +490,7 @@ func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) 
 			t.Fatalf("seed unsupported record %v: %s", args, r.stderr)
 		}
 	}
-	destination := filepath.Join(t.TempDir(), "destination.sqlite")
+	destination := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
 	r := runMigration(t, workspace, bd, destination)
 	if r.code != 0 || r.stdout != wroteTo(t, destination) {
 		t.Fatalf("unsupported-record migration = %#v", r)

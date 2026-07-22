@@ -51,38 +51,27 @@ func runInit(g GlobalFlags, args []string, s *Streams) int {
 	}
 
 	initOpts := bdd.InitOptions{Prefix: prefix}
-	var derivedFrom string
 
-	if g.DBPath != "" {
-		absDB, err := filepath.Abs(g.DBPath)
-		if err != nil {
-			s.Errorf("bdd: init: %v\n", err)
-			return ExitOther
-		}
-		initOpts.DBPath = absDB
-		derivedFrom = workspaceDir(absDB)
-	} else {
-		workspace := g.Workspace
-		if path != "" {
-			workspace = path
-		}
-		if workspace == "" {
-			wd, err := os.Getwd()
-			if err != nil {
-				s.Errorf("bdd: init: %v\n", err)
-				return ExitOther
-			}
-			workspace = wd
-		}
-
-		absWorkspace, err := filepath.Abs(workspace)
-		if err != nil {
-			s.Errorf("bdd: init: %v\n", err)
-			return ExitOther
-		}
-		initOpts.Workspace = absWorkspace
-		derivedFrom = absWorkspace
+	workspace := g.Workspace
+	if path != "" {
+		workspace = path
 	}
+	if workspace == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			s.Errorf("bdd: init: %v\n", err)
+			return ExitOther
+		}
+		workspace = wd
+	}
+
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		s.Errorf("bdd: init: %v\n", err)
+		return ExitOther
+	}
+	initOpts.Workspace = absWorkspace
+	derivedFrom := absWorkspace
 
 	if prefix == "" {
 		prefix = derivePrefix(derivedFrom)

@@ -122,7 +122,6 @@ func runRestore(g GlobalFlags, args []string, s *Streams) int {
 
 	ctx := context.Background()
 	result, err := bdd.Restore(ctx, bdd.RestoreOptions{
-		Path:      g.DBPath,
 		Workspace: g.Workspace,
 		Source:    source,
 	})

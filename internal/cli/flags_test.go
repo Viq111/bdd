@@ -43,10 +43,10 @@ func TestParseGlobalFlagsEqualsAndSpaceForms(t *testing.T) {
 			rest: []string{"status"},
 		},
 		{
-			name: "db flag",
+			name: "removed db flag passes through unrecognized",
 			args: []string{"--db", "/tmp/x.sqlite", "status"},
-			want: GlobalFlags{DBPath: "/tmp/x.sqlite"},
-			rest: []string{"status"},
+			want: GlobalFlags{},
+			rest: []string{"--db", "/tmp/x.sqlite", "status"},
 		},
 		{
 			name: "unrecognized flags pass through untouched",

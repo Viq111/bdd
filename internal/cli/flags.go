@@ -11,10 +11,6 @@ type GlobalFlags struct {
 	// -C). Empty means the current working directory.
 	Workspace string
 
-	// DBPath is an explicit path to a bdd SQLite database file (--db). When
-	// set, it takes precedence over workspace discovery.
-	DBPath string
-
 	// Actor is the caller-supplied actor override (--actor). Empty means
 	// fall through the rest of the precedence chain; see ResolveActor.
 	Actor string
@@ -47,8 +43,6 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string, error) {
 		switch name {
 		case "--workspace", "-C":
 			target = &g.Workspace
-		case "--db":
-			target = &g.DBPath
 		case "--actor":
 			target = &g.Actor
 		case "--json":

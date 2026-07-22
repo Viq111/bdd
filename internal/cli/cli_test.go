@@ -119,7 +119,7 @@ func TestRunSubcommandHelpShowsGlobalFlags(t *testing.T) {
 		t.Fatalf("Run(create -h) exit = %d, stderr = %q", code, stderr.String())
 	}
 	out := stdout.String()
-	for _, want := range []string{"--workspace", "-C", "--db", "--actor", "--json", "--silent"} {
+	for _, want := range []string{"--workspace", "-C", "--actor", "--json", "--silent"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stdout = %q, want it to mention global flag %q", out, want)
 		}
