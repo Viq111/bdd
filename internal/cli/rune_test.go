@@ -298,6 +298,58 @@ func TestRuneSetGetErrorPrefixes(t *testing.T) {
 	}
 }
 
+// TestRuneSetFlagsBeforeKey is a regression test for bd bdd-j2us: `rune set`
+// treated args[0] as the key unconditionally, so any flag placed before the
+// positional key was misparsed as the key itself.
+func TestRuneSetFlagsBeforeKey(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"rune", "set", "--workspace", dir,
+		"--kind", "role", "--title", "Programmer", "--body", "Implement things.", "role/programmer"},
+		&stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune set, flags before key) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"rune", "get", "--workspace", dir, "--json", "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune get) exit = %d, stderr = %q", code, stderr.String())
+	}
+	var r RuneResult
+	if err := json.Unmarshal(stdout.Bytes(), &r); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	if r.Key != "role/programmer" || r.Kind != "role" || r.Title != "Programmer" || r.Body != "Implement things." {
+		t.Fatalf("r = %+v, unexpected", r)
+	}
+}
+
+// TestRuneSearchFlagsBeforeText is a regression test for bd bdd-j2us: `rune
+// search` treated args[0] as the search text unconditionally, so any flag
+// placed before the positional text was misparsed as the text itself.
+func TestRuneSearchFlagsBeforeText(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"rune", "set", "--workspace", dir, "role/programmer",
+		"--kind", "role", "--title", "Programmer", "--body", "Implement things."}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(rune set) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{"rune", "search", "--workspace", dir, "--kind", "role", "programmer"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune search, flags before text) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "role/programmer") {
+		t.Fatalf("stdout = %q, want it to contain %q", stdout.String(), "role/programmer")
+	}
+}
+
 func TestRuneSetCreateOnlyRejectsExisting(t *testing.T) {
 	dir := initTestWorkspace(t)
 

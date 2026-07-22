@@ -96,26 +96,21 @@ func runRune(g GlobalFlags, args []string, s *Streams) int {
 // [--body <body>|--body-file <path>] [--metadata <json>] [--protected]
 // [--create-only] [--if-revision <n>] [--force]`.
 func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
-	if len(args) == 0 {
-		s.Errorf("bdd: rune set: key is required\n")
-		return ExitUsage
-	}
-	key := args[0]
-	rest := args[1:]
-
+	var key string
+	var haveKey bool
 	var kind, title, body, bodyFile, metadata string
 	var haveTitle, haveBody, haveMetadata bool
 	var protected, createOnly, force bool
 	var expectedRevision *int64
 
 	i := 0
-	for i < len(rest) {
-		arg := rest[i]
+	for i < len(args) {
+		arg := args[i]
 		name, inline, hasInline := cutFlagValue(arg)
 
 		switch name {
 		case "--kind":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
 			if err != nil {
 				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
@@ -124,7 +119,7 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 			i += consumed
 			continue
 		case "--title":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
 			if err != nil {
 				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
@@ -133,7 +128,7 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 			i += consumed
 			continue
 		case "--body":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
 			if err != nil {
 				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
@@ -142,7 +137,7 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 			i += consumed
 			continue
 		case "--body-file":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
 			if err != nil {
 				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
@@ -151,7 +146,7 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 			i += consumed
 			continue
 		case "--metadata":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
 			if err != nil {
 				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
@@ -160,7 +155,7 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 			i += consumed
 			continue
 		case "--if-revision":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
 			if err != nil {
 				s.Errorf("bdd: rune set: %v\n", err)
 				return ExitUsage
@@ -186,9 +181,22 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 			i++
 			continue
 		default:
-			s.Errorf("bdd: rune set: unknown flag %q\n", arg)
-			return ExitUsage
+			if strings.HasPrefix(arg, "-") {
+				s.Errorf("bdd: rune set: unknown flag %q\n", arg)
+				return ExitUsage
+			}
+			if haveKey {
+				s.Errorf("bdd: rune set: unexpected argument %q\n", arg)
+				return ExitUsage
+			}
+			key, haveKey = arg, true
+			i++
+			continue
 		}
+	}
+	if !haveKey {
+		s.Errorf("bdd: rune set: key is required\n")
+		return ExitUsage
 	}
 
 	if bodyFile != "" {
@@ -290,14 +298,47 @@ func runRuneList(g GlobalFlags, args []string, s *Streams) int {
 
 // runRuneSearch implements `bdd rune search <text> [--kind <kind>] [--all]`.
 func runRuneSearch(g GlobalFlags, args []string, s *Streams) int {
-	if len(args) == 0 {
+	var text string
+	var haveText bool
+	var kind string
+	var all bool
+
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		name, inline, hasInline := cutFlagValue(arg)
+
+		switch name {
+		case "--kind":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: rune search: %v\n", err)
+				return ExitUsage
+			}
+			kind = val
+			i += consumed
+			continue
+		case "--all":
+			all = true
+			i++
+			continue
+		default:
+			if strings.HasPrefix(arg, "-") {
+				s.Errorf("bdd: rune search: unknown flag %q\n", arg)
+				return ExitUsage
+			}
+			if haveText {
+				s.Errorf("bdd: rune search: unexpected argument %q\n", arg)
+				return ExitUsage
+			}
+			text, haveText = arg, true
+			i++
+			continue
+		}
+	}
+	if !haveText {
 		s.Errorf("bdd: rune search: text is required\n")
 		return ExitUsage
-	}
-	text := args[0]
-	kind, all, code := parseRuneListFlags(args[1:], s, "rune search")
-	if code != ExitSuccess {
-		return code
 	}
 
 	ctx := context.Background()
@@ -315,8 +356,8 @@ func runRuneSearch(g GlobalFlags, args []string, s *Streams) int {
 	return emitRuneSummaries(s, "rune search", summaries)
 }
 
-// parseRuneListFlags parses the [--kind <kind>] [--all] flags shared by
-// `rune list` and `rune search`.
+// parseRuneListFlags parses the [--kind <kind>] [--all] flags for
+// `rune list`, which takes no positional arguments.
 func parseRuneListFlags(args []string, s *Streams, cmdName string) (kind string, all bool, code int) {
 	i := 0
 	for i < len(args) {
