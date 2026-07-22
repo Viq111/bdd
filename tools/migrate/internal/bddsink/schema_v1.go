@@ -4,11 +4,38 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
+
 	"github.com/viq111/bdd/internal/schema"
 )
 
-// checkSchema deliberately pins direct SQL to the bdd schema known at build
-// time. bdd currently leaves application_id at SQLite's canonical zero.
+type columnSpec struct {
+	Name, Type  string
+	NotNull, PK int
+}
+
+// The schema contract is intentionally exhaustive for every table the sink
+// reads or writes. FTS shadow tables are included in the table-set check but
+// not column-checked: SQLite owns their physical layout.
+var schemaV1 = map[string][]columnSpec{
+	"schema_versions":    {{"version", "INTEGER", 0, 1}, {"applied_at", "TEXT", 1, 0}},
+	"workspace":          {{"singleton", "INTEGER", 0, 1}, {"prefix", "TEXT", 1, 0}, {"created_at", "TEXT", 1, 0}},
+	"status_definitions": {{"name", "TEXT", 0, 1}, {"category", "TEXT", 1, 0}, {"built_in", "INTEGER", 1, 0}},
+	"type_definitions":   {{"name", "TEXT", 0, 1}, {"built_in", "INTEGER", 1, 0}},
+	"cards":              {{"id", "TEXT", 0, 1}, {"title", "TEXT", 1, 0}, {"worktree", "TEXT", 1, 0}, {"description", "TEXT", 1, 0}, {"reproduction", "TEXT", 1, 0}, {"design", "TEXT", 1, 0}, {"acceptance", "TEXT", 1, 0}, {"status", "TEXT", 1, 0}, {"priority", "INTEGER", 1, 0}, {"card_type", "TEXT", 1, 0}, {"external_ref", "TEXT", 1, 0}, {"assignee", "TEXT", 1, 0}, {"created_by", "TEXT", 1, 0}, {"dispatchable", "INTEGER", 1, 0}, {"created_at", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"started_at", "TEXT", 0, 0}, {"closed_at", "TEXT", 0, 0}, {"defer_until", "TEXT", 0, 0}, {"revision", "INTEGER", 1, 0}},
+	"labels":             {{"card_id", "TEXT", 1, 1}, {"label", "TEXT", 1, 2}},
+	"card_edges":         {{"parent_id", "TEXT", 1, 1}, {"child_id", "TEXT", 1, 2}, {"created_at", "TEXT", 1, 0}, {"created_by", "TEXT", 0, 0}},
+	"notes":              {{"id", "INTEGER", 0, 1}, {"card_id", "TEXT", 1, 0}, {"author", "TEXT", 0, 0}, {"body", "TEXT", 1, 0}, {"created_at", "TEXT", 1, 0}},
+	"memories":           {{"key", "TEXT", 0, 1}, {"body", "TEXT", 1, 0}, {"created_by", "TEXT", 0, 0}, {"updated_by", "TEXT", 0, 0}, {"created_at", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"revision", "INTEGER", 1, 0}},
+	"runes":              {{"key", "TEXT", 0, 1}, {"kind", "TEXT", 1, 0}, {"title", "TEXT", 1, 0}, {"body", "TEXT", 1, 0}, {"metadata_json", "TEXT", 1, 0}, {"enabled", "INTEGER", 1, 0}, {"protected", "INTEGER", 1, 0}, {"created_by", "TEXT", 0, 0}, {"updated_by", "TEXT", 0, 0}, {"created_at", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"revision", "INTEGER", 1, 0}},
+	"events":             {{"id", "INTEGER", 0, 1}, {"subject_kind", "TEXT", 1, 0}, {"subject_key", "TEXT", 1, 0}, {"revision", "INTEGER", 1, 0}, {"action", "TEXT", 1, 0}, {"actor", "TEXT", 0, 0}, {"payload_json", "TEXT", 1, 0}, {"created_at", "TEXT", 1, 0}},
+	"config":             {{"key", "TEXT", 0, 1}, {"value", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"updated_by", "TEXT", 0, 0}},
+	"cards_fts":          {{"id", "", 0, 0}, {"title", "", 0, 0}, {"description", "", 0, 0}, {"reproduction", "", 0, 0}, {"design", "", 0, 0}, {"acceptance", "", 0, 0}, {"external_ref", "", 0, 0}, {"worktree", "", 0, 0}},
+	"notes_fts":          {{"card_id", "", 0, 0}, {"body", "", 0, 0}},
+}
+var expectedTables = []string{"cards", "cards_fts", "cards_fts_config", "cards_fts_data", "cards_fts_docsize", "cards_fts_idx", "card_edges", "config", "events", "labels", "memories", "notes", "notes_fts", "notes_fts_config", "notes_fts_data", "notes_fts_docsize", "notes_fts_idx", "runes", "schema_versions", "status_definitions", "type_definitions", "workspace"}
+var expectedIndexes = []string{"idx_card_edges_child", "idx_card_edges_parent", "idx_cards_assignee", "idx_cards_priority_created", "idx_cards_status_category_priority", "idx_cards_updated_at", "idx_cards_worktree", "idx_labels_label", "idx_memories_updated_at", "idx_notes_card_created", "idx_runes_kind_enabled_updated"}
+
 func checkSchema(ctx context.Context, db *sql.DB) error {
 	var applicationID, version int
 	if err := db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&applicationID); err != nil {
@@ -23,43 +50,64 @@ func checkSchema(ctx context.Context, db *sql.DB) error {
 	if version != schema.CurrentVersion() {
 		return fmt.Errorf("bdd migration sink: unsupported schema version %d (want %d)", version, schema.CurrentVersion())
 	}
-	for table, columns := range expectedColumns {
-		if err := checkColumns(ctx, db, table, columns); err != nil {
+	if err := exactNames(ctx, db, "table", expectedTables); err != nil {
+		return fmt.Errorf("bdd migration sink: schema contract tables: %w", err)
+	}
+	if err := exactNames(ctx, db, "index", expectedIndexes); err != nil {
+		return fmt.Errorf("bdd migration sink: schema contract indexes: %w", err)
+	}
+	for table, want := range schemaV1 {
+		if err := checkColumns(ctx, db, table, want); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-
-var expectedColumns = map[string][]string{
-	"cards":  {"id", "title", "worktree", "description", "reproduction", "design", "acceptance", "status", "priority", "card_type", "external_ref", "assignee", "created_by", "dispatchable", "created_at", "updated_at", "started_at", "closed_at", "defer_until", "revision"},
-	"labels": {"card_id", "label"}, "card_edges": {"parent_id", "child_id", "created_at", "created_by"}, "notes": {"id", "card_id", "author", "body", "created_at"}, "memories": {"key", "body", "created_by", "updated_by", "created_at", "updated_at", "revision"}, "runes": {"key", "kind", "title", "body", "metadata_json", "enabled", "protected", "created_by", "updated_by", "created_at", "updated_at", "revision"}, "events": {"id", "subject_kind", "subject_key", "revision", "action", "actor", "payload_json", "created_at"},
+func exactNames(ctx context.Context, db *sql.DB, kind string, want []string) error {
+	rows, err := db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type=? AND name NOT LIKE 'sqlite_%' ORDER BY name`, kind)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return err
+		}
+		got = append(got, n)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	copyWant := append([]string(nil), want...)
+	sort.Strings(copyWant)
+	if fmt.Sprint(got) != fmt.Sprint(copyWant) {
+		return fmt.Errorf("got %v, want %v", got, copyWant)
+	}
+	return nil
 }
-
-func checkColumns(ctx context.Context, db *sql.DB, table string, want []string) error {
+func checkColumns(ctx context.Context, db *sql.DB, table string, want []columnSpec) error {
 	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	got := map[string]bool{}
+	var got []columnSpec
 	for rows.Next() {
 		var cid int
-		var name, typ string
-		var notNull, pk int
-		var d any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &d, &pk); err != nil {
+		var c columnSpec
+		var defaultValue any
+		if err := rows.Scan(&cid, &c.Name, &c.Type, &c.NotNull, &defaultValue, &c.PK); err != nil {
 			return err
 		}
-		got[name] = true
+		got = append(got, c)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	for _, name := range want {
-		if !got[name] {
-			return fmt.Errorf("bdd migration sink: schema contract: table %s lacks column %s", table, name)
-		}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		return fmt.Errorf("bdd migration sink: schema contract columns for %s: got %#v, want %#v", table, got, want)
 	}
 	return nil
 }

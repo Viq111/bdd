@@ -194,10 +194,15 @@ func note(ctx context.Context, tx *sql.Tx, v model.NotePlan, now string) error {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO notes (card_id,author,body,created_at) VALUES (?,?,?,?)`, v.CardID, nullString(v.Author), v.Body, timestamp(v.CreatedAt, now)); err != nil {
+	result, err := tx.ExecContext(ctx, `INSERT INTO notes (card_id,author,body,created_at) VALUES (?,?,?,?)`, v.CardID, nullString(v.Author), v.Body, timestamp(v.CreatedAt, now))
+	if err != nil {
 		return err
 	}
-	return provenance(ctx, tx, "note", v.SourceKey, 1, "migration.note", map[string]any{"source_system": "beads", "source_kind": v.SourceKind, "source_id": v.SourceID, "source_key": v.SourceKey, "hash_version": v.HashVersion, "hash": v.Hash}, now)
+	noteID, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	return provenance(ctx, tx, "note", v.SourceKey, 1, "migration.note", map[string]any{"source_system": "beads", "source_kind": v.SourceKind, "source_id": v.SourceID, "source_key": v.SourceKey, "note_id": noteID, "hash_version": v.HashVersion, "hash": v.Hash}, now)
 }
 func edge(ctx context.Context, tx *sql.Tx, v model.EdgePlan, now string) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO card_edges (parent_id,child_id,created_at,created_by) VALUES (?,?,?,?) ON CONFLICT(parent_id,child_id) DO NOTHING`, v.ParentID, v.ChildID, now, actor)

@@ -3,6 +3,7 @@ package bddsink
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"github.com/viq111/bdd"
 	"github.com/viq111/bdd/internal/sqlite"
 	"github.com/viq111/bdd/tools/migrate/internal/mapping"
@@ -17,7 +18,7 @@ func TestApplyInitialImportIsPubliclyReadable(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "bdd.sqlite")
-	p := model.Plan{Cards: []model.CardPlan{{ID: "ocp-123", Title: "imported", Status: "open", Type: "task", Labels: []string{"release"}}}, Runes: []model.RunePlan{{Key: "role/programmer", Kind: "role", Title: "Programmer", Body: "body", Enabled: true, Protected: true, Metadata: map[string]string{"legacy_bd_id": "orcha-role"}}}, Memories: []model.MemoryPlan{{Key: "ocp/memory", Body: "state", Actor: "bdd-migration"}}, Notes: []model.NotePlan{{CardID: "ocp-123", SourceKey: "ocp-123/comment/1", SourceKind: "comment", SourceID: "1", Body: "note"}}}
+	p := model.Plan{Cards: []model.CardPlan{{ID: "ocp-123", Title: "imported", Status: "open", Type: "task", Labels: []string{"release"}}, {ID: "ocp-124", Title: "blocked", Status: "open", Type: "task"}}, Runes: []model.RunePlan{{Key: "role/programmer", Kind: "role", Title: "Programmer", Body: "body", Enabled: true, Protected: true, Metadata: map[string]string{"legacy_bd_id": "orcha-role"}}}, Memories: []model.MemoryPlan{{Key: "ocp/memory", Body: "state", Actor: "bdd-migration"}}, Notes: []model.NotePlan{{CardID: "ocp-123", SourceKey: "ocp-123/comment/1", SourceKind: "comment", SourceID: "1", Body: "note"}}, Edges: []model.EdgePlan{{ParentID: "ocp-123", ChildID: "ocp-124"}}}
 	if err := Apply(ctx, dst, "ocp", p); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,7 @@ func TestApplyInitialImportIsPubliclyReadable(t *testing.T) {
 	}
 	defer db.Close()
 	c, err := db.GetCard(ctx, "ocp-123")
-	if err != nil || c.Title != "imported" || len(c.Labels) != 1 {
+	if err != nil || c.Title != "imported" || len(c.Labels) != 1 || len(c.Children) != 1 || c.Children[0].ID != "ocp-124" {
 		t.Fatalf("card=%#v err=%v", c, err)
 	}
 	if _, err := db.GetRune(ctx, "role/programmer"); err != nil {
@@ -69,24 +70,62 @@ func TestApplyInitialImportIsPubliclyReadable(t *testing.T) {
 }
 func TestSchemaContractRejectsDoctoredDatabase(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "bdd.sqlite")
-	db, err := bdd.Init(ctx, bdd.InitOptions{DBPath: path, Prefix: "ocp"})
-	if err != nil {
-		t.Fatal(err)
+	for name, doctor := range map[string]func(*sql.DB) error{
+		"missing-column": func(db *sql.DB) error {
+			_, err := db.ExecContext(ctx, "ALTER TABLE cards RENAME COLUMN title TO broken_title")
+			return err
+		},
+		"extra-column": func(db *sql.DB) error {
+			_, err := db.ExecContext(ctx, "ALTER TABLE cards ADD COLUMN unexpected TEXT")
+			return err
+		},
+		"missing-index": func(db *sql.DB) error { _, err := db.ExecContext(ctx, "DROP INDEX idx_labels_label"); return err },
+		"extra-table": func(db *sql.DB) error {
+			_, err := db.ExecContext(ctx, "CREATE TABLE unexpected_contract_drift (id INTEGER)")
+			return err
+		},
+		"nullable-title": func(db *sql.DB) error {
+			if _, err := db.ExecContext(ctx, "PRAGMA writable_schema = ON"); err != nil {
+				return err
+			}
+			if _, err := db.ExecContext(ctx, "UPDATE sqlite_master SET sql = replace(sql, 'title        TEXT NOT NULL', 'title        TEXT') WHERE type='table' AND name='cards'"); err != nil {
+				return err
+			}
+			_, err := db.ExecContext(ctx, "PRAGMA writable_schema = OFF")
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "bdd.sqlite")
+			db, err := bdd.Init(ctx, bdd.InitOptions{DBPath: path, Prefix: "ocp"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := doctor(raw); err != nil {
+				t.Fatal(err)
+			}
+			if name == "nullable-title" {
+				if err := raw.Close(); err != nil {
+					t.Fatal(err)
+				}
+				raw, err = sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err = checkSchema(ctx, raw); err == nil {
+				t.Fatal("checkSchema accepted doctored schema")
+			}
+			raw.Close()
+		})
 	}
-	db.Close()
-	raw, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = raw.ExecContext(ctx, "ALTER TABLE cards RENAME COLUMN title TO broken_title"); err != nil {
-		t.Fatal(err)
-	}
-	if err = checkSchema(ctx, raw); err == nil {
-		t.Fatal("checkSchema accepted doctored schema")
-	}
-	raw.Close()
-	_ = os.Remove(path)
 }
 
 func TestSupportedFixturesImportThroughPublicAPI(t *testing.T) {
