@@ -95,6 +95,7 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 	}
 	cards := map[string]bool{}
 	roles := map[string]string{}
+	conflictingRoleIDs := conflictingRoleIDs(records)
 	for _, r := range records {
 		switch v := r.(type) {
 		case sourcebd.Memory:
@@ -118,6 +119,10 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 				key, ok := roleKey(v.Title)
 				if !ok {
 					add(id, "role title does not produce a valid rune key; skipped record")
+					continue
+				}
+				if conflictingRoleIDs[id] {
+					add(id, "conflicting legacy ID maps to multiple rune keys; skipped role for rune key "+fmt.Sprintf("%q", key))
 					continue
 				}
 				if prior := roles[key]; prior != "" {
@@ -237,6 +242,34 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 	}
 	p.Canonicalize()
 	return p, nil
+}
+
+// conflictingRoleIDs identifies legacy IDs that would otherwise be attached
+// to more than one destination rune. Such a relationship is ambiguous, so all
+// of its role records must be skipped rather than selecting one by input order.
+func conflictingRoleIDs(records []sourcebd.Record) map[string]bool {
+	keysByID := map[string]map[string]bool{}
+	for _, r := range records {
+		v, ok := r.(sourcebd.Issue)
+		if !ok || v.IssueType != "role" || !safeID(v.ID) {
+			continue
+		}
+		key, ok := roleKey(v.Title)
+		if !ok {
+			continue
+		}
+		if keysByID[v.ID] == nil {
+			keysByID[v.ID] = map[string]bool{}
+		}
+		keysByID[v.ID][key] = true
+	}
+	conflicts := map[string]bool{}
+	for id, keys := range keysByID {
+		if len(keys) > 1 {
+			conflicts[id] = true
+		}
+	}
+	return conflicts
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

@@ -286,6 +286,37 @@ func TestMappingMalformedDuplicateAndAnonymousComments(t *testing.T) {
 	}
 }
 
+func TestMappingSkipsRolesWithConflictingLegacyID(t *testing.T) {
+	records, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"same-id","title":"[role] Programmer","status":"open","issue_type":"role"}
+{"_type":"issue","id":"same-id","title":"[role] QA","status":"open","issue_type":"role"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(records, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Runes) != 0 {
+		t.Fatalf("runes = %#v, want no ambiguous role imports", p.Runes)
+	}
+	want := "warning: same-id: conflicting legacy ID maps to multiple rune keys; skipped role for rune key \"role/programmer\"; conflicting legacy ID maps to multiple rune keys; skipped role for rune key \"role/qa\""
+	if got := warnings.Render(p.Warnings); got != want {
+		t.Fatalf("warnings = %q, want %q", got, want)
+	}
+	reversed, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"same-id","title":"[role] QA","status":"open","issue_type":"role"}
+{"_type":"issue","id":"same-id","title":"[role] Programmer","status":"open","issue_type":"role"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedPlan, err := Map(reversed, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := warnings.Render(reversedPlan.Warnings); got != want {
+		t.Fatalf("reversed warnings = %q, want %q", got, want)
+	}
+}
+
 func TestMappingSkipsUnsupportedStatusAndTypes(t *testing.T) {
 	data := `{"_type":"issue","id":"supported","title":"supported","status":"verified","issue_type":"custom"}
 {"_type":"issue","id":"unknown-status","title":"unknown status","status":"missing-category","issue_type":"task"}
