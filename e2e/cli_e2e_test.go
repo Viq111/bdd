@@ -603,4 +603,7 @@ func TestRemovedDBFlagRejected(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("bdd --db %s status: code = %d, want 2 (unknown flag); stderr=%s", db, code, stderr.String())
 	}
+	if !strings.Contains(stderr.String(), `unknown flag "--db"`) {
+		t.Fatalf("bdd --db %s status: stderr = %q, want it to identify --db as an unknown flag", db, stderr.String())
+	}
 }

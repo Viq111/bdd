@@ -53,6 +53,28 @@ func TestStatusUpToDateAfterInit(t *testing.T) {
 	}
 }
 
+func TestStatusUnknownFlagVsArgument(t *testing.T) {
+	dir := t.TempDir()
+
+	cases := []struct {
+		arg  string
+		want string
+	}{
+		{"--db", `unknown flag "--db"`},
+		{"bogus", `unknown argument "bogus"`},
+	}
+	for _, tc := range cases {
+		var stdout, stderr bytes.Buffer
+		code := Run([]string{"status", "--workspace", dir, tc.arg}, &stdout, &stderr, "dev", "unspecified")
+		if code != ExitUsage {
+			t.Fatalf("Run(status %s) exit = %d, want %d", tc.arg, code, ExitUsage)
+		}
+		if !strings.Contains(stderr.String(), tc.want) {
+			t.Fatalf("Run(status %s) stderr = %q, want it to contain %q", tc.arg, stderr.String(), tc.want)
+		}
+	}
+}
+
 func TestStatusMissingDatabaseReturnsNotFound(t *testing.T) {
 	dir := t.TempDir()
 
