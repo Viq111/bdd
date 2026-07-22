@@ -350,6 +350,81 @@ func TestRuneSearchFlagsBeforeText(t *testing.T) {
 	}
 }
 
+// TestRuneSetKeyInterleavedWithFlags is a regression test for bd bdd-j2us:
+// the key may appear between flags, not just before or after all of them.
+func TestRuneSetKeyInterleavedWithFlags(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"rune", "set", "--workspace", dir,
+		"--kind", "role", "role/programmer", "--title", "Programmer", "--body", "Implement things."},
+		&stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune set, key interleaved) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"rune", "get", "--workspace", dir, "--json", "role/programmer"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune get) exit = %d, stderr = %q", code, stderr.String())
+	}
+	var r RuneResult
+	if err := json.Unmarshal(stdout.Bytes(), &r); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	if r.Key != "role/programmer" || r.Kind != "role" || r.Title != "Programmer" {
+		t.Fatalf("r = %+v, unexpected", r)
+	}
+}
+
+// TestRuneSetRejectsDuplicatePositional ensures a second bare positional
+// argument is rejected as an unexpected argument rather than silently
+// overwriting or ignoring the key.
+func TestRuneSetRejectsDuplicatePositional(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"rune", "set", "--workspace", dir, "role/programmer", "role/qa",
+		"--kind", "role", "--title", "P", "--body", "b"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(rune set, two positionals) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `unexpected argument "role/qa"`) {
+		t.Fatalf("stderr = %q, want it to mention the duplicate positional", stderr.String())
+	}
+}
+
+// TestRuneSearchRejectsDuplicatePositional mirrors
+// TestRuneSetRejectsDuplicatePositional for `rune search`.
+func TestRuneSearchRejectsDuplicatePositional(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"rune", "search", "--workspace", dir, "foo", "bar"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(rune search, two positionals) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `unexpected argument "bar"`) {
+		t.Fatalf("stderr = %q, want it to mention the duplicate positional", stderr.String())
+	}
+}
+
+// TestRuneSearchRejectsUnknownFlag ensures an unrecognized flag-shaped token
+// is rejected rather than silently accepted or misparsed as search text.
+func TestRuneSearchRejectsUnknownFlag(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"rune", "search", "--workspace", dir, "--bogus", "foo"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(rune search, unknown flag) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `unknown flag "--bogus"`) {
+		t.Fatalf("stderr = %q, want it to mention the unknown flag", stderr.String())
+	}
+}
+
 func TestRuneSetCreateOnlyRejectsExisting(t *testing.T) {
 	dir := initTestWorkspace(t)
 
