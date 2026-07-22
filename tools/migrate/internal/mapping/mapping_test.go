@@ -383,3 +383,44 @@ func TestMappingSkipsKeylessMemoriesAndDefaultsEmptyActors(t *testing.T) {
 		t.Fatalf("warnings = %q, want %q", got, want)
 	}
 }
+
+func TestMappingDoesNotLeakFixtureDefinitionsIntoConfig(t *testing.T) {
+	cfg := Config{
+		StatusCategories:       map[string]string{},
+		CustomTypes:            map[string]bool{},
+		LegacyStatusCategories: map[string]string{"legacy": "done"},
+	}
+	wantCfg := Config{
+		StatusCategories:       map[string]string{},
+		CustomTypes:            map[string]bool{},
+		LegacyStatusCategories: map[string]string{"legacy": "done"},
+	}
+	definitions, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"infrastructure","kind":"custom_status","name":"verified","category":"done"}
+{"_type":"infrastructure","kind":"custom_type","name":"custom"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Map(definitions, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, wantCfg) {
+		t.Fatalf("Map mutated config: got %#v, want %#v", cfg, wantCfg)
+	}
+
+	withoutDefinitions, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"custom-type","title":"custom type","status":"open","issue_type":"custom"}
+{"_type":"issue","id":"custom-status","title":"custom status","status":"verified","issue_type":"task"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Map(withoutDefinitions, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Cards) != 0 {
+		t.Fatalf("cards accepted with leaked definitions: %#v", p.Cards)
+	}
+	wantWarnings := "warning: custom-status: status \"verified\" has no category; skipped record\nwarning: custom-type: unsupported issue type \"custom\"; skipped record"
+	if got := warnings.Render(p.Warnings); got != wantWarnings {
+		t.Fatalf("warnings = %q, want %q", got, wantWarnings)
+	}
+}

@@ -27,12 +27,11 @@ var builtInTypes = map[string]bool{"task": true, "bug": true, "feature": true, "
 var skippedTypes = map[string]bool{"gate": true, "molecule": true, "template": true, "event": true, "infrastructure": true}
 
 func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
-	if cfg.StatusCategories == nil {
-		cfg.StatusCategories = map[string]string{}
-	}
-	if cfg.CustomTypes == nil {
-		cfg.CustomTypes = map[string]bool{}
-	}
+	// Definition records supplement this invocation's configuration. Copy the
+	// maps first so those supplements cannot leak into another Map call through
+	// caller-owned maps.
+	cfg.StatusCategories = cloneStringMap(cfg.StatusCategories)
+	cfg.CustomTypes = cloneBoolMap(cfg.CustomTypes)
 	p := model.Plan{Workspace: model.WorkspacePlan{IssuePrefix: cfg.IssuePrefix}}
 	warns := map[string][]string{}
 	add := func(id, reason string) {
@@ -235,6 +234,22 @@ func Map(records []sourcebd.Record, cfg Config) (model.Plan, error) {
 	}
 	p.Canonicalize()
 	return p, nil
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
+}
+
+func cloneBoolMap(values map[string]bool) map[string]bool {
+	clone := make(map[string]bool, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
 }
 func rolesForID(roles map[string]string, id string) (string, bool) {
 	for key, roleID := range roles {
