@@ -19,7 +19,7 @@ import (
 // alongside the live (or target) database, when the caller does not supply
 // an explicit path: this package stays path-agnostic and never resolves a
 // workspace root itself. The CLI's `bdd snapshot` command resolves its own,
-// different default — <workspace>/bdd_backup.sqlite, the git-tracked
+// different default — <workspace>/bdd_backup.sqlite, the workspace-root
 // convention documented in docs/snapshot-restore.md — and passes it
 // explicitly via SnapshotOptions.Output rather than relying on this one.
 const DefaultSnapshotName = "backup.sqlite"

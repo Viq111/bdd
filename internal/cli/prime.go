@@ -55,13 +55,12 @@ Machine-output rules:
 
 Snapshot and restore:
   ` + "`snapshot [--output <path>]`" + ` writes a point-in-time backup to
-  <workspace>/bdd_backup.sqlite by default; commit that file to git.
+  <workspace>/bdd_backup.sqlite by default.
   ` + "`restore <file> --force`" + ` installs a snapshot as the workspace database,
   backing up the current one first. Recommended .gitignore for a bdd
   workspace: ignore the entire .bdd/ directory
     .bdd/
-  (the tracked backup, bdd_backup.sqlite, lives outside it — see
-  docs/snapshot-restore.md).
+  (see docs/snapshot-restore.md for details).
 `
 
 // PrimeResult is the JSON result of `bdd prime`. Human output renders

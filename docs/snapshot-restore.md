@@ -1,11 +1,11 @@
 # Online snapshot and restore
 
-Owner: Programmer (bd bdd-ab8s). Why this exists: git is for point-in-time
-backup/restore of consistent SQLite snapshots, never for live WAL-mode
-database sync — committing `bdd.sqlite` directly loses recent transactions
-sitting in its WAL file. `(*DB).Snapshot` and `Restore` (in the root `bdd`
-package) give a single, integrity-checked, standalone snapshot file that is
-safe to commit (plan section 21).
+Owner: Programmer (bd bdd-ab8s). Why this exists: point-in-time backup/restore
+needs a consistent SQLite snapshot, never a copy of the live WAL-mode
+database — copying `bdd.sqlite` directly loses recent transactions sitting
+in its WAL file. `(*DB).Snapshot` and `Restore` (in the root `bdd` package)
+give a single, integrity-checked, standalone snapshot file instead (plan
+section 21).
 
 ## Library API
 
@@ -53,9 +53,9 @@ all live there, and none of it needs to be tracked:
 .bdd/
 ```
 
-## Default tracked snapshot convention
+## Default snapshot location
 
 By default, `bdd snapshot` writes to `<workspace>/bdd_backup.sqlite`, outside
-`.bdd/`, so it can be committed to git as the workspace's point-in-time
-backup while the whole `.bdd/` directory is ignored. `Restore` accepts that
-file (or any other snapshot path) as its source.
+`.bdd/`, so the whole `.bdd/` directory can be gitignored without carving out
+an exception for the backup file. `Restore` accepts that file (or any other
+snapshot path) as its source.

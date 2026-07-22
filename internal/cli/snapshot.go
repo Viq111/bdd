@@ -24,7 +24,7 @@ type SnapshotResult struct {
 
 // runSnapshot implements `bdd snapshot [--output <path>]`, wrapping
 // (*bdd.DB).Snapshot: a single, integrity-checked, standalone copy of the
-// live database, safe to commit to git (see docs/snapshot-restore.md).
+// live database (see docs/snapshot-restore.md).
 func runSnapshot(g GlobalFlags, args []string, s *Streams) int {
 	var output string
 

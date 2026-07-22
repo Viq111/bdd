@@ -334,8 +334,8 @@ fsyncs it, integrity-checks it, and atomically renames it into place.
 snapshot's schema compatibility and integrity before touching anything,
 backs up the current database first (the Go API can opt out via
 `SkipBackup`; the CLI always backs up), and installs the new one
-atomically. Full detail, including the default tracked-snapshot convention,
-is in [`docs/snapshot-restore.md`](docs/snapshot-restore.md).
+atomically. Full detail, including the default snapshot location, is in
+[`docs/snapshot-restore.md`](docs/snapshot-restore.md).
 
 Recommended `.gitignore` for a bdd workspace — ignore the whole `.bdd/`
 directory:
@@ -344,10 +344,10 @@ directory:
 .bdd/
 ```
 
-Commit `bdd_backup.sqlite` at the workspace root instead; it's the tracked
-point-in-time backup, kept outside `.bdd/` so the whole directory can be
-ignored. `bdd prime` echoes this same entry so an agent priming a session
-sees it without reading this file.
+`bdd_backup.sqlite` lives at the workspace root, outside `.bdd/`, so it's
+unaffected by that ignore rule — whether to track it in git is up to you.
+`bdd prime` echoes this same `.gitignore` entry so an agent priming a
+session sees it without reading this file.
 
 ## Go library
 
