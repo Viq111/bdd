@@ -110,3 +110,18 @@ func reportUnknownArg(s *Streams, cmd, arg string) int {
 	}
 	return ExitUsage
 }
+
+// firstFlagArg returns the first flag-shaped (leading "-") token in args,
+// if any. Commands with a fixed positional arity (e.g. "expects exactly
+// one id argument") must check this before their count check: a stray
+// removed/mistyped flag like --db changes the token count too, and would
+// otherwise be misreported as a wrong-arity error instead of an unknown
+// flag.
+func firstFlagArg(args []string) (string, bool) {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return arg, true
+		}
+	}
+	return "", false
+}

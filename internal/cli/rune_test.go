@@ -133,6 +133,50 @@ func TestRuneSearchUnknownFlagVsArgument(t *testing.T) {
 	}
 }
 
+// TestRuneCommandsRejectRemovedDBFlag covers every rune command that takes
+// a leading positional key: the removed global --db flag must be
+// identified as an unknown flag rather than swallowed as the key or
+// misreported through a wrong-arity error.
+func TestRuneCommandsRejectRemovedDBFlag(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	cases := []struct {
+		name    string
+		args    []string
+		wantCmd string
+	}{
+		{"get", []string{"rune", "get", "somekey"}, "rune get"},
+		{"set", []string{"rune", "set", "somekey"}, "rune set"},
+		{"enable", []string{"rune", "enable", "somekey"}, "rune enable"},
+		{"disable", []string{"rune", "disable", "somekey"}, "rune disable"},
+		{"remove", []string{"rune", "remove", "somekey"}, "rune remove"},
+	}
+	dbForms := []struct {
+		lead []string
+		want string
+	}{
+		{[]string{"--db", "/tmp/example.sqlite"}, "--db"},
+		{[]string{"--db=/tmp/example.sqlite"}, "--db=/tmp/example.sqlite"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, form := range dbForms {
+				var stdout, stderr bytes.Buffer
+				args := append(append([]string{}, form.lead...), tc.args...)
+				args = append(args, "--workspace", dir)
+				code := Run(args, &stdout, &stderr, "dev", "unspecified")
+				if code != ExitUsage {
+					t.Fatalf("Run(%v) exit = %d, want %d, stderr=%q", args, code, ExitUsage, stderr.String())
+				}
+				want := `bdd: ` + tc.wantCmd + `: unknown flag "` + form.want + `"`
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("Run(%v) stderr = %q, want it to contain %q", args, stderr.String(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestRuneEnableDisable(t *testing.T) {
 	dir := initTestWorkspace(t)
 

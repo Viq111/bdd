@@ -18,6 +18,9 @@ func runMemory(g GlobalFlags, args []string, s *Streams) int {
 		s.Errorf("bdd: memory: missing subcommand (set, get, list, search, remove)\n")
 		return ExitUsage
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "memory", args[0])
+	}
 	sub, rest := args[0], args[1:]
 
 	switch sub {
@@ -144,14 +147,16 @@ func runMemorySet(g GlobalFlags, args []string, s *Streams) int {
 // runMemoryList implements `bdd memory list`.
 func runMemoryList(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) > 0 {
-		s.Errorf("bdd: memory list: unexpected argument %q\n", args[0])
-		return ExitUsage
+		return reportUnknownArg(s, "memory list", args[0])
 	}
 	return listMemories(g, "", "memory list", s)
 }
 
 // runMemorySearch implements `bdd memory search <query>`.
 func runMemorySearch(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "memory search", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: memory search: expected exactly one query argument\n")
 		return ExitUsage
@@ -198,6 +203,9 @@ func listMemories(g GlobalFlags, query, label string, s *Streams) int {
 
 // runMemoryGet implements `bdd memory get <key>`.
 func runMemoryGet(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "memory get", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: memory get: expected exactly one key argument\n")
 		return ExitUsage
@@ -230,6 +238,9 @@ func runMemoryGet(g GlobalFlags, args []string, s *Streams) int {
 
 // runMemoryRemove implements `bdd memory remove <key>`.
 func runMemoryRemove(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "memory remove", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: memory remove: expected exactly one key argument\n")
 		return ExitUsage

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 
 	"github.com/viq111/bdd"
 )
@@ -16,6 +17,9 @@ func runCardUpdate(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: update: card id is required\n")
 		return ExitUsage
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "update", args[0])
 	}
 	id := args[0]
 	rest := args[1:]

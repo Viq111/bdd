@@ -15,6 +15,9 @@ func runCardNote(g GlobalFlags, args []string, s *Streams) int {
 		s.Errorf("bdd: note: card id is required\n")
 		return ExitUsage
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "note", args[0])
+	}
 	id := args[0]
 	rest := args[1:]
 
@@ -88,6 +91,9 @@ func runCardClose(g GlobalFlags, args []string, s *Streams) int {
 		s.Errorf("bdd: close: card id is required\n")
 		return ExitUsage
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "close", args[0])
+	}
 	id := args[0]
 	var reason string
 	if len(args) == 2 {
@@ -115,6 +121,9 @@ func runCardClose(g GlobalFlags, args []string, s *Streams) int {
 
 // runCardReopen implements `bdd reopen <id>`.
 func runCardReopen(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "reopen", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: reopen: expected exactly one card id argument\n")
 		return ExitUsage
@@ -142,6 +151,9 @@ func runCardDefer(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: defer: card id is required\n")
 		return ExitUsage
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "defer", args[0])
 	}
 	id := args[0]
 	rest := args[1:]
@@ -197,6 +209,9 @@ func runCardHuman(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: human: card id is required\n")
 		return ExitUsage
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "human", args[0])
 	}
 	id := args[0]
 	var reason string

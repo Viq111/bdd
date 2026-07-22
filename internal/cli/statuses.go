@@ -15,8 +15,7 @@ type StatusDefResult struct {
 // runStatuses implements `bdd statuses`.
 func runStatuses(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) != 0 {
-		s.Errorf("bdd: statuses: unexpected argument %q\n", args[0])
-		return ExitUsage
+		return reportUnknownArg(s, "statuses", args[0])
 	}
 
 	ctx := context.Background()

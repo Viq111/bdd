@@ -6,6 +6,9 @@ import (
 
 // runCardShow implements `bdd show <id>`.
 func runCardShow(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "show", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: show: expected exactly one card id argument\n")
 		return ExitUsage

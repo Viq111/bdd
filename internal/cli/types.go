@@ -14,8 +14,7 @@ type TypeDefResult struct {
 // runTypes implements `bdd types`.
 func runTypes(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) != 0 {
-		s.Errorf("bdd: types: unexpected argument %q\n", args[0])
-		return ExitUsage
+		return reportUnknownArg(s, "types", args[0])
 	}
 
 	ctx := context.Background()

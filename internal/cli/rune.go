@@ -69,6 +69,9 @@ func runRune(g GlobalFlags, args []string, s *Streams) int {
 		s.Errorf("bdd: rune: missing subcommand (set, get, list, search, enable, disable, remove)\n")
 		return ExitUsage
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "rune", args[0])
+	}
 	sub, rest := args[0], args[1:]
 
 	switch sub {
@@ -182,8 +185,7 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 			continue
 		default:
 			if strings.HasPrefix(arg, "-") {
-				s.Errorf("bdd: rune set: unknown flag %q\n", arg)
-				return ExitUsage
+				return reportUnknownArg(s, "rune set", arg)
 			}
 			if haveKey {
 				s.Errorf("bdd: rune set: unexpected argument %q\n", arg)
@@ -253,6 +255,9 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 
 // runRuneGet implements `bdd rune get <key>`.
 func runRuneGet(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "rune get", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: rune get: expected exactly one key argument\n")
 		return ExitUsage

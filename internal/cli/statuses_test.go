@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -77,5 +78,40 @@ func TestTypesListsBuiltins(t *testing.T) {
 	}
 	if len(defs) != 6 {
 		t.Fatalf("len(defs) = %d, want 6 built-in types", len(defs))
+	}
+}
+
+func TestStatusesAndTypesRejectRemovedDBFlag(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{"statuses", "statuses"},
+		{"types", "types"},
+	}
+	dbForms := []struct {
+		lead []string
+		want string
+	}{
+		{[]string{"--db", "/tmp/example.sqlite"}, "--db"},
+		{[]string{"--db=/tmp/example.sqlite"}, "--db=/tmp/example.sqlite"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, form := range dbForms {
+				var stdout, stderr bytes.Buffer
+				args := append(append([]string{}, form.lead...), tc.cmd, "--workspace", dir)
+				code := Run(args, &stdout, &stderr, "dev", "unspecified")
+				if code != ExitUsage {
+					t.Fatalf("Run(%v) exit = %d, want %d, stderr=%q", args, code, ExitUsage, stderr.String())
+				}
+				want := `bdd: ` + tc.cmd + `: unknown flag "` + form.want + `"`
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("Run(%v) stderr = %q, want it to contain %q", args, stderr.String(), want)
+				}
+			}
+		})
 	}
 }

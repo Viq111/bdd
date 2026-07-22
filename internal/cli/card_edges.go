@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/viq111/bdd"
 )
@@ -22,6 +23,9 @@ func runCardChildren(g GlobalFlags, args []string, s *Streams) int {
 }
 
 func runCardEdgeList(g GlobalFlags, args []string, s *Streams, cmdName string, fetch func(context.Context, *bdd.DB, string) ([]bdd.CardRef, error)) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, cmdName, arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: %s: expected exactly one card id argument\n", cmdName)
 		return ExitUsage
@@ -73,6 +77,9 @@ func runCardLabel(g GlobalFlags, args []string, s *Streams) int {
 		s.Errorf("bdd: label: missing subcommand (add, remove, list)\n")
 		return ExitUsage
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "label", args[0])
+	}
 	sub, rest := args[0], args[1:]
 
 	switch sub {
@@ -92,6 +99,9 @@ func runCardLabelMutate(g GlobalFlags, args []string, s *Streams, add bool) int 
 	cmdName := "label remove"
 	if add {
 		cmdName = "label add"
+	}
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, cmdName, arg)
 	}
 	if len(args) != 2 {
 		s.Errorf("bdd: %s: expected a card id and a label argument\n", cmdName)
@@ -123,6 +133,9 @@ func runCardLabelMutate(g GlobalFlags, args []string, s *Streams, add bool) int 
 }
 
 func runCardLabelList(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "label list", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: label list: expected exactly one card id argument\n")
 		return ExitUsage

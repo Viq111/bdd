@@ -31,6 +31,9 @@ func runConfig(g GlobalFlags, args []string, s *Streams) int {
 		s.Errorf("bdd: config: missing subcommand (get, set, unset, list)\n")
 		return ExitUsage
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return reportUnknownArg(s, "config", args[0])
+	}
 	sub, rest := args[0], args[1:]
 
 	switch sub {
@@ -49,6 +52,9 @@ func runConfig(g GlobalFlags, args []string, s *Streams) int {
 }
 
 func runConfigGet(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "config get", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: config get: expected exactly one key argument\n")
 		return ExitUsage
@@ -81,8 +87,7 @@ func runConfigGet(g GlobalFlags, args []string, s *Streams) int {
 
 func runConfigList(g GlobalFlags, args []string, s *Streams) int {
 	if len(args) != 0 {
-		s.Errorf("bdd: config list: unexpected argument %q\n", args[0])
-		return ExitUsage
+		return reportUnknownArg(s, "config list", args[0])
 	}
 
 	ctx := context.Background()
@@ -120,6 +125,9 @@ func runConfigList(g GlobalFlags, args []string, s *Streams) int {
 }
 
 func runConfigSet(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "config set", arg)
+	}
 	if len(args) != 2 {
 		s.Errorf("bdd: config set: expected a key and a value argument\n")
 		return ExitUsage
@@ -169,6 +177,9 @@ func runConfigSet(g GlobalFlags, args []string, s *Streams) int {
 }
 
 func runConfigUnset(g GlobalFlags, args []string, s *Streams) int {
+	if arg, found := firstFlagArg(args); found {
+		return reportUnknownArg(s, "config unset", arg)
+	}
 	if len(args) != 1 {
 		s.Errorf("bdd: config unset: expected exactly one key argument\n")
 		return ExitUsage

@@ -740,3 +740,50 @@ func TestListLabelFiltersAndCombine(t *testing.T) {
 		t.Fatalf("cards = %+v, want only %s", cards, both)
 	}
 }
+
+// TestCardCommandsRejectRemovedDBFlag covers every card-scoped command that
+// takes a leading positional (id, or id+label): the removed global --db
+// flag, appearing before the subcommand, must be identified as an unknown
+// flag rather than swallowed as the id/label or misreported through a
+// wrong-arity error.
+func TestCardCommandsRejectRemovedDBFlag(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	cases := []struct {
+		name    string
+		args    []string
+		wantCmd string
+	}{
+		{"show", []string{"show", "bdd-1"}, "show"},
+		{"note", []string{"note", "bdd-1", "hi"}, "note"},
+		{"close", []string{"close", "bdd-1"}, "close"},
+		{"reopen", []string{"reopen", "bdd-1"}, "reopen"},
+		{"defer", []string{"defer", "bdd-1"}, "defer"},
+		{"human", []string{"human", "bdd-1"}, "human"},
+		{"update", []string{"update", "bdd-1", "--claim"}, "update"},
+		{"parents", []string{"parents", "bdd-1"}, "parents"},
+		{"children", []string{"children", "bdd-1"}, "children"},
+		{"label-add", []string{"label", "add", "bdd-1", "x"}, "label add"},
+		{"label-remove", []string{"label", "remove", "bdd-1", "x"}, "label remove"},
+		{"label-list", []string{"label", "list", "bdd-1"}, "label list"},
+	}
+	dbForms := []struct {
+		lead []string // tokens preceding the subcommand
+		want string   // flag token the error message must name
+	}{
+		{[]string{"--db", "/tmp/example.sqlite"}, "--db"},
+		{[]string{"--db=/tmp/example.sqlite"}, "--db=/tmp/example.sqlite"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, form := range dbForms {
+				args := append(append([]string{}, form.lead...), tc.args...)
+				_, stderr := runCLI(t, dir, ExitUsage, args...)
+				want := `bdd: ` + tc.wantCmd + `: unknown flag "` + form.want + `"`
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("Run(%v) stderr = %q, want it to contain %q", args, stderr, want)
+				}
+			}
+		})
+	}
+}
