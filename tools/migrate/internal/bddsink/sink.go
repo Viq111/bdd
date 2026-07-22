@@ -282,7 +282,7 @@ func card(ctx context.Context, tx *sql.Tx, v model.CardPlan, now string) error {
 		if oldHash == v.Hash && matches {
 			return nil
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE cards SET title=?,worktree=CASE WHEN ?<>'' THEN ? ELSE worktree END,description=?,reproduction=?,design=?,acceptance=?,status=?,priority=?,card_type=?,external_ref=?,assignee=?,created_by=?,owner=?,updated_at=?,closed_at=?,defer_until=?,revision=revision+1 WHERE id=?`, v.Title, v.Worktree, v.Worktree, v.Description, v.Reproduction, v.Design, v.Acceptance, v.Status, v.Priority, v.Type, v.ExternalRef, v.Assignee, v.Creator, v.Owner, updated, timeValue(v.ClosedAt), timeValue(v.DeferUntil), v.ID)
+		_, err = tx.ExecContext(ctx, `UPDATE cards SET title=?,worktree=CASE WHEN ?<>'' THEN ? ELSE worktree END,description=?,reproduction=?,design=?,acceptance=?,status=?,priority=?,card_type=?,external_ref=?,assignee=?,created_by=?,owner=?,created_at=CASE WHEN ? THEN ? ELSE created_at END,updated_at=CASE WHEN ? THEN ? ELSE updated_at END,closed_at=?,defer_until=?,revision=revision+1 WHERE id=?`, v.Title, v.Worktree, v.Worktree, v.Description, v.Reproduction, v.Design, v.Acceptance, v.Status, v.Priority, v.Type, v.ExternalRef, v.Assignee, v.Creator, v.Owner, v.CreatedAt != nil, created, v.UpdatedAt != nil, updated, timeValue(v.ClosedAt), timeValue(v.DeferUntil), v.ID)
 		if err != nil {
 			return err
 		}
@@ -304,7 +304,9 @@ func card(ctx context.Context, tx *sql.Tx, v model.CardPlan, now string) error {
 // an otherwise identical rerun into a write.
 func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan) (bool, error) {
 	var got model.CardPlan
-	err := tx.QueryRowContext(ctx, `SELECT id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner FROM cards WHERE id=?`, want.ID).Scan(&got.ID, &got.Title, &got.Worktree, &got.Description, &got.Reproduction, &got.Design, &got.Acceptance, &got.Status, &got.Priority, &got.Type, &got.ExternalRef, &got.Assignee, &got.Creator, &got.Owner)
+	var created, updated string
+	var closed, deferUntil sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner,created_at,updated_at,closed_at,defer_until FROM cards WHERE id=?`, want.ID).Scan(&got.ID, &got.Title, &got.Worktree, &got.Description, &got.Reproduction, &got.Design, &got.Acceptance, &got.Status, &got.Priority, &got.Type, &got.ExternalRef, &got.Assignee, &got.Creator, &got.Owner, &created, &updated, &closed, &deferUntil)
 	if err != nil {
 		return false, err
 	}
@@ -327,10 +329,43 @@ func cardProjectionMatches(ctx context.Context, tx *sql.Tx, want model.CardPlan)
 		return false, err
 	}
 	// Only source-provided timestamp values participate in the projection.
-	got.CreatedAt, got.UpdatedAt, got.ClosedAt, got.DeferUntil = want.CreatedAt, want.UpdatedAt, want.ClosedAt, want.DeferUntil
+	// Read those values from storage so native drift is reconciled even when
+	// the source hash itself is unchanged.
+	if want.CreatedAt != nil {
+		got.CreatedAt, err = parseTimestamp(created)
+		if err != nil {
+			return false, err
+		}
+	}
+	if want.UpdatedAt != nil {
+		got.UpdatedAt, err = parseTimestamp(updated)
+		if err != nil {
+			return false, err
+		}
+	}
+	if want.ClosedAt != nil && closed.Valid {
+		got.ClosedAt, err = parseTimestamp(closed.String)
+		if err != nil {
+			return false, err
+		}
+	}
+	if want.DeferUntil != nil && deferUntil.Valid {
+		got.DeferUntil, err = parseTimestamp(deferUntil.String)
+		if err != nil {
+			return false, err
+		}
+	}
 	p := model.Plan{Cards: []model.CardPlan{got}}
 	p.Canonicalize()
 	return p.Cards[0].Hash == want.Hash, nil
+}
+
+func parseTimestamp(value string) (*time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil, fmt.Errorf("bdd migration sink: parse card timestamp %q: %w", value, err)
+	}
+	return &parsed, nil
 }
 
 // sourceOmittedWorktree distinguishes a source-empty worktree from the

@@ -12,7 +12,64 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestApplyRerunReconcilesSourceTimestamps(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bdd.sqlite")
+	initial := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	changed := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	plan := model.Plan{Cards: []model.CardPlan{{
+		ID: "src-1", Title: "source", Status: "open", Type: "task", CreatedAt: &initial, UpdatedAt: &initial,
+	}}}
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatal(err)
+	}
+
+	plan.Cards[0].CreatedAt, plan.Cards[0].UpdatedAt = &changed, &changed
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatalf("changed source timestamp rerun: %v", err)
+	}
+	checkCardTimestamps(t, ctx, path, changed)
+
+	before := sinkCounts(t, ctx, path)
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatalf("identical timestamp rerun: %v", err)
+	}
+	if got := sinkCounts(t, ctx, path); got != before {
+		t.Fatalf("identical timestamp rerun wrote logical rows: got %#v want %#v", got, before)
+	}
+
+	raw, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, `UPDATE cards SET created_at='2023-01-01T00:00:00Z', updated_at='2023-01-01T00:00:00Z' WHERE id='src-1'`); err != nil {
+		raw.Close()
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(ctx, path, "src", plan); err != nil {
+		t.Fatalf("timestamp drift reconciliation: %v", err)
+	}
+	checkCardTimestamps(t, ctx, path, changed)
+}
+
+func checkCardTimestamps(t *testing.T, ctx context.Context, path string, want time.Time) {
+	t.Helper()
+	db, err := bdd.Open(ctx, bdd.OpenOptions{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	got, err := db.GetCard(ctx, "src-1")
+	if err != nil || !got.CreatedAt.Equal(want) || !got.UpdatedAt.Equal(want) {
+		t.Fatalf("GetCard() timestamps = %#v, %v; want %s", got, err, want.Format(time.RFC3339Nano))
+	}
+}
 
 func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 	ctx := context.Background()
