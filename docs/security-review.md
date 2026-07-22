@@ -120,10 +120,15 @@ destination via `VACUUM INTO` (a fresh, consistent copy taken without
 blocking concurrent readers/writers), integrity-checks it, fsyncs, then
 installs it with a single `os.Rename` in the same directory (same
 filesystem, atomic). `Restore` stages the source into a private temp file
-before it does anything else — specifically so the common case of
-`BackupPath` and `Source` defaulting to the same path
-(`<workspace>/bdd_backup.sqlite`) can't let the backup step clobber what
-was validated — then takes an OS-level exclusive SQLite lock
+before it does anything else — specifically so the case of `BackupPath`
+and `Source` resolving to the same path can't let the backup step clobber
+what was validated. (`Source` is required, with no default; `BackupPath`'s
+library default is `<workspace>/.bdd/backup.sqlite`, alongside the target
+database — distinct from `bdd snapshot`'s CLI-level default output of
+`<workspace>/bdd_backup.sqlite`. The two coincide only if a caller
+explicitly passes the same path for both, e.g. restoring directly from a
+prior default backup.) `Restore` then takes an OS-level exclusive SQLite
+lock
 (`acquireExclusive`, `PRAGMA locking_mode = EXCLUSIVE`) across the backup
 and the final rename, so a concurrent opener gets `SQLITE_BUSY`/`ErrBusy`
 rather than racing the swap. There is no window in which a partially
