@@ -122,6 +122,15 @@ func runMigration(t *testing.T, workspace, bd, destination string) result {
 	return r
 }
 
+func canonicalDestination(t *testing.T, destination string) string {
+	t.Helper()
+	canonical, err := filepath.EvalSymlinks(destination)
+	if err != nil {
+		t.Fatalf("canonicalize destination %q: %v", destination, err)
+	}
+	return canonical
+}
+
 func assertReadonlyCalls(t *testing.T, log string) {
 	t.Helper()
 	b, err := os.ReadFile(log)
@@ -146,7 +155,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "destination.sqlite")
 
 	first := runMigration(t, workspace, shim, destination)
-	if first.code != 0 || first.stderr != expectedRoleWarnings || first.stdout != "wrote to "+destination+"\n" {
+	if first.code != 0 || first.stderr != expectedRoleWarnings || first.stdout != "wrote to "+canonicalDestination(t, destination)+"\n" {
 		t.Fatalf("first migration = %#v", first)
 	}
 	assertReadonlyCalls(t, log)
@@ -245,7 +254,7 @@ func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) 
 	}
 	destination := filepath.Join(t.TempDir(), "destination.sqlite")
 	r := runMigration(t, workspace, bd, destination)
-	if r.code != 0 || r.stdout != "wrote to "+destination+"\n" {
+	if r.code != 0 || r.stdout != "wrote to "+canonicalDestination(t, destination)+"\n" {
 		t.Fatalf("unsupported-record migration = %#v", r)
 	}
 	// Lines are sorted by source ID and reasons within each ID are stable. A
