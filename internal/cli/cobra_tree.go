@@ -380,13 +380,13 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 
 		newLeaf("snapshot", "Write an integrity-checked backup of the live database",
 			"Write a point-in-time, integrity-checked backup of the live database.",
-			"  bdd snapshot --output .bdd/backup.sqlite", runSnapshot, global, streams, func(f *pflag.FlagSet) {
-				f.String("output", "", "backup file path (default: .bdd/backup.sqlite)")
+			"  bdd snapshot --output bdd_backup.sqlite", runSnapshot, global, streams, func(f *pflag.FlagSet) {
+				f.String("output", "", "backup file path (default: <workspace>/bdd_backup.sqlite)")
 			}),
 
 		newLeaf("restore <snapshot.sqlite>", "Install a snapshot as the workspace database",
 			"Install <snapshot.sqlite> as the workspace database, backing up any\nexisting database first. Requires --force to acknowledge the destructive\noperation.",
-			"  bdd restore .bdd/backup.sqlite --force", runRestore, global, streams, func(f *pflag.FlagSet) {
+			"  bdd restore bdd_backup.sqlite --force", runRestore, global, streams, func(f *pflag.FlagSet) {
 				f.Bool("force", false, "acknowledge the destructive restore")
 			}),
 

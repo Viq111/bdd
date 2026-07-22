@@ -13,8 +13,10 @@ safe to commit (plan section 21).
   one integrity-checked copy of the live database via `VACUUM INTO`, safe to
   call while other readers and writers hold the database open. Writes to a
   temp file beside the destination, fsyncs, integrity-checks, then
-  atomically renames into place. Defaults `Output` to `backup.sqlite`
-  alongside the live database.
+  atomically renames into place. The library itself stays path-agnostic and
+  defaults `Output` to `backup.sqlite` alongside the live database; the CLI
+  (`bdd snapshot`) resolves and passes an explicit `Output` at the workspace
+  root instead (see CLI usage below).
 - `Restore(ctx, RestoreOptions) (*RestoreResult, error)` — validates the
   source snapshot's schema compatibility and integrity before touching
   anything, requires exclusive access to an existing target (fails with
@@ -27,14 +29,14 @@ and `bdd restore <snapshot.sqlite> --force`.
 ## CLI usage
 
 ```sh
-# Write .bdd/backup.sqlite (default), or an explicit path:
+# Write <workspace>/bdd_backup.sqlite (default), or an explicit path:
 bdd snapshot
 bdd snapshot --output /path/to/backup.sqlite
 
 # Install a snapshot as the workspace database. Like `bdd delete`, the
 # destructive install is refused without --force. The current target (if
 # any) is backed up first unless it doesn't exist yet.
-bdd restore .bdd/backup.sqlite --force
+bdd restore bdd_backup.sqlite --force
 ```
 
 `bdd prime` (bd bdd-0zmi) echoes the recommended `.gitignore` entries below
@@ -43,20 +45,17 @@ to read this file.
 
 ## Recommended `.gitignore` entries for a bdd workspace
 
-A workspace tracking its `.bdd/` directory in git should ignore the live,
-mutable database and its WAL sidecars, and any in-progress snapshot/restore
-temp files, while still tracking the periodic snapshot itself:
+A workspace should ignore the entire `.bdd/` directory — the live, mutable
+database, its WAL sidecars, and any in-progress snapshot/restore temp files
+all live there, and none of it needs to be tracked:
 
 ```gitignore
-.bdd/bdd.sqlite
-.bdd/bdd.sqlite-wal
-.bdd/bdd.sqlite-shm
-.bdd/*.tmp
+.bdd/
 ```
 
 ## Default tracked snapshot convention
 
-By default, `Snapshot` writes to `.bdd/backup.sqlite` and `Restore` backs up
-the current database to the same path before installing a new one. Commit
-`.bdd/backup.sqlite` to git as the workspace's point-in-time backup; it is
-the one `.bdd/*` file meant to be tracked rather than ignored.
+By default, `bdd snapshot` writes to `<workspace>/bdd_backup.sqlite`, outside
+`.bdd/`, so it can be committed to git as the workspace's point-in-time
+backup while the whole `.bdd/` directory is ignored. `Restore` accepts that
+file (or any other snapshot path) as its source.

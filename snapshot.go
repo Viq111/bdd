@@ -15,10 +15,13 @@ import (
 	"github.com/viq111/bdd/internal/sqlite"
 )
 
-// DefaultSnapshotName is the filename bdd uses for the default, git-tracked
-// snapshot convention: <workspace>/.bdd/backup.sqlite (bdd plan section
-// 21). Both Snapshot and Restore fall back to a file with this name,
-// alongside the live database, when the caller does not supply one.
+// DefaultSnapshotName is the filename Snapshot and Restore fall back to,
+// alongside the live (or target) database, when the caller does not supply
+// an explicit path: this package stays path-agnostic and never resolves a
+// workspace root itself. The CLI's `bdd snapshot` command resolves its own,
+// different default — <workspace>/bdd_backup.sqlite, the git-tracked
+// convention documented in docs/snapshot-restore.md — and passes it
+// explicitly via SnapshotOptions.Output rather than relying on this one.
 const DefaultSnapshotName = "backup.sqlite"
 
 // restoreHandoffHook, when non-nil, is called by Restore once it has
@@ -162,7 +165,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 	// Stage Source into a private temp file before anything below touches
 	// the target: the pre-restore backup, when it lands at the default
 	// path, can share Source's own path (e.g. both default to
-	// <workspace>/.bdd/backup.sqlite). Copying Source now, ahead of the
+	// <dir>/backup.sqlite). Copying Source now, ahead of the
 	// backup, guarantees Restore installs what it validated even if the
 	// backup step later overwrites the file at Source's path.
 	tmpPath, err := reserveTempPath(targetDir, "bdd-restore-*.sqlite.tmp")

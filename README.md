@@ -322,9 +322,9 @@ live `bdd.sqlite` directly while WAL mode is active — recent committed data
 can still be sitting in its WAL sidecar. Instead:
 
 ```sh
-bdd snapshot                              # writes .bdd/backup.sqlite by default
+bdd snapshot                              # writes <workspace>/bdd_backup.sqlite by default
 bdd snapshot --output /path/to/backup.sqlite
-bdd restore .bdd/backup.sqlite --force    # like delete, refused without --force
+bdd restore bdd_backup.sqlite --force     # like delete, refused without --force
 ```
 
 `snapshot` produces one integrity-checked, standalone copy via `VACUUM
@@ -337,18 +337,17 @@ backs up the current database first (the Go API can opt out via
 atomically. Full detail, including the default tracked-snapshot convention,
 is in [`docs/snapshot-restore.md`](docs/snapshot-restore.md).
 
-Recommended `.gitignore` for a workspace that tracks `.bdd/` in git:
+Recommended `.gitignore` for a bdd workspace — ignore the whole `.bdd/`
+directory:
 
 ```gitignore
-.bdd/bdd.sqlite
-.bdd/bdd.sqlite-wal
-.bdd/bdd.sqlite-shm
-.bdd/*.tmp
+.bdd/
 ```
 
-Commit `.bdd/backup.sqlite` itself — it's the one `.bdd/*` file meant to be
-tracked rather than ignored. `bdd prime` echoes these same entries so an
-agent priming a session sees them without reading this file.
+Commit `bdd_backup.sqlite` at the workspace root instead; it's the tracked
+point-in-time backup, kept outside `.bdd/` so the whole directory can be
+ignored. `bdd prime` echoes this same entry so an agent priming a session
+sees it without reading this file.
 
 ## Go library
 

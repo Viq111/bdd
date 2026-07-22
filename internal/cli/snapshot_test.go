@@ -31,7 +31,7 @@ func TestSnapshotDefaultOutputAndHumanOutput(t *testing.T) {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 
-	wantPath := filepath.Join(dir, ".bdd", "backup.sqlite")
+	wantPath := filepath.Join(dir, "bdd_backup.sqlite")
 	if _, err := os.Stat(wantPath); err != nil {
 		t.Fatalf("expected snapshot at %s: %v", wantPath, err)
 	}
@@ -73,7 +73,7 @@ func TestSnapshotSilentEmitsOnlyPath(t *testing.T) {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
 
-	wantPath := filepath.Join(dir, ".bdd", "backup.sqlite")
+	wantPath := filepath.Join(dir, "bdd_backup.sqlite")
 	if got := strings.TrimSpace(stdout.String()); got != wantPath {
 		t.Fatalf("stdout = %q, want %q", got, wantPath)
 	}
@@ -123,7 +123,7 @@ func TestRestoreRequiresForce(t *testing.T) {
 	if code != ExitSuccess {
 		t.Fatalf("Run(snapshot) exit = %d, stderr = %q", code, stderr.String())
 	}
-	snapshotPath := filepath.Join(dir, ".bdd", "backup.sqlite")
+	snapshotPath := filepath.Join(dir, "bdd_backup.sqlite")
 
 	stdout.Reset()
 	stderr.Reset()

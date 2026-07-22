@@ -3,11 +3,17 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/viq111/bdd"
 )
+
+// defaultBackupFilename is the name `bdd snapshot` uses for its default
+// output file, written at the workspace root (not inside .bdd/) so the
+// entire .bdd/ directory can be gitignored as a unit.
+const defaultBackupFilename = "bdd_backup.sqlite"
 
 // SnapshotResult is the JSON/human result of `bdd snapshot`.
 type SnapshotResult struct {
@@ -48,6 +54,10 @@ func runSnapshot(g GlobalFlags, args []string, s *Streams) int {
 	}
 	defer db.Close()
 
+	if output == "" {
+		output = filepath.Join(workspaceDir(db.Path()), defaultBackupFilename)
+	}
+
 	result, err := db.Snapshot(ctx, bdd.SnapshotOptions{Output: output})
 	if err != nil {
 		s.Errorf("bdd: snapshot: %v\n", err)
@@ -72,7 +82,6 @@ func runSnapshot(g GlobalFlags, args []string, s *Streams) int {
 		return ExitSuccess
 	}
 	fmt.Fprintf(s.Stdout, "snapshot written to %s (schema version %d)\n", out.Path, out.SchemaVersion)
-	fmt.Fprintln(s.Stdout, "commit this file to git as the workspace's point-in-time backup; see the .gitignore entries in `bdd prime` or docs/snapshot-restore.md")
 	return ExitSuccess
 }
 
