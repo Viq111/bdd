@@ -157,6 +157,61 @@ func TestApplyRerunPreservesOriginalStructuredComment(t *testing.T) {
 	}
 }
 
+func TestApplyFailurePreservesExistingDestination(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bdd.sqlite")
+	nativeAcceptance := "preserve me"
+	db, err := bdd.Init(ctx, bdd.InitOptions{DBPath: path, Prefix: "dst"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CreateCard(ctx, bdd.CreateCard{Title: "native", Acceptance: &nativeAcceptance, Type: bdd.CardTypeTask}); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := logicalProjection(t, ctx, path)
+
+	raw, err := sqlite.Open(ctx, path, sqlite.Options{Pool: sqlite.PoolOneShot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.ExecContext(ctx, `CREATE TRIGGER abort_migration_card BEFORE INSERT ON cards WHEN NEW.id = 'mig-fail' BEGIN SELECT RAISE(ABORT, 'injected migration failure'); END`)
+	if closeErr := raw.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = Apply(ctx, path, "src", model.Plan{Cards: []model.CardPlan{
+		{ID: "mig-before", Title: "before failure", Status: "open", Type: "task"},
+		{ID: "mig-fail", Title: "failure", Status: "open", Type: "task"},
+	}})
+	if err == nil {
+		t.Fatal("Apply() succeeded despite injected failure")
+	}
+	if got := logicalProjection(t, ctx, path); !bytes.Equal(got, before) {
+		t.Fatalf("failed Apply() changed existing destination:\n got %s\nwant %s", got, before)
+	}
+	db, err = bdd.Open(ctx, bdd.OpenOptions{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards, err := db.ListCards(ctx, bdd.ListOptions{})
+	if closeErr := db.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 1 || cards[0].Title != "native" {
+		t.Fatalf("public card list after failed Apply() = %#v, want native destination card", cards)
+	}
+}
+
 func checkCardTimestamps(t *testing.T, ctx context.Context, path string, want time.Time) {
 	t.Helper()
 	db, err := bdd.Open(ctx, bdd.OpenOptions{Path: path})
