@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/viq111/bdd/tools/migrate/internal/bddsink"
 	"github.com/viq111/bdd/tools/migrate/internal/mapping"
@@ -182,40 +183,66 @@ func run(ctx context.Context, o options) ([]model.Warning, error) {
 	if err != nil {
 		return nil, usageError{err}
 	}
+	if plan.Workspace.IssuePrefix == "" {
+		plan.Workspace.IssuePrefix, err = inferPrefix(records)
+		if err != nil {
+			return plan.Warnings, usageError{err}
+		}
+	}
 	sinkWarnings, err := bddsink.ApplyWithWarnings(ctx, o.destination, plan.Workspace.IssuePrefix, plan)
 	return append(plan.Warnings, sinkWarnings...), err
 }
 
 func sourceConfig(statusJSON, typesJSON, statusCustom, typesCustom, prefix []byte) (mapping.Config, error) {
-	cfg := mapping.Config{StatusCategories: map[string]string{}, CustomTypes: map[string]bool{}, LegacyStatusCategories: map[string]string{}, IssuePrefix: strings.TrimSpace(string(prefix))}
+	cfg := mapping.Config{StatusCategories: map[string]string{}, CustomTypes: map[string]bool{}, LegacyStatusCategories: map[string]string{}, IssuePrefix: configuredPrefix(prefix)}
 	type status struct {
 		Name     string `json:"name"`
 		Category string `json:"category"`
 	}
-	var statuses struct {
-		BuiltIn []status `json:"built_in_statuses"`
-		Custom  []status `json:"custom_statuses"`
+	var statusEnvelope struct {
+		BuiltInStatuses []status `json:"built_in_statuses"`
+		CustomStatuses  []status `json:"custom_statuses"`
 	}
-	if err := json.Unmarshal(statusJSON, &statuses); err != nil {
+	statuses := []status{}
+	if bytes.HasPrefix(bytes.TrimSpace(statusJSON), []byte("{")) {
+		if err := json.Unmarshal(statusJSON, &statusEnvelope); err != nil {
+			return cfg, fmt.Errorf("parse statuses: %w", err)
+		}
+		statuses = append(statusEnvelope.BuiltInStatuses, statusEnvelope.CustomStatuses...)
+	} else if err := json.Unmarshal(statusJSON, &statuses); err != nil {
 		return cfg, fmt.Errorf("parse statuses: %w", err)
 	}
-	for _, v := range append(statuses.BuiltIn, statuses.Custom...) {
+	for _, v := range statuses {
 		if v.Name != "" && v.Category != "" {
 			cfg.StatusCategories[v.Name] = v.Category
 		}
 	}
-	var types struct {
-		Core []struct {
-			Name string `json:"name"`
-		} `json:"core_types"`
-		Custom []string `json:"custom_types"`
+	type typ struct {
+		Name    string `json:"name"`
+		BuiltIn bool   `json:"built_in"`
 	}
-	if err := json.Unmarshal(typesJSON, &types); err != nil {
+	var typeEnvelope struct {
+		CoreTypes   []typ    `json:"core_types"`
+		CustomTypes []string `json:"custom_types"`
+	}
+	types := []typ{}
+	if bytes.HasPrefix(bytes.TrimSpace(typesJSON), []byte("{")) {
+		if err := json.Unmarshal(typesJSON, &typeEnvelope); err != nil {
+			return cfg, fmt.Errorf("parse types: %w", err)
+		}
+		for _, v := range typeEnvelope.CoreTypes {
+			v.BuiltIn = true
+			types = append(types, v)
+		}
+		for _, name := range typeEnvelope.CustomTypes {
+			types = append(types, typ{Name: name})
+		}
+	} else if err := json.Unmarshal(typesJSON, &types); err != nil {
 		return cfg, fmt.Errorf("parse types: %w", err)
 	}
-	for _, v := range types.Custom {
-		if v != "" {
-			cfg.CustomTypes[v] = true
+	for _, v := range types {
+		if v.Name != "" && !v.BuiltIn {
+			cfg.CustomTypes[v.Name] = true
 		}
 	}
 	for _, entry := range strings.Split(strings.TrimSpace(string(statusCustom)), ",") {
@@ -236,8 +263,41 @@ func sourceConfig(statusJSON, typesJSON, statusCustom, typesCustom, prefix []byt
 			cfg.CustomTypes[name] = true
 		}
 	}
-	if cfg.IssuePrefix == "" {
-		return cfg, fmt.Errorf("read issue-prefix: empty value")
-	}
 	return cfg, nil
+}
+
+func configuredPrefix(output []byte) string {
+	v := strings.TrimSpace(string(output))
+	if v == "" || strings.HasSuffix(v, "(not set)") {
+		return ""
+	}
+	return v
+}
+
+// inferPrefix handles bd's supported default, where `config get issue-prefix`
+// reports "(not set)" while issue IDs still carry their workspace prefix.
+func inferPrefix(records []sourcebd.Record) (string, error) {
+	for _, record := range records {
+		issue, ok := record.(sourcebd.Issue)
+		if !ok {
+			continue
+		}
+		prefix, _, ok := strings.Cut(issue.ID, "-")
+		if ok && validPrefix(prefix) {
+			return prefix, nil
+		}
+	}
+	return "", fmt.Errorf("read issue-prefix: not configured and no valid issue ID is available to infer it")
+}
+
+func validPrefix(prefix string) bool {
+	if len(prefix) == 0 || len(prefix) > 32 {
+		return false
+	}
+	for i, r := range prefix {
+		if !(unicode.IsLower(r) || unicode.IsDigit(r) || r == '-') || (i == 0 && !unicode.IsLower(r)) {
+			return false
+		}
+	}
+	return true
 }

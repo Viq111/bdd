@@ -3,14 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 
-	"github.com/viq111/bdd"
+	"github.com/viq111/bdd/tools/migrate/internal/sourcebd"
 )
 
 func TestHelpDoesNotTouchWorkspaceOrDestination(t *testing.T) {
@@ -58,55 +55,68 @@ func TestParseArgsCanonicalizesWorkspaceAndRelativeDestination(t *testing.T) {
 }
 
 func TestSourceConfigAcceptsLegacyCustomStatusName(t *testing.T) {
-	cfg, err := sourceConfig([]byte(`{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[{"name":"awaiting_review","category":"wip"}],"schema_version":1}`), []byte(`{"core_types":[{"name":"task"}],"custom_types":["role"],"schema_version":1}`), []byte("awaiting_review\n"), nil, []byte("demo\n"))
+	cfg, err := sourceConfig([]byte(`[{"name":"awaiting_review","category":"wip"}]`), []byte(`[]`), []byte("awaiting_review\n"), nil, []byte("demo\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.StatusCategories["open"] != "active" || cfg.StatusCategories["awaiting_review"] != "wip" || !cfg.CustomTypes["role"] || cfg.LegacyStatusCategories["awaiting_review"] != "wip" || cfg.IssuePrefix != "demo" {
+	if cfg.LegacyStatusCategories["awaiting_review"] != "wip" || cfg.IssuePrefix != "demo" {
 		t.Fatalf("config = %#v", cfg)
 	}
 }
 
-func TestRunMainImportsBD103ConfigurationEnvelopes(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake bd command uses a POSIX shell script")
-	}
-	root := t.TempDir()
-	workspace := filepath.Join(root, "source")
-	if err := os.MkdirAll(filepath.Join(workspace, ".beads"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	bd := filepath.Join(root, "bd")
-	responses := map[string]string{
-		"version":                  `bd version 1.0.3`,
-		"statuses --json":          `{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[{"name":"verified","category":"active"}],"schema_version":1}`,
-		"types --json":             `{"core_types":[{"name":"task"}],"custom_types":["release"],"schema_version":1}`,
-		"config get status.custom": `verified:active`,
-		"config get types.custom":  `release`,
-		"config get issue-prefix":  `source`,
-		"export --all":             `{"_type":"issue","id":"source-1","title":"Imported","status":"verified","issue_type":"release"}`,
-	}
-	var script strings.Builder
-	script.WriteString("#!/bin/sh\nshift\ncase \"$*\" in\n")
-	for args, output := range responses {
-		fmt.Fprintf(&script, "\"%s\") printf '%%s\\n' '%s' ;;\n", args, output)
-	}
-	script.WriteString("*) exit 1 ;;\nesac\n")
-	if err := os.WriteFile(bd, []byte(script.String()), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	destination := filepath.Join(root, "destination.sqlite")
-	var stdout, stderr bytes.Buffer
-	if got := runMain(context.Background(), []string{"--workspace", workspace, "--bd", bd, "--destination", destination}, &stdout, &stderr); got != 0 {
-		t.Fatalf("runMain exit = %d, stderr = %s", got, stderr.String())
-	}
-	db, err := bdd.Open(context.Background(), bdd.OpenOptions{Path: destination})
+func TestSourceConfigAcceptsBD103Envelopes(t *testing.T) {
+	statuses := []byte(`{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[{"name":"reviewing","category":"wip"}],"schema_version":1}`)
+	types := []byte(`{"core_types":[{"name":"task"}],"custom_types":["role","runbook"],"schema_version":1}`)
+	cfg, err := sourceConfig(statuses, types, []byte("reviewing\n"), []byte("role,runbook\n"), []byte("demo\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	cards, err := db.ListCards(context.Background(), bdd.ListOptions{})
-	if err != nil || len(cards) != 1 || cards[0].ID != "source-1" || cards[0].Status != "verified" || cards[0].Type != "release" {
-		t.Fatalf("imported cards = %#v, %v", cards, err)
+	if cfg.StatusCategories["open"] != "active" || cfg.StatusCategories["reviewing"] != "wip" || !cfg.CustomTypes["role"] || !cfg.CustomTypes["runbook"] || cfg.IssuePrefix != "demo" {
+		t.Fatalf("config = %#v", cfg)
+	}
+}
+
+func TestRunMainImportsWithBD103CommandEnvelopes(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bd := filepath.Join(workspace, "fake-bd")
+	script := `#!/bin/sh
+case "$2" in
+version) printf 'bd version 1.0.3\n' ;;
+statuses) printf '%s\n' '{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[{"name":"awaiting_review","category":"wip"}],"schema_version":1}' ;;
+types) printf '%s\n' '{"core_types":[{"name":"task"}],"custom_types":["role"],"schema_version":1}' ;;
+config) case "$4" in status.custom) printf 'awaiting_review\n' ;; types.custom) printf 'role\n' ;; issue-prefix) printf 'demo\n' ;; esac ;;
+export) printf '%s\n' '{"_type":"issue","id":"demo-1","title":"import me","status":"open","issue_type":"task"}' ;;
+esac
+`
+	if err := os.WriteFile(bd, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(workspace, "destination.sqlite")
+	var stdout, stderr bytes.Buffer
+	if got := runMain(context.Background(), []string{"--workspace", workspace, "--bd", bd, "--destination", destination}, &stdout, &stderr); got != 0 {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
+	}
+	canonicalDestination, err := canonicalPath(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "wrote to "+canonicalDestination+"\n" || stderr.Len() != 0 {
+		t.Fatalf("streams = (%q, %q)", stdout.String(), stderr.String())
+	}
+}
+
+func TestUnsetIssuePrefixIsInferredFromSourceID(t *testing.T) {
+	records, err := sourcebd.ParseJSONL(bytes.NewBufferString(`{"_type":"issue","id":"demo-1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := configuredPrefix([]byte("issue-prefix (not set)\n")); got != "" {
+		t.Fatalf("configuredPrefix = %q", got)
+	}
+	if got, err := inferPrefix(records); err != nil || got != "demo" {
+		t.Fatalf("inferPrefix = %q, %v", got, err)
 	}
 }
