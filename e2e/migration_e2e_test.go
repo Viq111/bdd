@@ -7,13 +7,17 @@ package e2e_test
 import (
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 const expectedRoleWarnings = "warning: mig-role: skipped dependency kind \"related\" to mig-related; skipped dependency to mig-blocker because role is imported as a rune; skipped role-attached comments because role is imported as a rune\n"
@@ -52,9 +56,13 @@ func seedMigrationWorkspace(t *testing.T) string {
 	for _, args := range [][]string{
 		{"init", "--non-interactive", "--quiet", "--prefix", "mig", "--skip-agents", "--skip-hooks"},
 		{"config", "set", "status.custom", "awaiting_review"},
-		{"config", "set", "types.custom", "role"},
-		{"create", "--id", "mig-blocker", "--title", "Blocker", "--silent"},
+		{"config", "set", "types.custom", "role,incident"},
+		{"create", "--id", "mig-blocker", "--title", "Blocker", "--description", "blocker description", "--design", "blocker design", "--acceptance", "blocker acceptance", "--labels", "source,unicode:日本語", "--silent"},
+		{"comment", "mig-blocker", "blocker comment"},
 		{"create", "--id", "mig-related", "--title", "Related", "--silent"},
+		{"dep", "add", "mig-related", "mig-blocker", "--type", "blocks"},
+		{"create", "--id", "mig-custom", "--title", "Custom", "--type", "incident", "--silent"},
+		{"update", "mig-custom", "--status", "awaiting_review"},
 		{"create", "--id", "mig-role", "--title", "[role] Operator", "--type", "role", "--description", "role body", "--labels", "runtime:codex,seeded", "--silent"},
 		{"comment", "mig-role", "first comment"},
 		{"dep", "add", "mig-role", "mig-blocker", "--type", "blocks"},
@@ -64,6 +72,23 @@ func seedMigrationWorkspace(t *testing.T) string {
 		r := runCommand(t, workspace, bd, args...)
 		if r.code != 0 {
 			t.Fatalf("seed bd %v: code=%d stderr=%s", args, r.code, r.stderr)
+		}
+	}
+	return workspace
+}
+
+func seedSingleRoleWorkspace(t *testing.T) string {
+	t.Helper()
+	workspace := t.TempDir()
+	bd := migrationBD(t)
+	for _, args := range [][]string{
+		{"init", "--non-interactive", "--quiet", "--prefix", "mig", "--skip-agents", "--skip-hooks"},
+		{"config", "set", "status.custom", "awaiting_review"},
+		{"config", "set", "types.custom", "role"},
+		{"create", "--id", "mig-role", "--title", "[role] Operator", "--type", "role", "--description", "role body", "--silent"},
+	} {
+		if r := runCommand(t, workspace, bd, args...); r.code != 0 {
+			t.Fatalf("seed single role %v: %#v", args, r)
 		}
 	}
 	return workspace
@@ -131,6 +156,19 @@ func canonicalDestination(t *testing.T, destination string) string {
 	return canonical
 }
 
+// runMigrationFromWorkspace intentionally omits --workspace. The command's
+// working directory is the source workspace, which is the operator path that
+// must discover .beads without a subcommand or explicit source flag.
+func runMigrationFromWorkspace(t *testing.T, workspace, bd, destination string) result {
+	t.Helper()
+	before := beadsDigest(t, workspace)
+	r := runCommand(t, workspace, migrationBinary, "--bd", bd, "--destination", destination)
+	if after := beadsDigest(t, workspace); after != before {
+		t.Fatalf("migration changed source .beads: before=%s after=%s", before, after)
+	}
+	return r
+}
+
 func assertReadonlyCalls(t *testing.T, log string) {
 	t.Helper()
 	b, err := os.ReadFile(log)
@@ -148,17 +186,91 @@ func assertReadonlyCalls(t *testing.T, log string) {
 	}
 }
 
+func jsonObject(t *testing.T, r result) map[string]any {
+	t.Helper()
+	if r.code != 0 {
+		t.Fatalf("public bdd read failed: %#v", r)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(r.stdout), &got); err != nil {
+		t.Fatalf("decode public JSON %q: %v", r.stdout, err)
+	}
+	return got
+}
+
+func hasString(values any, want string) bool {
+	items, ok := values.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTitle, wantBlockerDescription string, wantNotes int, wantChangedLabel bool) {
+	t.Helper()
+	blocker := jsonObject(t, run(t, destination, "show", "mig-blocker", "--json"))
+	for key, want := range map[string]string{
+		"id": "mig-blocker", "title": "Blocker", "description": wantBlockerDescription,
+		"design": "blocker design", "acceptance": "blocker acceptance",
+	} {
+		if blocker[key] != want {
+			t.Fatalf("blocker %s = %#v, want %q", key, blocker[key], want)
+		}
+	}
+	if !hasString(blocker["labels"], "source") || !hasString(blocker["labels"], "unicode:日本語") {
+		t.Fatalf("blocker labels = %#v", blocker["labels"])
+	}
+	if hasString(blocker["labels"], "changed") != wantChangedLabel {
+		t.Fatalf("blocker changed label = %#v, want present=%t", blocker["labels"], wantChangedLabel)
+	}
+	if notes, ok := blocker["notes"].([]any); !ok || len(notes) != wantNotes || !strings.Contains(notes[0].(map[string]any)["body"].(string), "blocker comment") {
+		t.Fatalf("blocker notes = %#v", blocker["notes"])
+	}
+	parents := run(t, destination, "parents", "mig-related", "--json")
+	if parents.code != 0 || !strings.Contains(parents.stdout, "mig-blocker") {
+		t.Fatalf("public edge read = %#v", parents)
+	}
+	custom := jsonObject(t, run(t, destination, "show", "mig-custom", "--json"))
+	if custom["status"] != "awaiting_review" || custom["type"] != "incident" {
+		t.Fatalf("custom card = %#v", custom)
+	}
+	types := run(t, destination, "types", "--json")
+	statuses := run(t, destination, "statuses", "--json")
+	if types.code != 0 || !strings.Contains(types.stdout, "incident") || statuses.code != 0 || !strings.Contains(statuses.stdout, "awaiting_review") {
+		t.Fatalf("custom definitions missing: types=%#v statuses=%#v", types, statuses)
+	}
+	memory := jsonObject(t, run(t, destination, "recall", "migration/seed", "--json"))
+	if memory["body"] != wantMemory {
+		t.Fatalf("memory = %#v", memory)
+	}
+	rune := jsonObject(t, run(t, destination, "rune", "show", "role/operator", "--json"))
+	metadataText, ok := rune["metadata"].(string)
+	metadata := map[string]any{}
+	if !ok || json.Unmarshal([]byte(metadataText), &metadata) != nil {
+		t.Fatalf("role metadata = %#v", rune["metadata"])
+	}
+	if rune["key"] != "role/operator" || rune["kind"] != "role" || rune["title"] != wantRoleTitle || rune["protected"] != true || metadata["legacy_bd_id"] != "mig-role" {
+		t.Fatalf("role rune = %#v", rune)
+	}
+}
+
 func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	workspace := seedMigrationWorkspace(t)
 	log := filepath.Join(t.TempDir(), "bd.calls")
 	shim := recordingBD(t, migrationBD(t), log)
 	destination := filepath.Join(t.TempDir(), "destination.sqlite")
 
-	first := runMigration(t, workspace, shim, destination)
+	first := runMigrationFromWorkspace(t, workspace, shim, destination)
 	if first.code != 0 || first.stderr != expectedRoleWarnings || first.stdout != "wrote to "+canonicalDestination(t, destination)+"\n" {
 		t.Fatalf("first migration = %#v", first)
 	}
 	assertReadonlyCalls(t, log)
+	assertImportedPublicState(t, destination, "seed memory", "[role] Operator", "blocker description", 1, false)
 	beforeRerun, err := os.ReadFile(destination)
 	if err != nil {
 		t.Fatal(err)
@@ -182,6 +294,8 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"create", "--id", "mig-new", "--title", "New source card", "--labels", "new-label", "--silent"},
+		{"update", "mig-blocker", "--description", "changed blocker description", "--add-label", "changed"},
+		{"comment", "mig-blocker", "second blocker comment"},
 		{"update", "mig-role", "--title", "[role] Updated Operator", "--add-label", "changed"},
 		{"comment", "mig-role", "second comment"},
 		{"remember", "changed memory", "--key", "migration/seed"},
@@ -196,6 +310,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	if third.code != 0 {
 		t.Fatalf("mutated migration: %#v", third)
 	}
+	assertImportedPublicState(t, destination, "changed memory", "[role] Updated Operator", "changed blocker description", 2, true)
 	listed := run(t, destination, "list", "--json")
 	if listed.code != 0 || !strings.Contains(listed.stdout, "mig-new") || !strings.Contains(listed.stdout, strings.TrimSpace(owned.stdout)) {
 		t.Fatalf("destination did not converge or preserve owned data: %#v", listed)
@@ -213,6 +328,19 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	listed = run(t, destination, "list", "--json")
 	if !strings.Contains(listed.stdout, "mig-new") {
 		t.Fatalf("source deletion removed destination record: %s", listed.stdout)
+	}
+}
+
+func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
+	workspace := seedSingleRoleWorkspace(t)
+	destination := filepath.Join(t.TempDir(), "destination.sqlite")
+	r := runMigration(t, workspace, migrationBD(t), destination)
+	if r.code != 0 || r.stdout != "wrote to "+destination+"\n" || r.stderr != "" {
+		t.Fatalf("single-role migration = %#v", r)
+	}
+	rune := jsonObject(t, run(t, destination, "rune", "show", "role/operator", "--json"))
+	if rune["protected"] != true {
+		t.Fatalf("migrated role is not protected: %#v", rune)
 	}
 }
 
@@ -287,5 +415,82 @@ func TestMigrationCorruptDestinationDoesNotPartiallyUpsert(t *testing.T) {
 	}
 	if !bytes.Equal(contents, after) {
 		t.Fatal("failed migration modified corrupt destination")
+	}
+}
+
+func TestMigrationDestinationOwnedCollisionsWarnAndPreserveRecords(t *testing.T) {
+	workspace := seedMigrationWorkspace(t)
+	destinationDir := t.TempDir()
+	destination := filepath.Join(destinationDir, ".bdd", "bdd.sqlite")
+	if init := run(t, "", "init", "--prefix", "mig", destinationDir); init.code != 0 {
+		t.Fatalf("initialize destination: %#v", init)
+	}
+	ownedCard := run(t, destination, "create", "Native card", "--type", "chore", "--silent")
+	if ownedCard.code != 0 {
+		t.Fatalf("create owned card: %#v", ownedCard)
+	}
+	ownedID := strings.TrimSpace(ownedCard.stdout)
+	ownedRune := run(t, destination, "rune", "put", "role/collision", "--kind", "role", "--title", "Native rune", "--body", "native")
+	if ownedRune.code != 0 {
+		t.Fatalf("create owned rune: %#v", ownedRune)
+	}
+	bd := migrationBD(t)
+	for _, args := range [][]string{
+		{"create", "--id", ownedID, "--title", "Source overwrite attempt", "--silent"},
+		{"create", "--id", "mig-role-collision", "--title", "[role] Collision", "--type", "role", "--silent"},
+	} {
+		if seeded := runCommand(t, workspace, bd, args...); seeded.code != 0 {
+			t.Fatalf("seed collision %v: %#v", args, seeded)
+		}
+	}
+	r := runMigration(t, workspace, bd, destination)
+	if r.code != 0 || !strings.Contains(r.stderr, "warning: "+ownedID+": destination-owned card ID collision; skipped record") ||
+		!strings.Contains(r.stderr, "warning: mig-role-collision: destination-owned rune key collision; skipped record") {
+		t.Fatalf("collision migration = %#v", r)
+	}
+	card := jsonObject(t, run(t, destination, "show", ownedID, "--json"))
+	if card["title"] != "Native card" {
+		t.Fatalf("destination-owned card overwritten: %#v", card)
+	}
+	rune := jsonObject(t, run(t, destination, "rune", "show", "role/collision", "--json"))
+	if rune["title"] != "Native rune" || rune["protected"] != false {
+		t.Fatalf("destination-owned rune overwritten: %#v", rune)
+	}
+}
+
+func TestMigrationTransactionFailureRollsBackEarlierUpserts(t *testing.T) {
+	workspace := seedMigrationWorkspace(t)
+	bd := migrationBD(t)
+	if seeded := runCommand(t, workspace, bd, "create", "--id", "mig-fail", "--title", "Transaction failure", "--silent"); seeded.code != 0 {
+		t.Fatalf("seed failure card: %#v", seeded)
+	}
+	destinationDir := t.TempDir()
+	if init := run(t, "", "init", "--prefix", "mig", destinationDir); init.code != 0 {
+		t.Fatalf("initialize destination: %#v", init)
+	}
+	destination := filepath.Join(destinationDir, ".bdd", "bdd.sqlite")
+	native := run(t, destination, "create", "Preexisting", "--type", "chore", "--silent")
+	if native.code != 0 {
+		t.Fatalf("create native card: %#v", native)
+	}
+	// The trigger is harness-only fault injection. It fires after the sorted
+	// import has already attempted earlier cards, exercising SQLite rollback in
+	// the real compiled migration executable rather than a sink test seam.
+	db, err := sql.Open("sqlite", destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TRIGGER migration_fail_before_card BEFORE INSERT ON cards WHEN NEW.id = 'mig-fail' BEGIN SELECT RAISE(ABORT, 'injected transaction failure'); END`)
+	closeErr := db.Close()
+	if err != nil || closeErr != nil {
+		t.Fatalf("install failure trigger: exec=%v close=%v", err, closeErr)
+	}
+	r := runMigration(t, workspace, bd, destination)
+	if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "injected transaction failure") {
+		t.Fatalf("injected failure = %#v", r)
+	}
+	listed := run(t, destination, "list", "--status", "all", "--json")
+	if listed.code != 0 || !strings.Contains(listed.stdout, strings.TrimSpace(native.stdout)) || strings.Contains(listed.stdout, "mig-blocker") || strings.Contains(listed.stdout, "mig-fail") {
+		t.Fatalf("transaction failure left partial upserts: %#v", listed)
 	}
 }
