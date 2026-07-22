@@ -34,7 +34,7 @@ Or build from a clone:
 ```sh
 git clone https://github.com/viq111/bdd
 cd bdd
-make build   # writes bin/bdd
+./tools/build.sh   # writes bin/bdd and bin/bdd-migration
 ```
 
 `bdd` is a single native binary with no runtime dependencies (SQLite is

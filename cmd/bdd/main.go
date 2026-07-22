@@ -7,9 +7,6 @@ import (
 	"github.com/viq111/bdd/internal/cli"
 )
 
-// version is stamped at release build time via -ldflags "-X main.version=...".
-var version = "dev"
-
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }

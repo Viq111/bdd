@@ -146,7 +146,7 @@ from external input was found anywhere in the codebase.
 
 ## Fuzz targets added
 
-Short, CI-friendly fuzz targets (a few seconds each; see `make fuzz-short`)
+Short, CI-friendly fuzz targets (a few seconds each; see `./tools/build.sh --fuzz-short`)
 for every "in scope" area from the task:
 
 - `FuzzParseGlobalFlags`, `FuzzRun` (`internal/cli/cli_fuzz_test.go`) — CLI
@@ -171,10 +171,10 @@ for every "in scope" area from the task:
 
 ## Running fuzzing locally
 
-Short run (a few seconds per target, safe for CI — see `make fuzz-short`):
+Short run (a few seconds per target, safe for CI — see `./tools/build.sh --fuzz-short`):
 
 ```
-make fuzz-short
+./tools/build.sh --fuzz-short
 ```
 
 Longer, exploratory runs (minutes to hours) should be run individually and

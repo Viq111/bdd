@@ -61,13 +61,13 @@ invocation of the run), not a disk-cold-cache measurement.
 
 ```sh
 # Generate (or regenerate) the 10k-card fixture:
-make fixture
+./tools/build.sh --fixture
 
 # Build bdd and run the full benchmark against it, writing a JSON report:
-make bench
+./tools/build.sh --bench
 ```
 
-`make bench` writes `testdata/bench/report.json` and prints a human-readable
+`./tools/build.sh --bench` writes `testdata/bench/report.json` and prints a human-readable
 summary table to stderr. Fixture and report files are generated artifacts
 (gitignored); regenerate them rather than committing them.
 
@@ -110,7 +110,7 @@ never needs to query the fixture directly to find realistic arguments.
 
 ## CI
 
-`make test` (`go build`, `go vet`, `go test ./...`) is safe to run in any
-CI job. `make bench` is intended for a dedicated, pinned-hardware CI job
+`./tools/build.sh --test` (`go build`, `go vet`, `go test ./...`) is safe to run in any
+CI job. `./tools/build.sh --bench` is intended for a dedicated, pinned-hardware CI job
 (or manual runs) given the reference-machine caveats above; it is not part
-of `make test`.
+of `./tools/build.sh --test`.

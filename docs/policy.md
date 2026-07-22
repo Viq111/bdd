@@ -9,7 +9,7 @@ tagged v1 (plan section 24 phase 4).
 
 Fast agent tool calls are a first-class requirement, not a later
 optimization (plan section 7). `bdd` promises the following warm-cache
-subprocess latencies, measured with `make bench` (see
+subprocess latencies, measured with `./tools/build.sh --bench` (see
 [`docs/benchmark.md`](benchmark.md) for the harness) against a workspace of
 at least 10,000 cards:
 
@@ -26,7 +26,7 @@ at least 10,000 cards:
 These targets are promised on a documented reference machine, not on
 arbitrary hardware: a warm OS filesystem cache for the fixture's SQLite
 file, local disk (not a network filesystem), and no other CPU/disk-heavy
-process running concurrently. `make bench` embeds a `host` block (OS, arch,
+process running concurrently. `./tools/build.sh --bench` embeds a `host` block (OS, arch,
 CPU count, Go version) in its report so two runs can be sanity-checked for
 comparability, but numbers are **not** normalized across machines — treat a
 report as meaningful only against another report from the same machine, or
@@ -36,7 +36,7 @@ but is not held to the warm-cache budget.
 
 ### Enforcement
 
-`make bench` is a manual/CI-only target (not part of `make test`), because
+`./tools/build.sh --bench` is a manual/CI-only target (not part of `./tools/build.sh --test`), because
 it depends on the pinned-hardware caveats above. A missed target is tracked
 as an ordinary bug against the offending command, not treated as blocking
 every unrelated change — see the project's issue tracker for any

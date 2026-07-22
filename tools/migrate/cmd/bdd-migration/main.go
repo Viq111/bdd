@@ -21,7 +21,7 @@ import (
 	"github.com/viq111/bdd/tools/migrate/internal/warnings"
 )
 
-const usage = "Usage: bdd-migration [--workspace <dir>] [--bd <path>] [--destination <path>]\n"
+const usage = "Usage: bdd-migration [--workspace <dir>] [--bd <path>] [--destination <path>] [--version]\n"
 
 type usageError struct{ err error }
 
@@ -29,7 +29,7 @@ func (e usageError) Error() string { return e.err.Error() }
 
 type options struct {
 	workspace, binary, destination string
-	help                           bool
+	help, showVersion              bool
 }
 
 func main() { os.Exit(runMain(context.Background(), os.Args[1:], os.Stdout, os.Stderr)) }
@@ -47,6 +47,10 @@ func runMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	if opts.help {
 		_, _ = io.WriteString(stdout, usage)
+		return 0
+	}
+	if opts.showVersion {
+		_, _ = fmt.Fprintln(stdout, version)
 		return 0
 	}
 	warningsFound, err := run(ctx, opts)
@@ -74,13 +78,14 @@ func parseArgs(args []string, stdout io.Writer) (options, error) {
 	fs.StringVar(&o.destination, "destination", "", "destination database")
 	fs.BoolVar(&o.help, "help", false, "print usage")
 	fs.BoolVar(&o.help, "h", false, "print usage")
+	fs.BoolVar(&o.showVersion, "version", false, "print version")
 	if err := fs.Parse(args); err != nil {
 		return o, usageError{err}
 	}
 	if fs.NArg() != 0 {
 		return o, usageError{fmt.Errorf("unexpected argument %q", fs.Arg(0))}
 	}
-	if o.help {
+	if o.help || o.showVersion {
 		return o, nil
 	}
 	var err error

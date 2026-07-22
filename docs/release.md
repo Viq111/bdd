@@ -11,7 +11,7 @@ of that; API docs are `bd bdd-4m6x`.
 so cross-compiling for every supported platform needs nothing beyond the
 stock Go toolchain — no C toolchain, no Docker, no per-platform build host.
 
-`make dist` (equivalently `make release`; both names run the same target)
+`./tools/build.sh --dist` (or its `--release` alias)
 cross-compiles, packages, and checksums a release for every supported
 platform:
 
@@ -33,17 +33,17 @@ them checksums every archive.
 
 ## Version stamping
 
-`cmd/bdd/main.go` declares `var version = "dev"`, overridden at build time
+`cmd/bdd/version.go` declares `var version = "dev"`, overridden at build time
 via `-ldflags "-X main.version=<version>"`. `bdd version` (and
 `bdd --version`/`-v`) print whatever was stamped in, with no workspace or
 database access.
 
-Both `make build` (local dev binary) and `make dist` (release archives)
+Both `./tools/build.sh` (local dev binaries) and `./tools/build.sh --dist` (release archives)
 derive `<version>` the same way, so a locally built binary and a release
 binary built from the same commit report the same version:
 
 ```sh
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 ```
 
 On a tagged, clean commit this resolves to the tag itself (e.g. `v1.0.0`).
@@ -78,7 +78,7 @@ This is covered by `TestReleaseArchivesAreReproducible` in `release_test.go`.
 
 ## Cutting a release
 
-1. Confirm `main` is green: `make test` (build, vet, full test suite, and
+1. Confirm `main` is green: `./tools/build.sh --test` (build, vet, full test suite, and
    the short fuzz smoke run).
 2. Tag the release commit with an annotated tag following semver, e.g.:
 
@@ -90,13 +90,13 @@ This is covered by `TestReleaseArchivesAreReproducible` in `release_test.go`.
 3. Build the release archives from the tagged commit:
 
    ```sh
-   make dist
+   ./tools/build.sh --dist
    ```
 
    This writes `dist/bdd-v1.0.0-<os>-<arch>.{tar.gz,zip}` and
    `dist/SHA256SUMS`. `VERSION` is picked up automatically from the tag via
    `git describe`; override it explicitly if you ever need to rebuild a
-   specific version string: `make dist VERSION=v1.0.0`.
+   specific version string: `VERSION=v1.0.0 ./tools/build.sh --dist`.
 4. Sanity-check one archive for the build platform before publishing:
 
    ```sh
@@ -118,6 +118,6 @@ This is covered by `TestReleaseArchivesAreReproducible` in `release_test.go`.
 
 ## Re-running or automating this
 
-`make dist` is safe to re-run — it removes and rebuilds `dist/` each time —
+`./tools/build.sh --dist` is safe to re-run — it removes and rebuilds `dist/` each time —
 and has no side effects beyond writing to that directory, so it's suitable
 to wire into a CI workflow triggered on tag push without further changes.

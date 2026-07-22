@@ -26,6 +26,16 @@ func TestHelpDoesNotTouchWorkspaceOrDestination(t *testing.T) {
 	}
 }
 
+func TestVersionDoesNotTouchWorkspaceOrDestination(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if got := runMain(context.Background(), []string{"--version"}, &stdout, &stderr); got != 0 {
+		t.Fatalf("version exit = %d, want 0", got)
+	}
+	if stdout.String() != version+"\n" || stderr.Len() != 0 {
+		t.Fatalf("version streams = (%q, %q)", stdout.String(), stderr.String())
+	}
+}
+
 func TestArgumentErrorsAreExitTwoAndDoNotWriteStdout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if got := runMain(context.Background(), []string{"--unknown"}, &stdout, &stderr); got != 2 {

@@ -10,7 +10,7 @@ import (
 
 // TestReleaseScriptSyntax catches shell syntax errors in scripts/release.sh
 // without paying the cost of actually cross-compiling every platform in
-// every test run (that's covered by manually running `make dist`; see
+// every test run (that's covered by manually running `./tools/build.sh --dist`; see
 // docs/release.md).
 func TestReleaseScriptSyntax(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
@@ -23,27 +23,33 @@ func TestReleaseScriptSyntax(t *testing.T) {
 }
 
 // TestReleaseVersionWiringMatchesMain guards the -ldflags -X path the
-// Makefile and release script use to stamp cmd/bdd's version variable: if
-// cmd/bdd/main.go's variable is ever renamed without updating the stamping
-// commands, `bdd version` would silently keep reporting "dev" in release
-// builds instead of the tagged version.
+// tools/build.sh and release script use to stamp each main package's version
+// variable. If either variable is renamed without updating the stamping
+// commands, a built binary would silently keep reporting "dev".
 func TestReleaseVersionWiringMatchesMain(t *testing.T) {
-	main, err := os.ReadFile("cmd/bdd/main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(main), `var version = "dev"`) {
-		t.Fatal(`cmd/bdd/main.go no longer declares "var version = \"dev\""; update the -ldflags -X main.version= target in the Makefile and scripts/release.sh to match`)
+	for _, versionFile := range []string{"cmd/bdd/version.go", "tools/migrate/cmd/bdd-migration/version.go"} {
+		contents, err := os.ReadFile(versionFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(contents), `var version = "dev"`) {
+			t.Fatalf("%s no longer declares version; update the -ldflags -X main.version= target", versionFile)
+		}
 	}
 
 	const ldflagsTarget = "-X main.version="
 
-	makefile, err := os.ReadFile("Makefile")
+	buildScript, err := os.ReadFile("tools/build.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(makefile), ldflagsTarget) {
-		t.Fatalf("Makefile no longer stamps %s; local `make build` binaries would report the wrong version", ldflagsTarget)
+	for _, buildCommand := range []string{
+		`go build -trimpath -ldflags "-X main.version=$VERSION" -o "$BIN_DIR/bdd" ./cmd/bdd`,
+		`go build -trimpath -ldflags "-X main.version=$VERSION" -o "$BIN_DIR/bdd-migration" ./tools/migrate/cmd/bdd-migration`,
+	} {
+		if !strings.Contains(string(buildScript), buildCommand) {
+			t.Fatalf("tools/build.sh no longer stamps %s: missing %q", ldflagsTarget, buildCommand)
+		}
 	}
 
 	release, err := os.ReadFile("scripts/release.sh")
@@ -96,7 +102,7 @@ func TestReleaseArchivesAreReproducible(t *testing.T) {
 	second := runRelease()
 
 	if string(first) != string(second) {
-		t.Fatalf("repeat `make dist VERSION=%s` builds produced different SHA256SUMS:\n--- first ---\n%s\n--- second ---\n%s",
+		t.Fatalf("repeat `./tools/build.sh --dist VERSION=%s` builds produced different SHA256SUMS:\n--- first ---\n%s\n--- second ---\n%s",
 			version, first, second)
 	}
 }
