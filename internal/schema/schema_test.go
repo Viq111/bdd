@@ -419,6 +419,39 @@ func TestUpgradeFromV2PreservesCustomWontfixStatus(t *testing.T) {
 	}
 }
 
+func TestUpgradeFromV4AddsOwnerWithEmptyDefault(t *testing.T) {
+	db := openMemDB(t)
+	ctx := context.Background()
+
+	for _, m := range Migrations() {
+		if m.Version > 4 {
+			break
+		}
+		if _, err := db.ExecContext(ctx, m.SQL); err != nil {
+			t.Fatalf("applying migration %d: %v", m.Version, err)
+		}
+	}
+	now := "2026-07-22T00:00:00Z"
+	if _, err := db.ExecContext(ctx, `INSERT INTO cards (id, title, status, card_type, created_at, updated_at) VALUES ('bdd-old', 'old card', 'open', 'chore', ?, ?)`, now, now); err != nil {
+		t.Fatalf("inserting pre-owner card: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 4"); err != nil {
+		t.Fatalf("setting user_version: %v", err)
+	}
+
+	if err := Upgrade(ctx, db); err != nil {
+		t.Fatalf("Upgrade() from version 4 error = %v", err)
+	}
+
+	var owner string
+	if err := db.QueryRowContext(ctx, "SELECT owner FROM cards WHERE id = 'bdd-old'").Scan(&owner); err != nil {
+		t.Fatalf("reading owner: %v", err)
+	}
+	if owner != "" {
+		t.Fatalf("owner = %q, want empty default", owner)
+	}
+}
+
 func TestUpgradeAppliesOnlyPendingMigrations(t *testing.T) {
 	db := openMemDB(t)
 	ctx := context.Background()

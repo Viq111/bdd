@@ -96,6 +96,7 @@ type Card struct {
 	ExternalRef  string
 	Worktree     string
 	Assignee     string
+	Owner        string
 	Dispatchable bool
 	Labels       []string
 	Parents      []CardRef
@@ -201,7 +202,7 @@ type scanner interface {
 // ListCards/SearchCards queries in query.go.
 const cardColumns = `id, title, worktree, description, reproduction, design, acceptance,
 	status, priority, card_type, external_ref, assignee, created_by,
-	dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision`
+	owner, dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision`
 
 const cardSelectSQL = `SELECT ` + cardColumns + ` FROM cards WHERE id = ?`
 
@@ -332,7 +333,7 @@ func scanCard(row scanner) (*Card, error) {
 	if err := row.Scan(
 		&c.ID, &c.Title, &c.Worktree, &c.Description, &c.Reproduction, &c.Design, &c.Acceptance,
 		&status, &priority, &cardType, &c.ExternalRef, &c.Assignee, &c.CreatedBy,
-		&dispatchable, &createdAt, &updatedAt, &startedAt, &closedAt, &deferUntil, &c.Revision,
+		&c.Owner, &dispatchable, &createdAt, &updatedAt, &startedAt, &closedAt, &deferUntil, &c.Revision,
 	); err != nil {
 		return nil, err
 	}

@@ -51,6 +51,9 @@ type CreateCard struct {
 	Notes   *string
 
 	CreatedBy string
+	// Owner is immutable source metadata, distinct from the assignee who is
+	// currently working the card. It is primarily used by imports.
+	Owner string
 }
 
 // UpdateCard is the input to (*DB).UpdateCard. Every pointer field left nil
@@ -129,8 +132,8 @@ func (db *DB) CreateCard(ctx context.Context, in CreateCard) (*Card, error) {
 	}
 	if !validateUTF8(in.Title, strOrEmpty(in.Description), strOrEmpty(in.Reproduction),
 		strOrEmpty(in.Design), strOrEmpty(in.Acceptance), strOrEmpty(in.ExternalRef),
-		strOrEmpty(in.Worktree), strOrEmpty(in.Notes)) {
-		return nil, fmt.Errorf("bdd: create card: title/description/reproduction/design/acceptance/external_ref/worktree/notes must be valid UTF-8: %w", ErrInvalidArgument)
+		strOrEmpty(in.Worktree), strOrEmpty(in.Notes), in.Owner) {
+		return nil, fmt.Errorf("bdd: create card: title/description/reproduction/design/acceptance/external_ref/worktree/notes/owner must be valid UTF-8: %w", ErrInvalidArgument)
 	}
 	if in.Priority != nil && *in.Priority < 0 {
 		return nil, fmt.Errorf("bdd: create card: priority must be >= 0: %w", ErrInvalidArgument)
@@ -490,8 +493,8 @@ func validateUpdateCard(in UpdateCard) error {
 const insertCardSQL = `INSERT INTO cards (
 	id, title, worktree, description, reproduction, design, acceptance,
 	status, priority, card_type, external_ref, assignee, created_by,
-	dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 1)`
+	owner, dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 1)`
 
 const idAlphabet = "abcdefghijklmnopqrstuvwxyz234567" // lowercase base32 (RFC 4648), shell-safe
 const idSuffixLen = 6
@@ -526,7 +529,7 @@ func insertCardRow(ctx context.Context, tx *sql.Tx, prefix string, in CreateCard
 			id, in.Title, strOrEmpty(in.Worktree), strOrEmpty(in.Description),
 			strOrEmpty(in.Reproduction), strOrEmpty(in.Design), strOrEmpty(in.Acceptance),
 			string(StatusOpen), priority, string(in.Type), strOrEmpty(in.ExternalRef), "",
-			in.CreatedBy, 1, now, now,
+			in.CreatedBy, in.Owner, 1, now, now,
 		)
 		if err == nil {
 			return id, nil
