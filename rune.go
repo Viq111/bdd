@@ -506,4 +506,3 @@ func (db *DB) RemoveRune(ctx context.Context, key string, actor string, force bo
 		return tx.Commit()
 	})
 }
-
