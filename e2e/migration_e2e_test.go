@@ -571,9 +571,22 @@ func TestMigrationDestinationOwnedCollisionsWarnAndPreserveRecords(t *testing.T)
 		}
 	}
 	r := runMigration(t, workspace, bd, destination)
-	wantWarnings := "warning: " + ownedID + ": destination-owned card ID collision; skipped record\n" +
-		expectedRoleWarnings +
-		"warning: mig-role-collision: destination-owned rune key collision; skipped record\n"
+	// ownedID carries a random suffix (see insertCardRow), so its position
+	// among the sorted-by-source-ID warning lines is not fixed relative to
+	// the other, statically-named sources. Sort by source ID, the same key
+	// the tool sorts its output by, instead of assuming a fixed order.
+	type sourceLine struct{ source, line string }
+	wantSourceLines := []sourceLine{
+		{ownedID, "warning: " + ownedID + ": destination-owned card ID collision; skipped record"},
+		{"mig-role", strings.TrimSuffix(expectedRoleWarnings, "\n")},
+		{"mig-role-collision", "warning: mig-role-collision: destination-owned rune key collision; skipped record"},
+	}
+	sort.Slice(wantSourceLines, func(i, j int) bool { return wantSourceLines[i].source < wantSourceLines[j].source })
+	wantLines := make([]string, len(wantSourceLines))
+	for i, sl := range wantSourceLines {
+		wantLines[i] = sl.line
+	}
+	wantWarnings := strings.Join(wantLines, "\n") + "\n"
 	if r.code != 0 || r.stderr != wantWarnings || r.stdout != wroteTo(t, destination) {
 		t.Fatalf("collision migration = %#v", r)
 	}
