@@ -196,12 +196,12 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 
 		newGroup("rune", "Manage rune records",
 			"Manage rune records: reusable, keyed documents (checklists, prompts,\nreference material) attached to the workspace rather than any one card.",
-			`  bdd rune set review-checklist --kind doc --title "Review checklist" --body "..."
+			`  bdd rune set doc/review-checklist --kind doc --title "Review checklist" --body "..."
   bdd rune list --kind doc`,
 			runRune, global, streams,
 			newLeaf("set <key>", "Create or update a rune",
 				"Create or update the rune at <key>. Supply the body directly with --body,\nor read it from a file with --body-file.",
-				`  bdd rune set review-checklist --kind doc --title "Review checklist" --body "..."`,
+				`  bdd rune set doc/review-checklist --kind doc --title "Review checklist" --body "..."`,
 				runRuneSet, global, streams, func(f *pflag.FlagSet) {
 					f.String("kind", "", "rune kind (e.g. doc, prompt, checklist)")
 					f.String("title", "", "rune title")
@@ -215,7 +215,7 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 					f.Bool("force", false, "acknowledge overwriting a protected rune")
 				}),
 			newLeaf("get <key>", "Get a rune's full record", "Print the full record for the rune at <key>.",
-				"  bdd rune get review-checklist", runRuneGet, global, streams, nil),
+				"  bdd rune get doc/review-checklist", runRuneGet, global, streams, nil),
 			newLeaf("list", "List runes", "List rune summaries, optionally filtered by kind.",
 				"  bdd rune list --kind doc", runRuneList, global, streams, func(f *pflag.FlagSet) {
 					f.String("kind", "", "only list runes of this kind")
@@ -227,19 +227,19 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 					f.Bool("all", false, "include disabled runes")
 				}),
 			newLeaf("enable <key>", "Enable a rune", "Mark the rune at <key> enabled.",
-				"  bdd rune enable review-checklist", func(g GlobalFlags, a []string, s *Streams) int {
+				"  bdd rune enable doc/review-checklist", func(g GlobalFlags, a []string, s *Streams) int {
 					return runRuneSetEnabled(g, a, s, true, "rune enable")
 				}, global, streams, func(f *pflag.FlagSet) {
 					f.Bool("force", false, "acknowledge enabling a protected rune")
 				}),
 			newLeaf("disable <key>", "Disable a rune", "Mark the rune at <key> disabled.",
-				"  bdd rune disable review-checklist --force", func(g GlobalFlags, a []string, s *Streams) int {
+				"  bdd rune disable doc/review-checklist --force", func(g GlobalFlags, a []string, s *Streams) int {
 					return runRuneSetEnabled(g, a, s, false, "rune disable")
 				}, global, streams, func(f *pflag.FlagSet) {
 					f.Bool("force", false, "acknowledge disabling a protected rune")
 				}),
 			newLeaf("remove <key>", "Delete a rune", "Delete the rune at <key>.",
-				"  bdd rune remove review-checklist --force", runRuneRemove, global, streams, func(f *pflag.FlagSet) {
+				"  bdd rune remove doc/review-checklist --force", runRuneRemove, global, streams, func(f *pflag.FlagSet) {
 					f.Bool("force", false, "acknowledge removing a protected rune")
 				}),
 		),

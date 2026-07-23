@@ -53,9 +53,18 @@ type ValidationError struct {
 	// Fields lists the names of every field that failed validation, in a
 	// stable, deterministic order.
 	Fields []string
+
+	// Detail, if non-empty, replaces the default "missing required
+	// field(s)" wording. Use it when a field is present but invalid (e.g.
+	// malformed grammar) rather than absent, so the message doesn't
+	// mislead callers into thinking they omitted it.
+	Detail string
 }
 
 func (e *ValidationError) Error() string {
+	if e.Detail != "" {
+		return fmt.Sprintf("bdd: invalid argument: %s", e.Detail)
+	}
 	return fmt.Sprintf("bdd: invalid argument: missing required field(s): %s", strings.Join(e.Fields, ", "))
 }
 
