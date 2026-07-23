@@ -762,12 +762,12 @@ func (db *DB) AddNote(ctx context.Context, in AddNote) (*Note, error) {
 
 // AddLabel idempotently adds label to id.
 func (db *DB) AddLabel(ctx context.Context, id, label, actor string) (*Card, error) {
-	return nil, errNotImplemented
+	return db.UpdateCard(ctx, id, UpdateCard{AddLabels: []string{label}, Actor: actor})
 }
 
 // RemoveLabel idempotently removes label from id.
 func (db *DB) RemoveLabel(ctx context.Context, id, label, actor string) (*Card, error) {
-	return nil, errNotImplemented
+	return db.UpdateCard(ctx, id, UpdateCard{RemoveLabels: []string{label}, Actor: actor})
 }
 
 // ClaimCard, CloseCard, ReopenCard, DeferCard, and HumanCard (the dedicated

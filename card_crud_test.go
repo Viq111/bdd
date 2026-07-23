@@ -468,6 +468,112 @@ func TestUpdateCardRejectsInvalidRemoveLabel(t *testing.T) {
 	}
 }
 
+func TestAddLabelAddsAndIsIdempotent(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	updated, err := db.AddLabel(ctx, created.ID, "a", "alice")
+	if err != nil {
+		t.Fatalf("AddLabel() error = %v", err)
+	}
+	if len(updated.Labels) != 1 || updated.Labels[0] != "a" {
+		t.Fatalf("Labels = %v, want [a]", updated.Labels)
+	}
+	if updated.Revision != created.Revision+1 {
+		t.Fatalf("Revision = %d, want %d", updated.Revision, created.Revision+1)
+	}
+
+	again, err := db.AddLabel(ctx, created.ID, "a", "alice")
+	if err != nil {
+		t.Fatalf("AddLabel() (repeat) error = %v", err)
+	}
+	if len(again.Labels) != 1 || again.Labels[0] != "a" {
+		t.Fatalf("Labels = %v, want [a] after idempotent add", again.Labels)
+	}
+
+	var eventActor string
+	if err := db.sql.QueryRowContext(ctx, `SELECT actor FROM events WHERE subject_kind = 'card' AND subject_key = ? AND action = 'update' AND revision = ?`, created.ID, updated.Revision).Scan(&eventActor); err != nil {
+		t.Fatalf("querying add-label event: %v", err)
+	}
+	if eventActor != "alice" {
+		t.Fatalf("event actor = %q, want alice", eventActor)
+	}
+}
+
+func TestAddLabelRejectsInvalidLabel(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	if _, err := db.AddLabel(ctx, created.ID, "", "alice"); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("AddLabel() error = %v, want ErrInvalidArgument for empty label", err)
+	}
+}
+
+func TestAddLabelMissingCard(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.AddLabel(ctx, "bdd-missing", "a", "alice"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("AddLabel() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRemoveLabelRemovesAndIsIdempotent(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore, Labels: []string{"a"}})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	updated, err := db.RemoveLabel(ctx, created.ID, "a", "bob")
+	if err != nil {
+		t.Fatalf("RemoveLabel() error = %v", err)
+	}
+	if len(updated.Labels) != 0 {
+		t.Fatalf("Labels = %v, want empty", updated.Labels)
+	}
+	if updated.Revision != created.Revision+1 {
+		t.Fatalf("Revision = %d, want %d", updated.Revision, created.Revision+1)
+	}
+
+	again, err := db.RemoveLabel(ctx, created.ID, "a", "bob")
+	if err != nil {
+		t.Fatalf("RemoveLabel() (repeat) error = %v", err)
+	}
+	if len(again.Labels) != 0 {
+		t.Fatalf("Labels = %v, want still empty after idempotent remove", again.Labels)
+	}
+
+	var eventActor string
+	if err := db.sql.QueryRowContext(ctx, `SELECT actor FROM events WHERE subject_kind = 'card' AND subject_key = ? AND action = 'update' AND revision = ?`, created.ID, updated.Revision).Scan(&eventActor); err != nil {
+		t.Fatalf("querying remove-label event: %v", err)
+	}
+	if eventActor != "bob" {
+		t.Fatalf("event actor = %q, want bob", eventActor)
+	}
+}
+
+func TestRemoveLabelMissingCard(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.RemoveLabel(ctx, "bdd-missing", "a", "alice"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RemoveLabel() error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestCreateCardRejectsInvalidUTF8(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

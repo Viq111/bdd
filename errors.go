@@ -62,8 +62,3 @@ func (e *ValidationError) Error() string {
 func (e *ValidationError) Unwrap() error {
 	return ErrInvalidArgument
 }
-
-// errNotImplemented is returned by every DB method until its owning card
-// lands. It is intentionally unexported: it is not part of the frozen public
-// contract and callers must not depend on it.
-var errNotImplemented = errors.New("bdd: not implemented")
