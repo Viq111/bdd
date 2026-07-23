@@ -25,6 +25,12 @@ type Rune struct {
 	Body     string
 	Metadata string
 
+	// Prime controls whether `bdd prime` treats this rune as standing
+	// instruction: RunePrimeRequired inlines the full body, RunePrimeOptional
+	// (the default) includes only a key/title/kind/revision summary, and
+	// RunePrimeNever omits it from prime entirely.
+	Prime string
+
 	Enabled   bool // defaults true on create; preserved on update unless supplied
 	Protected bool // protected runes require Force to update, enable/disable, or remove
 
@@ -41,6 +47,7 @@ type RuneSummary struct {
 	Key       string
 	Kind      string
 	Title     string
+	Prime     string
 	Enabled   bool
 	Protected bool
 	Revision  int64
@@ -53,9 +60,26 @@ type RuneMutation struct {
 	Title    *string
 	Body     *string
 	Metadata *string
+	Prime    *string // one of RunePrimeRequired, RunePrimeOptional, RunePrimeNever
 
 	Enabled   *bool
 	Protected *bool
+}
+
+// Rune prime designations: see Rune.Prime.
+const (
+	RunePrimeRequired = "required"
+	RunePrimeOptional = "optional"
+	RunePrimeNever    = "never"
+)
+
+func validRunePrime(v string) bool {
+	switch v {
+	case RunePrimeRequired, RunePrimeOptional, RunePrimeNever:
+		return true
+	default:
+		return false
+	}
 }
 
 // PutRune is the input to (*DB).PutRune. Key must follow the
@@ -135,6 +159,9 @@ func (db *DB) PutRune(ctx context.Context, in PutRune) (*Rune, error) {
 	if in.Mutation.Metadata != nil && !json.Valid([]byte(*in.Mutation.Metadata)) {
 		return nil, &ValidationError{Fields: []string{"metadata"}}
 	}
+	if in.Mutation.Prime != nil && !validRunePrime(*in.Mutation.Prime) {
+		return nil, &ValidationError{Fields: []string{"prime"}}
+	}
 
 	var result *Rune
 	err = sqlite.Retry(ctx, func() error {
@@ -194,6 +221,10 @@ func createRuneTx(ctx context.Context, tx *sql.Tx, in PutRune, now time.Time) (*
 	if in.Mutation.Metadata != nil {
 		metadata = *in.Mutation.Metadata
 	}
+	prime := RunePrimeOptional
+	if in.Mutation.Prime != nil {
+		prime = *in.Mutation.Prime
+	}
 	enabled := true
 	if in.Mutation.Enabled != nil {
 		enabled = *in.Mutation.Enabled
@@ -208,9 +239,9 @@ func createRuneTx(ctx context.Context, tx *sql.Tx, in PutRune, now time.Time) (*
 
 	nowStr := now.Format(time.RFC3339Nano)
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO runes (key, kind, title, body, metadata_json, enabled, protected, created_by, updated_by, created_at, updated_at, revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-		in.Key, in.Kind, title, body, metadata, boolToInt(enabled), boolToInt(protected), in.Actor, in.Actor, nowStr, nowStr)
+		INSERT INTO runes (key, kind, title, body, metadata_json, prime, enabled, protected, created_by, updated_by, created_at, updated_at, revision)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+		in.Key, in.Kind, title, body, metadata, prime, boolToInt(enabled), boolToInt(protected), in.Actor, in.Actor, nowStr, nowStr)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +251,7 @@ func createRuneTx(ctx context.Context, tx *sql.Tx, in PutRune, now time.Time) (*
 	}
 
 	return &Rune{
-		Key: in.Key, Kind: in.Kind, Title: title, Body: body, Metadata: metadata,
+		Key: in.Key, Kind: in.Kind, Title: title, Body: body, Metadata: metadata, Prime: prime,
 		Enabled: enabled, Protected: protected,
 		CreatedBy: in.Actor, UpdatedBy: in.Actor, CreatedAt: now, UpdatedAt: now, Revision: 1,
 	}, nil
@@ -239,6 +270,10 @@ func updateRuneTx(ctx context.Context, tx *sql.Tx, existing *Rune, in PutRune, n
 	if in.Mutation.Metadata != nil {
 		metadata = *in.Mutation.Metadata
 	}
+	prime := existing.Prime
+	if in.Mutation.Prime != nil {
+		prime = *in.Mutation.Prime
+	}
 	enabled := existing.Enabled
 	if in.Mutation.Enabled != nil {
 		enabled = *in.Mutation.Enabled
@@ -251,9 +286,9 @@ func updateRuneTx(ctx context.Context, tx *sql.Tx, existing *Rune, in PutRune, n
 	revision := existing.Revision + 1
 	nowStr := now.Format(time.RFC3339Nano)
 	_, err := tx.ExecContext(ctx, `
-		UPDATE runes SET title = ?, body = ?, metadata_json = ?, enabled = ?, protected = ?, updated_by = ?, updated_at = ?, revision = ?
+		UPDATE runes SET title = ?, body = ?, metadata_json = ?, prime = ?, enabled = ?, protected = ?, updated_by = ?, updated_at = ?, revision = ?
 		WHERE key = ?`,
-		title, body, metadata, boolToInt(enabled), boolToInt(protected), in.Actor, nowStr, revision, in.Key)
+		title, body, metadata, prime, boolToInt(enabled), boolToInt(protected), in.Actor, nowStr, revision, in.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +298,7 @@ func updateRuneTx(ctx context.Context, tx *sql.Tx, existing *Rune, in PutRune, n
 	}
 
 	return &Rune{
-		Key: in.Key, Kind: existing.Kind, Title: title, Body: body, Metadata: metadata,
+		Key: in.Key, Kind: existing.Kind, Title: title, Body: body, Metadata: metadata, Prime: prime,
 		Enabled: enabled, Protected: protected,
 		CreatedBy: existing.CreatedBy, UpdatedBy: in.Actor,
 		CreatedAt: existing.CreatedAt, UpdatedAt: now, Revision: revision,
@@ -304,7 +339,7 @@ type runeQuerier interface {
 
 func getRuneTx(ctx context.Context, q runeQuerier, key string) (*Rune, error) {
 	row := q.QueryRowContext(ctx, `
-		SELECT key, kind, title, body, metadata_json, enabled, protected, created_by, updated_by, created_at, updated_at, revision
+		SELECT key, kind, title, body, metadata_json, prime, enabled, protected, created_by, updated_by, created_at, updated_at, revision
 		FROM runes WHERE key = ?`, key)
 	return scanRune(row)
 }
@@ -316,7 +351,7 @@ func scanRune(row *sql.Row) (*Rune, error) {
 		createdBy, updatedBy sql.NullString
 		createdAt, updatedAt string
 	)
-	err := row.Scan(&r.Key, &r.Kind, &r.Title, &r.Body, &r.Metadata, &enabled, &protected, &createdBy, &updatedBy, &createdAt, &updatedAt, &r.Revision)
+	err := row.Scan(&r.Key, &r.Kind, &r.Title, &r.Body, &r.Metadata, &r.Prime, &enabled, &protected, &createdBy, &updatedBy, &createdAt, &updatedAt, &r.Revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -375,7 +410,7 @@ func listOrSearchRunes(ctx context.Context, sqlDB *sql.DB, q RuneQuery, search b
 		args = append(args, like, like, like, like, like)
 	}
 
-	query := "SELECT key, kind, title, enabled, protected, revision FROM runes"
+	query := "SELECT key, kind, title, prime, enabled, protected, revision FROM runes"
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
@@ -396,7 +431,7 @@ func listOrSearchRunes(ctx context.Context, sqlDB *sql.DB, q RuneQuery, search b
 			s                  RuneSummary
 			enabled, protected int
 		)
-		if err := rows.Scan(&s.Key, &s.Kind, &s.Title, &enabled, &protected, &s.Revision); err != nil {
+		if err := rows.Scan(&s.Key, &s.Kind, &s.Title, &s.Prime, &enabled, &protected, &s.Revision); err != nil {
 			return nil, err
 		}
 		s.Enabled = enabled != 0

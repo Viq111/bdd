@@ -40,7 +40,7 @@ const commandsReference = `  init [--prefix <prefix>] [path]   Create a new work
   delete <id> --force               Hard-delete a card and its edges
   snapshot [--output <path>]        Write an integrity-checked backup of the live database
   restore <snapshot.sqlite> --force   Install a snapshot as the workspace database
-  prime [--memory-limit <n>] [--no-memories]   Print the workspace contract and memories for session start
+  prime [--memory-limit <n>] [--no-memories] [--full]   Print a compact session-start manifest (or the full prose contract with --full)
   version                           Print the bdd version
   help                              Show this help text
 `

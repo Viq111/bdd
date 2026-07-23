@@ -260,9 +260,10 @@ bdd memory remove testing-race
 Without `--key`, `memory set` derives a readable slug plus a short content
 hash and prints the generated key, so repeated calls with identical
 untitled content converge on one record instead of piling up duplicates.
-Every write or delete is audited. `bdd prime` includes all memories by
-default in a compact section at session start; `--memory-limit <n>` and
-`--no-memories` control how much context that costs.
+Every write or delete is audited. `bdd prime` summarizes every memory by
+key and first line in its compact context manifest at session start;
+`--memory-limit <n>` and `--no-memories` control how much context that
+costs.
 
 ## Runes
 
@@ -294,6 +295,12 @@ a disabled rune stays directly readable via `get`, appearing in
 `list`/`search` only with `--all`. Protected runes require `--force` for
 any update, enable/disable, or removal, and `remove` leaves a tombstone
 audit event behind.
+
+`--prime required|optional|never` (default `optional`) controls how `bdd
+prime`'s compact manifest surfaces an enabled rune: `required` inlines the
+full body every session, `optional` includes only a key/title/kind/revision
+summary, and `never` omits it entirely. A disabled rune is never surfaced
+by prime regardless of this setting.
 
 ## Worktree field
 
@@ -346,8 +353,9 @@ directory:
 
 `bdd_backup.sqlite` lives at the workspace root, outside `.bdd/`, so it's
 unaffected by that ignore rule — whether to track it in git is up to you.
-`bdd prime` echoes this same `.gitignore` entry so an agent priming a
-session sees it without reading this file.
+`bdd prime --full` echoes this same `.gitignore` entry so an agent reading
+the full prose contract sees it without reading this file; the default
+compact manifest omits it to stay small.
 
 ## Go library
 
