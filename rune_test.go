@@ -128,6 +128,23 @@ func TestPutRuneRejectsKindMismatch(t *testing.T) {
 	if !errors.As(err, &verr) {
 		t.Fatalf("PutRune() error = %v, want *ValidationError", err)
 	}
+	if strings.Contains(err.Error(), "missing required field") {
+		t.Fatalf("PutRune() with mismatched (but present) kind error = %q, must not claim the field is missing", err.Error())
+	}
+}
+
+func TestPutRuneRejectsMissingKind(t *testing.T) {
+	db := newRuneTestDB(t)
+	ctx := context.Background()
+
+	_, err := db.PutRune(ctx, PutRune{Key: "role/programmer", Actor: "alice"})
+	var verr *ValidationError
+	if !errors.As(err, &verr) {
+		t.Fatalf("PutRune() error = %v, want *ValidationError", err)
+	}
+	if !strings.Contains(err.Error(), "missing required field") {
+		t.Fatalf("PutRune() with omitted kind error = %q, want it to say the field is missing", err.Error())
+	}
 }
 
 func TestPutRuneCreateOnlyRejectsExisting(t *testing.T) {

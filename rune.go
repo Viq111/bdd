@@ -156,11 +156,20 @@ func (db *DB) PutRune(ctx context.Context, in PutRune) (*Rune, error) {
 	if err != nil {
 		return nil, err
 	}
-	if in.Kind == "" || in.Kind != kind {
+	if in.Kind == "" {
 		return nil, &ValidationError{Fields: []string{"kind"}}
 	}
+	if in.Kind != kind {
+		return nil, &ValidationError{
+			Fields: []string{"kind"},
+			Detail: fmt.Sprintf("kind %q does not match key %q (key's kind segment is %q)", in.Kind, in.Key, kind),
+		}
+	}
 	if in.Mutation.Metadata != nil && !json.Valid([]byte(*in.Mutation.Metadata)) {
-		return nil, &ValidationError{Fields: []string{"metadata"}}
+		return nil, &ValidationError{
+			Fields: []string{"metadata"},
+			Detail: fmt.Sprintf("metadata %q is not valid JSON", *in.Mutation.Metadata),
+		}
 	}
 	if in.Mutation.Prime != nil && !validRunePrime(*in.Mutation.Prime) {
 		return nil, &ValidationError{
