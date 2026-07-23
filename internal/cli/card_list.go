@@ -18,6 +18,10 @@ func parseLimit(raw string) (int, error) {
 	return n, nil
 }
 
+// defaultListLimit is applied when --limit is not passed to list, search,
+// or ready. An explicit --limit 0 remains the opt-in to unlimited results.
+const defaultListLimit = 20
+
 // runCardList implements `bdd list [--status <s>]... [--status-category
 // <c>]... [--type <t>]... [--label <l>]... [--all] [--parent <id>]
 // [--child <id>] [--description-like <text>] [--sort <field>] [--reverse]
@@ -129,7 +133,7 @@ func runCardList(g GlobalFlags, args []string, s *Streams) int {
 		}
 	}
 
-	limit := 0
+	limit := defaultListLimit
 	if haveLimit {
 		n, err := parseLimit(limitRaw)
 		if err != nil {
@@ -228,7 +232,7 @@ func runCardSearch(g GlobalFlags, args []string, s *Streams) int {
 		}
 	}
 
-	limit := 0
+	limit := defaultListLimit
 	if haveLimit {
 		n, err := parseLimit(limitRaw)
 		if err != nil {
@@ -327,7 +331,7 @@ func runCardReady(g GlobalFlags, args []string, s *Streams) int {
 		explainID = positional[0]
 	}
 
-	limit := 0
+	limit := defaultListLimit
 	if haveLimit {
 		n, err := parseLimit(limitRaw)
 		if err != nil {

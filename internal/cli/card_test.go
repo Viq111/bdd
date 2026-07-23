@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -311,6 +312,41 @@ func TestListDefaultExcludesDoneCards(t *testing.T) {
 	}
 }
 
+// TestListDefaultLimitIs20 guards the bdd-tpbr default: with no --limit,
+// list returns at most 20 cards even when more exist, while an explicit
+// --limit 0 opts back into unlimited results.
+func TestListDefaultLimitIs20(t *testing.T) {
+	dir := initTestWorkspace(t)
+	for i := 0; i < 25; i++ {
+		createCard(t, dir, "--type", "chore", fmt.Sprintf("card %d", i))
+	}
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "list")
+	var cards []CardSummaryResult
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 20 {
+		t.Fatalf("len(cards) = %d, want 20 (default limit)", len(cards))
+	}
+
+	stdout, _ = runCLI(t, dir, ExitSuccess, "--json", "list", "--limit", "0")
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 25 {
+		t.Fatalf("len(cards) with --limit 0 = %d, want 25 (unlimited)", len(cards))
+	}
+
+	stdout, _ = runCLI(t, dir, ExitSuccess, "--json", "list", "--limit", "5")
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 5 {
+		t.Fatalf("len(cards) with --limit 5 = %d, want 5", len(cards))
+	}
+}
+
 // TestListHumanLineIncludesPriority guards the bdd-ap5z compact line shape:
 // list/search/ready human output must show `<id> P<priority> - <title>` so
 // an agent can triage without a fan-out of `show` calls.
@@ -384,6 +420,41 @@ func TestSearchMatchesTitle(t *testing.T) {
 	}
 }
 
+// TestSearchDefaultLimitIs20 mirrors TestListDefaultLimitIs20 for search:
+// no --limit caps results at 20, --limit 0 is the explicit unlimited
+// opt-in, and an explicit positive --limit is honored.
+func TestSearchDefaultLimitIs20(t *testing.T) {
+	dir := initTestWorkspace(t)
+	for i := 0; i < 25; i++ {
+		createCard(t, dir, "--type", "chore", fmt.Sprintf("findable-%d", i))
+	}
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "search", "findable")
+	var cards []CardSummaryResult
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 20 {
+		t.Fatalf("len(cards) = %d, want 20 (default limit)", len(cards))
+	}
+
+	stdout, _ = runCLI(t, dir, ExitSuccess, "--json", "search", "findable", "--limit", "0")
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 25 {
+		t.Fatalf("len(cards) with --limit 0 = %d, want 25 (unlimited)", len(cards))
+	}
+
+	stdout, _ = runCLI(t, dir, ExitSuccess, "--json", "search", "findable", "--limit", "5")
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 5 {
+		t.Fatalf("len(cards) with --limit 5 = %d, want 5", len(cards))
+	}
+}
+
 func TestReadyExplainListsUnfinishedParent(t *testing.T) {
 	dir := initTestWorkspace(t)
 	parent := createCard(t, dir, "--type", "chore", "parent")
@@ -425,6 +496,41 @@ func TestReadyOnlyIncludesDispatchableCards(t *testing.T) {
 	}
 	if len(cards) != 1 || cards[0].ID != parent {
 		t.Fatalf("cards = %+v, want only parent %s ready", cards, parent)
+	}
+}
+
+// TestReadyDefaultLimitIs20 mirrors TestListDefaultLimitIs20 for ready: no
+// --limit caps results at 20, --limit 0 is the explicit unlimited opt-in,
+// and an explicit positive --limit is honored.
+func TestReadyDefaultLimitIs20(t *testing.T) {
+	dir := initTestWorkspace(t)
+	for i := 0; i < 25; i++ {
+		createCard(t, dir, "--type", "chore", fmt.Sprintf("ready card %d", i))
+	}
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "ready")
+	var cards []CardSummaryResult
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 20 {
+		t.Fatalf("len(cards) = %d, want 20 (default limit)", len(cards))
+	}
+
+	stdout, _ = runCLI(t, dir, ExitSuccess, "--json", "ready", "--limit", "0")
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 25 {
+		t.Fatalf("len(cards) with --limit 0 = %d, want 25 (unlimited)", len(cards))
+	}
+
+	stdout, _ = runCLI(t, dir, ExitSuccess, "--json", "ready", "--limit", "5")
+	if err := json.Unmarshal([]byte(stdout), &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 5 {
+		t.Fatalf("len(cards) with --limit 5 = %d, want 5", len(cards))
 	}
 }
 
