@@ -93,6 +93,113 @@ func TestClaimCardRequiresActor(t *testing.T) {
 	}
 }
 
+func TestUpdateCardClaimPlusFieldChangeIsAtomic(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "claim and update")
+
+	updated, err := db.UpdateCard(ctx, card.ID, UpdateCard{
+		Claim:    true,
+		Priority: int32Ptr(5),
+		Actor:    "alice",
+	})
+	if err != nil {
+		t.Fatalf("UpdateCard() error = %v", err)
+	}
+	if updated.Status != StatusInProgress || updated.Assignee != "alice" {
+		t.Fatalf("card = %+v, want claimed by alice", updated)
+	}
+	if updated.Priority != 5 {
+		t.Fatalf("Priority = %d, want 5", updated.Priority)
+	}
+	if updated.Revision != card.Revision+1 {
+		t.Fatalf("Revision = %d, want exactly one bump (%d)", updated.Revision, card.Revision+1)
+	}
+}
+
+func TestUpdateCardClaimAndStatusIsRejected(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "claim and status")
+
+	st := StatusInProgress
+	if _, err := db.UpdateCard(ctx, card.ID, UpdateCard{Claim: true, Status: &st, Actor: "alice"}); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("UpdateCard() error = %v, want ErrInvalidArgument", err)
+	}
+
+	// The rejection must happen before anything is written.
+	got, err := db.GetCard(ctx, card.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if got.Status != StatusOpen || got.Assignee != "" || got.Revision != card.Revision {
+		t.Fatalf("card = %+v, want unchanged", got)
+	}
+}
+
+func TestUpdateCardClaimPlusFailingFieldChangeCommitsNothing(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "claim then fail")
+
+	var eventCountBefore int
+	if err := db.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE subject_kind = 'card' AND subject_key = ?`, card.ID).Scan(&eventCountBefore); err != nil {
+		t.Fatalf("counting events: %v", err)
+	}
+
+	// Referencing a nonexistent parent card fails the field-change portion
+	// (a FOREIGN KEY / not-found style error) after the claim would already
+	// have been decided; the whole transaction must still roll back.
+	_, err := db.UpdateCard(ctx, card.ID, UpdateCard{
+		Claim:      true,
+		AddParents: []string{"bdd-does-not-exist"},
+		Actor:      "alice",
+	})
+	if err == nil {
+		t.Fatalf("UpdateCard() error = nil, want failure from unknown parent")
+	}
+
+	got, err := db.GetCard(ctx, card.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if got.Status != StatusOpen || got.Assignee != "" || got.StartedAt != nil {
+		t.Fatalf("card = %+v, want unclaimed (transaction should not have partially applied)", got)
+	}
+	if got.Revision != card.Revision {
+		t.Fatalf("Revision = %d, want unchanged %d", got.Revision, card.Revision)
+	}
+	if !got.UpdatedAt.Equal(card.UpdatedAt) {
+		t.Fatalf("UpdatedAt = %v, want unchanged %v", got.UpdatedAt, card.UpdatedAt)
+	}
+
+	var eventCountAfter int
+	if err := db.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE subject_kind = 'card' AND subject_key = ?`, card.ID).Scan(&eventCountAfter); err != nil {
+		t.Fatalf("counting events: %v", err)
+	}
+	if eventCountAfter != eventCountBefore {
+		t.Fatalf("event count = %d, want unchanged %d", eventCountAfter, eventCountBefore)
+	}
+}
+
+func TestUpdateCardClaimIdempotentNoOpForSameActor(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "claim me")
+
+	first, err := db.UpdateCard(ctx, card.ID, UpdateCard{Claim: true, Actor: "alice"})
+	if err != nil {
+		t.Fatalf("UpdateCard() error = %v", err)
+	}
+	second, err := db.UpdateCard(ctx, card.ID, UpdateCard{Claim: true, Actor: "alice"})
+	if err != nil {
+		t.Fatalf("UpdateCard() second call error = %v", err)
+	}
+	if second.Revision != first.Revision {
+		t.Fatalf("Revision = %d, want unchanged %d", second.Revision, first.Revision)
+	}
+}
+
 func TestCloseCardSetsClosedAtAndAppendsReasonNote(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

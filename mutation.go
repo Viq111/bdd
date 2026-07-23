@@ -72,11 +72,20 @@ type CreateCard struct {
 // AddParents/RemoveParents/AddChildren/RemoveChildren carry the same
 // self-edge, cycle, and existence semantics as AddParent/RemoveParent/
 // AddChild/RemoveChild.
+//
+// Claim folds ClaimCard's transition (active-category -> in_progress,
+// setting Assignee and StartedAt) into the same transaction as the rest of
+// the field changes, so a call combining --claim with a field change either
+// applies both or neither. Claim carries the same idempotency as ClaimCard:
+// claiming again as the current Assignee is a no-op. Claim and Status may
+// not both be set (Claim already drives the status transition); combining
+// them returns ErrInvalidArgument.
 type UpdateCard struct {
 	Title *string
 	Type  *CardType
 
 	Status *Status
+	Claim  bool
 
 	Priority     *int32
 	Description  *string
@@ -281,6 +290,39 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 			}
 		}
 
+		// claiming reports whether this call performs an actual
+		// active-category -> in_progress transition. When in.Claim is set
+		// but the card is already claimed by in.Actor, claiming stays false
+		// (ClaimCard's no-op semantics), while any other field/label/edge
+		// changes in in still apply.
+		var claiming bool
+		if in.Claim {
+			var curStatus, curAssignee string
+			if err := tx.QueryRowContext(ctx, `SELECT status, assignee FROM cards WHERE id = ?`, id).Scan(&curStatus, &curAssignee); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("bdd: card %s: %w", id, ErrNotFound)
+				}
+				return err
+			}
+			category, err := statusCategory(ctx, tx, Status(curStatus))
+			if err != nil {
+				return err
+			}
+			switch {
+			case category == StatusCategoryWIP:
+				if curAssignee != in.Actor {
+					if curAssignee != "" {
+						return fmt.Errorf("bdd: claim card %s: already claimed by %s: %w", id, curAssignee, ErrClaimed)
+					}
+					return fmt.Errorf("bdd: claim card %s: cannot claim a %s-category card: %w", id, category, ErrInvalidTransition)
+				}
+			case category != StatusCategoryActive:
+				return fmt.Errorf("bdd: claim card %s: cannot claim a %s-category card: %w", id, category, ErrInvalidTransition)
+			default:
+				claiming = true
+			}
+		}
+
 		sets := []string{"updated_at = ?", "revision = revision + 1"}
 		args := []any{nowStr}
 		changed := map[string]any{}
@@ -338,6 +380,28 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 			sets = append(sets, "worktree = ?")
 			args = append(args, *in.Worktree)
 			changed["worktree"] = *in.Worktree
+		}
+
+		if claiming {
+			sets = append(sets, "status = ?", "assignee = ?", "started_at = ?")
+			args = append(args, string(StatusInProgress), in.Actor, nowStr)
+			changed["status"] = string(StatusInProgress)
+			changed["assignee"] = in.Actor
+			changed["claim"] = true
+		}
+
+		hasLabelOrEdgeChanges := len(addLabels) > 0 || len(removeLabels) > 0 ||
+			len(addParents) > 0 || len(removeParents) > 0 || len(addChildren) > 0 || len(removeChildren) > 0
+		if in.Claim && !claiming && len(sets) == 2 && !hasLabelOrEdgeChanges {
+			// Already claimed by in.Actor and nothing else to change: mirror
+			// ClaimCard's idempotent no-op rather than bumping revision for
+			// a write that changes nothing observable.
+			got, err := loadCard(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			card = got
+			return tx.Commit()
 		}
 
 		args = append(args, id)
@@ -472,6 +536,12 @@ func validateUpdateCard(in UpdateCard) error {
 	}
 	if in.ClearWorktree && in.Worktree != nil {
 		return fmt.Errorf("bdd: update card: cannot set Worktree and ClearWorktree together: %w", ErrInvalidArgument)
+	}
+	if in.Claim && in.Status != nil {
+		return fmt.Errorf("bdd: update card: cannot combine claim with an explicit status change: %w", ErrInvalidArgument)
+	}
+	if in.Claim && in.Actor == "" {
+		return fmt.Errorf("bdd: update card: actor is required to claim: %w", ErrInvalidArgument)
 	}
 	if !validateLabels(in.AddLabels) || !validateLabels(in.RemoveLabels) {
 		return fmt.Errorf("bdd: update card: labels must be non-empty, valid UTF-8, and at most %d bytes: %w", MaxLabelBytes, ErrInvalidArgument)
