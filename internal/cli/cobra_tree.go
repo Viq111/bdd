@@ -275,6 +275,7 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 				f.StringArray("status-category", nil, "only cards whose status has this category (repeatable)")
 				f.StringArray("type", nil, "only cards of this type (repeatable)")
 				f.StringArray("label", nil, "only cards with this label (repeatable)")
+				f.Bool("all", false, "include done-category cards")
 				f.String("parent", "", "only cards blocked by this parent id")
 				f.String("child", "", "only cards blocking this child id")
 				f.String("description-like", "", "only cards whose description contains this text")

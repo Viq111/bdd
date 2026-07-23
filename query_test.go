@@ -220,6 +220,107 @@ func TestListCardsSortAndReverse(t *testing.T) {
 	}
 }
 
+func TestListCardsUnknownStatusReturnsInvalidArgument(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	_, err := db.ListCards(ctx, ListOptions{Statuses: []Status{"opne"}})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("ListCards(Statuses=[opne]) error = %v, want ErrInvalidArgument", err)
+	}
+	if !strings.Contains(err.Error(), `"opne"`) || !strings.Contains(err.Error(), "open") {
+		t.Fatalf("ListCards(Statuses=[opne]) error = %q, want it to name the bad value and valid choices", err)
+	}
+}
+
+func TestListCardsUnknownStatusCategoryReturnsInvalidArgument(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	_, err := db.ListCards(ctx, ListOptions{StatusCategories: []StatusCategory{"actve"}})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("ListCards(StatusCategories=[actve]) error = %v, want ErrInvalidArgument", err)
+	}
+	if !strings.Contains(err.Error(), `"actve"`) || !strings.Contains(err.Error(), "active") {
+		t.Fatalf("ListCards(StatusCategories=[actve]) error = %q, want it to name the bad value and valid choices", err)
+	}
+}
+
+func TestListCardsUnknownTypeReturnsInvalidArgument(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	_, err := db.ListCards(ctx, ListOptions{Types: []CardType{"tesk"}})
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("ListCards(Types=[tesk]) error = %v, want ErrInvalidArgument", err)
+	}
+	if !strings.Contains(err.Error(), `"tesk"`) || !strings.Contains(err.Error(), "task") {
+		t.Fatalf("ListCards(Types=[tesk]) error = %q, want it to name the bad value and valid choices", err)
+	}
+}
+
+func TestListCardsAcceptsCustomStatusAndType(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	if err := db.ConfigSet(ctx, ConfigKeyStatusCustom, "qa_testing:wip", "alice"); err != nil {
+		t.Fatalf("ConfigSet(status.custom) error = %v", err)
+	}
+	if err := db.ConfigSet(ctx, ConfigKeyTypesCustom, "spike", "alice"); err != nil {
+		t.Fatalf("ConfigSet(types.custom) error = %v", err)
+	}
+
+	if _, err := db.ListCards(ctx, ListOptions{Statuses: []Status{"qa_testing"}}); err != nil {
+		t.Fatalf("ListCards(Statuses=[qa_testing]) error = %v, want nil", err)
+	}
+	if _, err := db.ListCards(ctx, ListOptions{Types: []CardType{"spike"}}); err != nil {
+		t.Fatalf("ListCards(Types=[spike]) error = %v, want nil", err)
+	}
+}
+
+func TestListCardsValidFilterMatchingNothingReturnsEmptyNotError(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	mustCreateChore(t, db, "a chore")
+
+	got, err := db.ListCards(ctx, ListOptions{Types: []CardType{CardTypeTask}})
+	if err != nil {
+		t.Fatalf("ListCards(Types=[task]) error = %v, want nil", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ListCards(Types=[task]) = %v, want empty", cardIDs(got))
+	}
+}
+
+func TestListCardsAllIncludesDoneCards(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	open := mustCreateChore(t, db, "stays open")
+	closedCard := mustCreateChore(t, db, "gets closed")
+	closed := StatusClosed
+	if _, err := db.UpdateCard(ctx, closedCard.ID, UpdateCard{Status: &closed, Actor: "alice"}); err != nil {
+		t.Fatalf("UpdateCard(status=closed) error = %v", err)
+	}
+
+	got, err := db.ListCards(ctx, ListOptions{All: true})
+	if err != nil {
+		t.Fatalf("ListCards(All=true) error = %v", err)
+	}
+	if !containsID(got, open.ID) || !containsID(got, closedCard.ID) {
+		t.Fatalf("ListCards(All=true) = %v, want to contain both %s and %s", cardIDs(got), open.ID, closedCard.ID)
+	}
+
+	withoutAll, err := db.ListCards(ctx, ListOptions{})
+	if err != nil {
+		t.Fatalf("ListCards() error = %v", err)
+	}
+	if containsID(withoutAll, closedCard.ID) {
+		t.Fatalf("ListCards() = %v, want to exclude closed card %s", cardIDs(withoutAll), closedCard.ID)
+	}
+}
+
 func TestListCardsUnknownSortFieldReturnsInvalidArgument(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
