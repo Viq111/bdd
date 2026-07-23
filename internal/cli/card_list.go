@@ -19,12 +19,13 @@ func parseLimit(raw string) (int, error) {
 }
 
 // runCardList implements `bdd list [--status <s>]... [--status-category
-// <c>]... [--type <t>]... [--label <l>]... [--parent <id>] [--child <id>]
-// [--description-like <text>] [--sort <field>] [--reverse] [--limit <n>]`.
+// <c>]... [--type <t>]... [--label <l>]... [--all] [--parent <id>]
+// [--child <id>] [--description-like <text>] [--sort <field>] [--reverse]
+// [--limit <n>]`.
 func runCardList(g GlobalFlags, args []string, s *Streams) int {
 	var statuses, categories, types, labels []string
 	var parent, child, descLike, sortField string
-	var reverse bool
+	var reverse, all bool
 	var limitRaw string
 	var haveLimit bool
 
@@ -110,6 +111,10 @@ func runCardList(g GlobalFlags, args []string, s *Streams) int {
 			reverse = true
 			i++
 			continue
+		case "--all":
+			all = true
+			i++
+			continue
 		case "--limit":
 			val, consumed, err := flagValue(name, inline, hasInline, args, i)
 			if err != nil {
@@ -139,6 +144,7 @@ func runCardList(g GlobalFlags, args []string, s *Streams) int {
 		StatusCategories: toStatusCategories(categories),
 		Types:            toCardTypes(types),
 		Labels:           labels,
+		All:              all,
 		Parent:           parent,
 		Child:            child,
 		DescriptionLike:  descLike,

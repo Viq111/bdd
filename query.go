@@ -14,6 +14,11 @@ type ListOptions struct {
 	Types            []CardType
 	Labels           []string
 
+	// All includes cards of every status, including done-category ones,
+	// when Statuses and StatusCategories are both empty. Ignored otherwise,
+	// matching SearchOptions.All.
+	All bool
+
 	Parent string // card ID: only children of this card
 	Child  string // card ID: only parents of this card
 
@@ -92,24 +97,96 @@ func listOrderBy(sortField string, reverse bool) (string, error) {
 	return col + " " + dir + ", id " + dir, nil
 }
 
-func validateListOptions(opts ListOptions) error {
+func validateListOptions(ctx context.Context, q execer, opts ListOptions) error {
 	if !validateLabels(opts.Labels) {
 		return fmt.Errorf("bdd: list cards: labels must be non-empty, valid UTF-8, and at most %d bytes: %w", MaxLabelBytes, ErrInvalidArgument)
 	}
 	if opts.Limit < 0 {
 		return fmt.Errorf("bdd: list cards: limit must be >= 0: %w", ErrInvalidArgument)
 	}
+	if err := validateStatusCategories(opts.StatusCategories); err != nil {
+		return err
+	}
+	if len(opts.Statuses) > 0 {
+		valid, err := definitionNames(ctx, q, "status_definitions")
+		if err != nil {
+			return fmt.Errorf("bdd: list cards: %w", err)
+		}
+		for _, st := range opts.Statuses {
+			if !contains(valid, string(st)) {
+				return fmt.Errorf("bdd: list cards: unknown status %q (valid: %s): %w", st, strings.Join(valid, ", "), ErrInvalidArgument)
+			}
+		}
+	}
+	if len(opts.Types) > 0 {
+		valid, err := definitionNames(ctx, q, "type_definitions")
+		if err != nil {
+			return fmt.Errorf("bdd: list cards: %w", err)
+		}
+		for _, t := range opts.Types {
+			if !contains(valid, string(t)) {
+				return fmt.Errorf("bdd: list cards: unknown type %q (valid: %s): %w", t, strings.Join(valid, ", "), ErrInvalidArgument)
+			}
+		}
+	}
 	return nil
+}
+
+// validStatusCategoryNames lists every StatusCategory value, in declaration
+// order, for use in "unknown status category" error messages.
+var validStatusCategoryNames = []string{
+	string(StatusCategoryActive), string(StatusCategoryWIP), string(StatusCategoryDone), string(StatusCategoryFrozen),
+}
+
+func validateStatusCategories(categories []StatusCategory) error {
+	for _, c := range categories {
+		if !validStatusCategories[c] {
+			return fmt.Errorf("bdd: list cards: unknown status category %q (valid: %s): %w", c, strings.Join(validStatusCategoryNames, ", "), ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+// definitionNames returns every name column value from a *_definitions
+// table (status_definitions or type_definitions), ordered by name ascending,
+// for validating list filter vocabulary against the workspace's built-in and
+// custom definitions.
+func definitionNames(ctx context.Context, q execer, table string) ([]string, error) {
+	rows, err := q.QueryContext(ctx, "SELECT name FROM "+table+" ORDER BY name ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// contains reports whether items contains s.
+func contains(items []string, s string) bool {
+	for _, it := range items {
+		if it == s {
+			return true
+		}
+	}
+	return false
 }
 
 // ListCards returns cards matching opts. It returns the core Card fields
 // plus labels, without expanding notes or edges; use GetCard for the
 // full-fat read of a single card.
 func (db *DB) ListCards(ctx context.Context, opts ListOptions) ([]Card, error) {
-	if err := validateListOptions(opts); err != nil {
+	if err := db.ready(); err != nil {
 		return nil, err
 	}
-	if err := db.ready(); err != nil {
+	if err := validateListOptions(ctx, db.sql, opts); err != nil {
 		return nil, err
 	}
 
@@ -127,9 +204,9 @@ func (db *DB) ListCards(ctx context.Context, opts ListOptions) ([]Card, error) {
 	case len(opts.StatusCategories) > 0:
 		conds = append(conds, "status IN (SELECT name FROM status_definitions WHERE category IN ("+placeholders(len(opts.StatusCategories))+"))")
 		args = append(args, toAnySlice(opts.StatusCategories)...)
-	default:
-		// Empty status selection defaults to every non-done-category card
-		// (plan section 17).
+	case !opts.All:
+		// Empty status selection without All defaults to every
+		// non-done-category card (plan section 17).
 		conds = append(conds, "status IN (SELECT name FROM status_definitions WHERE category <> '"+string(StatusCategoryDone)+"')")
 	}
 

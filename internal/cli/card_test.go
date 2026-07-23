@@ -847,3 +847,69 @@ func TestCardOptionalTrailingFieldsRejectRemovedDBFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestListUnknownStatusExitsUsageWithChoices(t *testing.T) {
+	dir := initTestWorkspace(t)
+	createCard(t, dir, "--type", "chore", "a chore")
+
+	_, stderr := runCLI(t, dir, ExitUsage, "list", "--status", "opne")
+	if !strings.Contains(stderr, `"opne"`) || !strings.Contains(stderr, "open") {
+		t.Fatalf("stderr = %q, want the bad value and valid choices", stderr)
+	}
+}
+
+func TestListUnknownStatusCategoryExitsUsage(t *testing.T) {
+	dir := initTestWorkspace(t)
+	_, stderr := runCLI(t, dir, ExitUsage, "list", "--status-category", "actve")
+	if !strings.Contains(stderr, `"actve"`) {
+		t.Fatalf("stderr = %q, want the bad value", stderr)
+	}
+}
+
+func TestListUnknownTypeExitsUsage(t *testing.T) {
+	dir := initTestWorkspace(t)
+	_, stderr := runCLI(t, dir, ExitUsage, "list", "--type", "tesk")
+	if !strings.Contains(stderr, `"tesk"`) {
+		t.Fatalf("stderr = %q, want the bad value", stderr)
+	}
+}
+
+func TestListAllIncludesDoneCards(t *testing.T) {
+	dir := initTestWorkspace(t)
+	openID := createCard(t, dir, "--type", "chore", "stays open")
+	closedID := createCard(t, dir, "--type", "chore", "gets closed")
+	runCLI(t, dir, ExitSuccess, "close", closedID)
+
+	out, _ := runCLI(t, dir, ExitSuccess, "--json", "list", "--all")
+	var cards []CardSummaryResult
+	if err := json.Unmarshal([]byte(out), &cards); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, c := range cards {
+		ids = append(ids, c.ID)
+	}
+	if !containsStr(ids, openID) || !containsStr(ids, closedID) {
+		t.Fatalf("list --all = %v, want to contain both %s and %s", ids, openID, closedID)
+	}
+
+	withoutAll, _ := runCLI(t, dir, ExitSuccess, "--json", "list")
+	var withoutAllCards []CardSummaryResult
+	if err := json.Unmarshal([]byte(withoutAll), &withoutAllCards); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range withoutAllCards {
+		if c.ID == closedID {
+			t.Fatalf("list (no --all) = %+v, want to exclude closed card %s", withoutAllCards, closedID)
+		}
+	}
+}
+
+func containsStr(items []string, s string) bool {
+	for _, it := range items {
+		if it == s {
+			return true
+		}
+	}
+	return false
+}

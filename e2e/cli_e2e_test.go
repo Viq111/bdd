@@ -111,7 +111,7 @@ func newWorkspace(t *testing.T) string {
 
 func cardCount(t *testing.T, db string) int {
 	t.Helper()
-	r := run(t, db, "list", "--status", "all", "--json")
+	r := run(t, db, "list", "--all", "--json")
 	if r.code != 0 {
 		t.Fatalf("list failed: %s", r.stderr)
 	}
