@@ -91,7 +91,7 @@ func applyPragmas(ctx context.Context, db *sql.DB, skipJournalMode bool) error {
 	pragmas := []string{
 		"PRAGMA foreign_keys = ON",
 		"PRAGMA synchronous = NORMAL",
-		"PRAGMA busy_timeout = 5000",
+		fmt.Sprintf("PRAGMA busy_timeout = %d", CurrentRetryConfig().BusyTimeoutMS),
 	}
 	if !skipJournalMode {
 		pragmas = append(pragmas, "PRAGMA journal_mode = WAL")
@@ -104,30 +104,66 @@ func applyPragmas(ctx context.Context, db *sql.DB, skipJournalMode bool) error {
 	return nil
 }
 
+// RetryConfig controls SQLite busy-retry timing: how many attempts Retry
+// makes, the backoff bounds between attempts, and the busy_timeout PRAGMA
+// applied to opened connections. Production code always runs under
+// DefaultRetryConfig(); tests may temporarily replace it with
+// SetRetryConfigForTest to exercise lock/retry behavior on a millisecond
+// budget instead of waiting through production timeouts.
+type RetryConfig struct {
+	MaxAttempts   int
+	BaseDelay     time.Duration
+	MaxDelay      time.Duration
+	BusyTimeoutMS int
+}
+
+// DefaultRetryConfig returns today's production retry/lock timing.
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxAttempts:   5,
+		BaseDelay:     10 * time.Millisecond,
+		MaxDelay:      200 * time.Millisecond,
+		BusyTimeoutMS: 5000,
+	}
+}
+
+var activeRetryConfig = DefaultRetryConfig()
+
+// CurrentRetryConfig returns the retry/lock timing currently in effect.
+func CurrentRetryConfig() RetryConfig {
+	return activeRetryConfig
+}
+
+// SetRetryConfigForTest overrides the package-wide retry/lock timing and
+// returns a func that restores the previous config; callers must defer the
+// restore. The override is a package global, so tests using it must not run
+// with t.Parallel against other tests that touch SQLite timing.
+func SetRetryConfigForTest(cfg RetryConfig) func() {
+	prev := activeRetryConfig
+	activeRetryConfig = cfg
+	return func() { activeRetryConfig = prev }
+}
+
 // Retry runs fn, retrying with bounded exponential backoff and jitter while
 // fn returns a SQLITE_BUSY or SQLITE_LOCKED error. It gives up and returns
 // the last error after a fixed number of attempts, or immediately if ctx is
 // done.
 func Retry(ctx context.Context, fn func() error) error {
-	const (
-		maxAttempts = 5
-		baseDelay   = 10 * time.Millisecond
-		maxDelay    = 200 * time.Millisecond
-	)
+	cfg := CurrentRetryConfig()
 
 	var err error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := 0; attempt < cfg.MaxAttempts; attempt++ {
 		err = fn()
 		if err == nil || !IsBusy(err) {
 			return err
 		}
-		if attempt == maxAttempts-1 {
+		if attempt == cfg.MaxAttempts-1 {
 			break
 		}
 
-		delay := baseDelay * time.Duration(1<<uint(attempt))
-		if delay > maxDelay {
-			delay = maxDelay
+		delay := cfg.BaseDelay * time.Duration(1<<uint(attempt))
+		if delay > cfg.MaxDelay {
+			delay = cfg.MaxDelay
 		}
 		delay = delay/2 + time.Duration(rand.Int63n(int64(delay/2+1)))
 

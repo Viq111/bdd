@@ -300,7 +300,8 @@ func acquireExclusive(ctx context.Context, path string) (*sql.DB, error) {
 			c.Close()
 			return err
 		}
-		if _, err := c.ExecContext(ctx, "PRAGMA busy_timeout = 5000"); err != nil {
+		busyTimeout := fmt.Sprintf("PRAGMA busy_timeout = %d", sqlite.CurrentRetryConfig().BusyTimeoutMS)
+		if _, err := c.ExecContext(ctx, busyTimeout); err != nil {
 			c.Close()
 			return err
 		}

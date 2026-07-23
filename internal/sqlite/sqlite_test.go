@@ -8,7 +8,45 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+// TestCurrentRetryConfigDefaultsToProductionValues guards against
+// SetRetryConfigForTest overrides leaking across tests: absent an active
+// override, CurrentRetryConfig must report today's production budget.
+func TestCurrentRetryConfigDefaultsToProductionValues(t *testing.T) {
+	want := RetryConfig{
+		MaxAttempts:   5,
+		BaseDelay:     10 * time.Millisecond,
+		MaxDelay:      200 * time.Millisecond,
+		BusyTimeoutMS: 5000,
+	}
+	if got := DefaultRetryConfig(); got != want {
+		t.Fatalf("DefaultRetryConfig() = %+v, want %+v", got, want)
+	}
+	if got := CurrentRetryConfig(); got != want {
+		t.Fatalf("CurrentRetryConfig() = %+v, want %+v (production default)", got, want)
+	}
+}
+
+func TestSetRetryConfigForTestRestoresPreviousConfigOnRestore(t *testing.T) {
+	before := CurrentRetryConfig()
+
+	restore := SetRetryConfigForTest(RetryConfig{
+		MaxAttempts:   1,
+		BaseDelay:     time.Millisecond,
+		MaxDelay:      time.Millisecond,
+		BusyTimeoutMS: 0,
+	})
+	if got := CurrentRetryConfig(); got.MaxAttempts != 1 || got.BusyTimeoutMS != 0 {
+		t.Fatalf("CurrentRetryConfig() = %+v, want overridden config", got)
+	}
+
+	restore()
+	if got := CurrentRetryConfig(); got != before {
+		t.Fatalf("CurrentRetryConfig() after restore = %+v, want %+v", got, before)
+	}
+}
 
 func TestOpenAppliesPragmas(t *testing.T) {
 	ctx := context.Background()

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/viq111/bdd/internal/schema"
 	"github.com/viq111/bdd/internal/sqlite"
@@ -432,7 +433,60 @@ func TestRestoreFailsForNewerSchemaVersion(t *testing.T) {
 	}
 }
 
+// TestRestoreFailsWhenTargetIsOpenElsewhere exercises the locked-restore
+// path under production retry/busy_timeout budgets (5 attempts against a
+// 5000ms busy_timeout), which takes on the order of 25s. It is skipped
+// under -short; TestRestoreFailsWhenTargetIsOpenElsewhereFast covers the
+// same behavior on an injected millisecond budget for the quick lane.
 func TestRestoreFailsWhenTargetIsOpenElsewhere(t *testing.T) {
+	if testing.Short() {
+		t.Skip("exercises production retry/busy_timeout budgets (~25s); skipped in -short mode")
+	}
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	db, err := Init(ctx, InitOptions{Workspace: dir, Prefix: "bdd"})
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	snapPath := filepath.Join(dir, "snap.sqlite")
+	if _, err := db.Snapshot(ctx, SnapshotOptions{Output: snapPath}); err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	db.Close()
+
+	holder, err := sql.Open(sqlite.DriverName, filepath.Join(dir, ".bdd", "bdd.sqlite"))
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	defer holder.Close()
+	if _, err := holder.ExecContext(ctx, "PRAGMA locking_mode = EXCLUSIVE"); err != nil {
+		t.Fatalf("PRAGMA locking_mode: %v", err)
+	}
+	if _, err := holder.ExecContext(ctx, "SELECT 1 FROM sqlite_master LIMIT 1"); err != nil {
+		t.Fatalf("acquiring lock: %v", err)
+	}
+
+	_, err = Restore(ctx, RestoreOptions{Path: filepath.Join(dir, ".bdd", "bdd.sqlite"), Source: snapPath})
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("Restore() error = %v, want ErrBusy", err)
+	}
+}
+
+// TestRestoreFailsWhenTargetIsOpenElsewhereFast is the quick-lane
+// counterpart to TestRestoreFailsWhenTargetIsOpenElsewhere: it exercises the
+// same locked-restore behavior but overrides the package-wide SQLite retry
+// config to a millisecond budget first, so the ErrBusy path is exercised in
+// well under a second instead of ~25s.
+func TestRestoreFailsWhenTargetIsOpenElsewhereFast(t *testing.T) {
+	defer sqlite.SetRetryConfigForTest(sqlite.RetryConfig{
+		MaxAttempts:   2,
+		BaseDelay:     time.Millisecond,
+		MaxDelay:      5 * time.Millisecond,
+		BusyTimeoutMS: 20,
+	})()
+
 	dir := t.TempDir()
 	ctx := context.Background()
 
