@@ -479,6 +479,38 @@ func TestUpdateStatusAndFieldsTogether(t *testing.T) {
 	}
 }
 
+func TestUpdateClaimWithUnknownTypeDoesNotCommitClaim(t *testing.T) {
+	dir := initTestWorkspace(t)
+	id := createCard(t, dir, "--type", "chore", "claim-then-fail-db")
+
+	// This is the exact reproduction from the card: an unknown --type value
+	// passes CLI flag parsing but fails the database write (foreign key
+	// constraint), which must not leave the --claim mutation committed.
+	runCLI(t, dir, ExitUsage, "update", id, "--claim", "--type", "does_not_exist")
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "show", id)
+	var show ShowResult
+	if err := json.Unmarshal([]byte(stdout), &show); err != nil {
+		t.Fatal(err)
+	}
+	if show.Status != "open" || show.Assignee != "" {
+		t.Fatalf("show = %+v, want unclaimed (update should not have partially applied)", show)
+	}
+}
+
+func TestUpdateClaimWithExplicitStatusIsRejected(t *testing.T) {
+	dir := initTestWorkspace(t)
+	id := createCard(t, dir, "--type", "chore", "claim-plus-status")
+
+	stdout, stderr := runCLI(t, dir, ExitUsage, "update", id, "--claim", "--status", "in_progress")
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "claim") || !strings.Contains(stderr, "status") {
+		t.Fatalf("stderr = %q, want mention of the claim/status conflict", stderr)
+	}
+}
+
 func TestUpdateClaimWithInvalidFlagDoesNotCommitClaim(t *testing.T) {
 	dir := initTestWorkspace(t)
 	id := createCard(t, dir, "--type", "chore", "claim-then-fail")

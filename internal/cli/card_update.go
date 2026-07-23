@@ -208,57 +208,56 @@ func runCardUpdate(g GlobalFlags, args []string, s *Streams) int {
 
 	// Build (and fully validate) the UpdateCard input before touching the
 	// database, so a malformed flag (e.g. --priority) is rejected before
-	// --claim's mutation is committed: a single `update` invocation must not
-	// leave a partial, uncommitted-looking side effect behind.
-	var in bdd.UpdateCard
-	if anyFieldChange {
-		in = bdd.UpdateCard{
-			AddLabels:      addLabels,
-			RemoveLabels:   removeLabels,
-			AddParents:     addParents,
-			RemoveParents:  removeParents,
-			AddChildren:    addChildren,
-			RemoveChildren: removeChildren,
-			ClearWorktree:  clearWorktree,
-			Actor:          actor,
+	// anything is committed: a single `update` invocation, including one
+	// that combines --claim with field changes, must not leave a partial,
+	// uncommitted-looking side effect behind.
+	in := bdd.UpdateCard{
+		Claim:          claim,
+		AddLabels:      addLabels,
+		RemoveLabels:   removeLabels,
+		AddParents:     addParents,
+		RemoveParents:  removeParents,
+		AddChildren:    addChildren,
+		RemoveChildren: removeChildren,
+		ClearWorktree:  clearWorktree,
+		Actor:          actor,
+	}
+	if haveTitle {
+		in.Title = &title
+	}
+	if haveType {
+		t := bdd.CardType(typ)
+		in.Type = &t
+	}
+	if haveStatus {
+		st := bdd.Status(status)
+		in.Status = &st
+	}
+	if havePriority {
+		p, err := parsePriority(priorityRaw)
+		if err != nil {
+			s.Errorf("bdd: update: %v\n", err)
+			return ExitUsage
 		}
-		if haveTitle {
-			in.Title = &title
-		}
-		if haveType {
-			t := bdd.CardType(typ)
-			in.Type = &t
-		}
-		if haveStatus {
-			st := bdd.Status(status)
-			in.Status = &st
-		}
-		if havePriority {
-			p, err := parsePriority(priorityRaw)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			in.Priority = &p
-		}
-		if haveDescription {
-			in.Description = &description
-		}
-		if haveReproduce {
-			in.Reproduction = &reproduce
-		}
-		if haveDesign {
-			in.Design = &design
-		}
-		if haveAcceptance {
-			in.Acceptance = &acceptance
-		}
-		if haveExternalRef {
-			in.ExternalRef = &externalRef
-		}
-		if haveWorktree {
-			in.Worktree = &worktree
-		}
+		in.Priority = &p
+	}
+	if haveDescription {
+		in.Description = &description
+	}
+	if haveReproduce {
+		in.Reproduction = &reproduce
+	}
+	if haveDesign {
+		in.Design = &design
+	}
+	if haveAcceptance {
+		in.Acceptance = &acceptance
+	}
+	if haveExternalRef {
+		in.ExternalRef = &externalRef
+	}
+	if haveWorktree {
+		in.Worktree = &worktree
 	}
 
 	ctx := context.Background()
@@ -268,23 +267,10 @@ func runCardUpdate(g GlobalFlags, args []string, s *Streams) int {
 	}
 	defer db.Close()
 
-	var card *bdd.Card
-	if claim {
-		claimed, err := db.ClaimCard(ctx, id, actor)
-		if err != nil {
-			s.Errorf("bdd: update: %v\n", err)
-			return ExitCode(err)
-		}
-		card = claimed
-	}
-
-	if anyFieldChange {
-		updated, err := db.UpdateCard(ctx, id, in)
-		if err != nil {
-			s.Errorf("bdd: update: %v\n", err)
-			return ExitCode(err)
-		}
-		card = updated
+	card, err := db.UpdateCard(ctx, id, in)
+	if err != nil {
+		s.Errorf("bdd: update: %v\n", err)
+		return ExitCode(err)
 	}
 
 	return emitCard(s, "update", toCardResult(card))
