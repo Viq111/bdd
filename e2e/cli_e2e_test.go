@@ -522,6 +522,55 @@ func TestPrimeRequiredMemoryIsInlined(t *testing.T) {
 	}
 }
 
+// --- prime: a rune marked --prime required is inlined via the compiled
+// binary, matching the exact invocation QA reported failing (bd bdd-noea):
+// `rune set role/required --kind role ... --prime required` must exit 0 and
+// the rune must surface under required_runes with its full body. ---
+
+func TestPrimeRequiredRuneExecutablePath(t *testing.T) {
+	db := newWorkspace(t)
+
+	set := run(t, db, "rune", "set", "role/required", "--kind", "role", "--title", "Required rune", "--body", "Read this fully.", "--prime", "required")
+	if set.code != 0 {
+		t.Fatalf("rune set --prime required: code = %d, want 0 (stderr=%s)", set.code, set.stderr)
+	}
+
+	compact := run(t, db, "prime", "--json")
+	if compact.code != 0 {
+		t.Fatalf("prime --json failed: %s", compact.stderr)
+	}
+	var out struct {
+		RequiredRunes []struct {
+			Type string `json:"type"`
+			Key  string `json:"key"`
+			Body string `json:"body"`
+		} `json:"required_runes"`
+	}
+	if err := json.Unmarshal([]byte(compact.stdout), &out); err != nil {
+		t.Fatalf("prime --json unmarshal: %v (%s)", err, compact.stdout)
+	}
+	found := false
+	for _, e := range out.RequiredRunes {
+		if e.Type == "rune" && e.Key == "role/required" {
+			found = true
+			if e.Body != "Read this fully." {
+				t.Fatalf("required rune body = %q, want full body", e.Body)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("required_runes missing role/required rune: %+v", out.RequiredRunes)
+	}
+
+	human := run(t, db, "prime")
+	if human.code != 0 {
+		t.Fatalf("prime failed: %s", human.stderr)
+	}
+	if !strings.Contains(human.stdout, "role/required") || !strings.Contains(human.stdout, "Read this fully.") {
+		t.Fatalf("prime human output missing required rune:\n%s", human.stdout)
+	}
+}
+
 // --- delete requires --force (section 14, 23). ---
 
 func TestDeleteRequiresForce(t *testing.T) {
