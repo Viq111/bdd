@@ -55,8 +55,14 @@ for platform in "${PLATFORMS[@]}"; do
   mkdir -p "$build_dir"
 
   echo "Building ${os}/${arch}..."
+  # -buildvcs=false: Go otherwise stamps each binary with the working
+  # tree's dirty/clean status (any untracked file anywhere in the repo
+  # flips it), which would make two builds of the same commit produce
+  # different bytes -- and different SHA256SUMS -- depending on what else
+  # happens to be sitting in the working tree at build time.
   GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build \
     -trimpath \
+    -buildvcs=false \
     -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -s -w" \
     -o "${build_dir}/${bin_name}" \
     "$MODULE"
