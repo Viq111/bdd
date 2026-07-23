@@ -69,11 +69,12 @@ Snapshot and restore:
 // prime` manifest (PrimeResult) changes in a way a consuming agent must
 // notice: a renamed/removed field, a reordered section, or a changed
 // semantic. Purely additive fields do not require a bump.
-const primeContractVersion = 1
+const primeContractVersion = 2
 
-// primeRequiredBudgetBytes bounds the total size of required-rune bodies
-// `bdd prime` will inline. Exceeding it fails the command outright (see
-// runPrime) rather than silently truncating a mandatory instruction.
+// primeRequiredBudgetBytes bounds the total size of required-context bodies
+// (required runes plus required memories) `bdd prime` will inline.
+// Exceeding it fails the command outright (see runPrime) rather than
+// silently truncating a mandatory instruction.
 const primeRequiredBudgetBytes = 32 * 1024
 
 // primeRules are the compact manifest's non-negotiable invariants: the
@@ -87,7 +88,7 @@ var primeRules = []string{
 	"Exit codes: 0 success, 1 other failure, 2 usage/validation error, 3 not found, 4 conflict.",
 	"`--json` emits one object (or a streamed array); `--silent` trims output to the essential identifier; failures always report on stderr.",
 	"Use `bdd show <id>` for a card's full record — there is no `--compact` view.",
-	"Runes listed as required below are binding standing instructions; read every one before proceeding.",
+	"Runes and memories listed as required below are binding standing instructions; read every one before proceeding.",
 }
 
 // PrimeWorkflowStep is one entry of the compact manifest's workflow
@@ -107,20 +108,21 @@ var primeWorkflow = []PrimeWorkflowStep{
 	{Action: "complete", Argv: []string{"bdd", "close", "<id>"}},
 }
 
-// PrimeRequiredRune is a required-prime rune inlined in full in the compact
-// manifest: the whole point of `prime: required` is that a caller must not
-// need a follow-up command to read it.
-type PrimeRequiredRune struct {
+// PrimeRequiredEntry is a required-prime rune or memory inlined in full in
+// the compact manifest: the whole point of `prime: required` is that a
+// caller must not need a follow-up command to read it.
+type PrimeRequiredEntry struct {
+	Type     string `json:"type"` // "rune" or "memory"
 	Key      string `json:"key"`
-	Kind     string `json:"kind"`
-	Title    string `json:"title"`
+	Kind     string `json:"kind,omitempty"` // rune kind; absent for memories
+	Title    string `json:"title"`          // rune title, or a memory's first line
 	Revision int64  `json:"revision"`
 	Body     string `json:"body"`
 }
 
-// PrimeContextEntry is an optional-prime rune or a memory, summarized
-// rather than inlined: enough to know it exists and decide whether to
-// fetch it, not its full content.
+// PrimeContextEntry is an optional-prime rune or memory, summarized rather
+// than inlined: enough to know it exists and decide whether to fetch it,
+// not its full content.
 type PrimeContextEntry struct {
 	Type     string `json:"type"` // "rune" or "memory"
 	Key      string `json:"key"`
@@ -139,11 +141,15 @@ type PrimeOmittedRunes struct {
 	NextCommand []string `json:"next_command"`
 }
 
-// PrimeOmittedMemories reports how many memories exist versus how many
-// prime actually returned, plus the command to see the rest.
+// PrimeOmittedMemories reports how many memories exist, split by prime
+// designation, versus how many optional ones prime actually returned
+// (required memories are always returned in full), plus the command to
+// see the rest.
 type PrimeOmittedMemories struct {
 	Total       int      `json:"total"`
-	Returned    int      `json:"returned"`
+	Required    int      `json:"required"`
+	Optional    int      `json:"optional"`
+	Returned    int      `json:"returned"` // optional entries actually included, after --memory-limit
 	NextCommand []string `json:"next_command,omitempty"`
 }
 
@@ -166,9 +172,9 @@ type PrimeResult struct {
 	Rules    []string            `json:"rules"`
 	Workflow []PrimeWorkflowStep `json:"workflow"`
 
-	RequiredRunes   []PrimeRequiredRune `json:"required_runes"`
-	OptionalContext []PrimeContextEntry `json:"optional_context"`
-	Omitted         PrimeOmitted        `json:"omitted"`
+	RequiredContext []PrimeRequiredEntry `json:"required_context"`
+	OptionalContext []PrimeContextEntry  `json:"optional_context"`
+	Omitted         PrimeOmitted         `json:"omitted"`
 }
 
 // PrimeFullResult is the JSON result of `bdd prime --full`: the workspace
@@ -353,7 +359,7 @@ func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string
 		Prefix:          prefix,
 		Rules:           primeRules,
 		Workflow:        primeWorkflow,
-		RequiredRunes:   []PrimeRequiredRune{},
+		RequiredContext: []PrimeRequiredEntry{},
 		OptionalContext: []PrimeContextEntry{},
 	}
 	if upgradePending {
@@ -386,25 +392,24 @@ func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string
 		}
 		result.Omitted.Runes.Total = len(summaries)
 		result.Omitted.Runes.NextCommand = []string{"bdd", "rune", "list", "--all"}
-
 		sort.Strings(requiredRuneKeys)
-		required, totalBytes, err := fetchRequiredRunes(ctx, db, requiredRuneKeys)
-		if err != nil {
-			s.Errorf("bdd: prime: %v\n", err)
-			return ExitCode(err)
-		}
-		if totalBytes > primeRequiredBudgetBytes {
-			s.Errorf("bdd: prime: required rune bodies exceed the prime budget (%d > %d bytes); fetch them individually:\n", totalBytes, primeRequiredBudgetBytes)
-			for _, key := range requiredRuneKeys {
-				s.Errorf("  bdd rune get %s\n", key)
-			}
-			return ExitOther
-		}
-		result.RequiredRunes = required
 	}
 
+	var requiredMemoryKeys []string
 	result.Omitted.Memories.Total = len(memories)
-	shown := memories
+	var optionalMemories []bdd.Memory
+	for _, m := range memories {
+		if m.Prime == bdd.MemoryPrimeRequired {
+			result.Omitted.Memories.Required++
+			requiredMemoryKeys = append(requiredMemoryKeys, m.Key)
+			continue
+		}
+		result.Omitted.Memories.Optional++
+		optionalMemories = append(optionalMemories, m)
+	}
+	sort.Strings(requiredMemoryKeys)
+
+	shown := optionalMemories
 	if haveLimit && len(shown) > limit {
 		shown = shown[:limit]
 	}
@@ -414,30 +419,61 @@ func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string
 		})
 	}
 	result.Omitted.Memories.Returned = len(shown)
-	if result.Omitted.Memories.Returned < result.Omitted.Memories.Total {
+	if result.Omitted.Memories.Returned < result.Omitted.Memories.Optional {
 		result.Omitted.Memories.NextCommand = []string{"bdd", "memory", "list"}
 	}
+
+	required, totalBytes, err := fetchRequiredContext(ctx, db, requiredRuneKeys, memories, requiredMemoryKeys)
+	if err != nil {
+		s.Errorf("bdd: prime: %v\n", err)
+		return ExitCode(err)
+	}
+	if totalBytes > primeRequiredBudgetBytes {
+		s.Errorf("bdd: prime: required context bodies exceed the prime budget (%d > %d bytes); fetch them individually:\n", totalBytes, primeRequiredBudgetBytes)
+		for _, key := range requiredRuneKeys {
+			s.Errorf("  bdd rune get %s\n", key)
+		}
+		for _, key := range requiredMemoryKeys {
+			s.Errorf("  bdd memory get %s\n", key)
+		}
+		return ExitOther
+	}
+	result.RequiredContext = required
 
 	return emitPrimeCompact(s, result)
 }
 
-// fetchRequiredRunes reads the full record for each required-prime rune
-// key, in key order, and returns their total body size alongside them so
-// the caller can enforce the prime budget before committing to inlining
-// any of them.
-func fetchRequiredRunes(ctx context.Context, db *bdd.DB, keys []string) ([]PrimeRequiredRune, int, error) {
-	out := make([]PrimeRequiredRune, 0, len(keys))
+// fetchRequiredContext reads the full record for each required-prime rune
+// key (in key order) and looks up each required-prime memory key against
+// the already-loaded memories slice, returning their combined total body
+// size alongside them so the caller can enforce the prime budget before
+// committing to inlining any of them.
+func fetchRequiredContext(ctx context.Context, db *bdd.DB, requiredRuneKeys []string, memories []bdd.Memory, requiredMemoryKeys []string) ([]PrimeRequiredEntry, int, error) {
+	out := make([]PrimeRequiredEntry, 0, len(requiredRuneKeys)+len(requiredMemoryKeys))
 	total := 0
-	for _, key := range keys {
+	for _, key := range requiredRuneKeys {
 		r, err := db.GetRune(ctx, key)
 		if err != nil {
 			return nil, 0, err
 		}
 		total += len(r.Body)
-		out = append(out, PrimeRequiredRune{
-			Key: r.Key, Kind: r.Kind, Title: r.Title, Revision: r.Revision, Body: r.Body,
+		out = append(out, PrimeRequiredEntry{
+			Type: "rune", Key: r.Key, Kind: r.Kind, Title: r.Title, Revision: r.Revision, Body: r.Body,
 		})
 	}
+
+	byKey := make(map[string]bdd.Memory, len(memories))
+	for _, m := range memories {
+		byKey[m.Key] = m
+	}
+	for _, key := range requiredMemoryKeys {
+		m := byKey[key]
+		total += len(m.Body)
+		out = append(out, PrimeRequiredEntry{
+			Type: "memory", Key: m.Key, Title: firstLine(m.Body), Revision: m.Revision, Body: m.Body,
+		})
+	}
+
 	return out, total, nil
 }
 
@@ -474,21 +510,17 @@ func emitPrimeCompact(s *Streams, r PrimeResult) int {
 
 	fmt.Fprintln(s.Stdout)
 	fmt.Fprintln(s.Stdout, "Context:")
-	if len(r.RequiredRunes) == 0 && len(r.OptionalContext) == 0 {
+	if len(r.RequiredContext) == 0 && len(r.OptionalContext) == 0 {
 		fmt.Fprintln(s.Stdout, "  (none)")
 	}
-	for _, rr := range r.RequiredRunes {
-		fmt.Fprintf(s.Stdout, "  [required] rune %s (rev %d): %s\n", rr.Key, rr.Revision, rr.Title)
-		for _, line := range strings.Split(rr.Body, "\n") {
+	for _, e := range r.RequiredContext {
+		fmt.Fprintf(s.Stdout, "  [required] %s %s (rev %d): %s\n", e.Type, e.Key, e.Revision, e.Title)
+		for _, line := range strings.Split(e.Body, "\n") {
 			fmt.Fprintf(s.Stdout, "      %s\n", line)
 		}
 	}
 	for _, e := range r.OptionalContext {
-		if e.Type == "rune" {
-			fmt.Fprintf(s.Stdout, "  [optional] rune %s (rev %d): %s\n", e.Key, e.Revision, e.Title)
-		} else {
-			fmt.Fprintf(s.Stdout, "  [optional] memory %s (rev %d): %s\n", e.Key, e.Revision, e.Title)
-		}
+		fmt.Fprintf(s.Stdout, "  [optional] %s %s (rev %d): %s\n", e.Type, e.Key, e.Revision, e.Title)
 	}
 
 	fmt.Fprintln(s.Stdout)
@@ -496,11 +528,13 @@ func emitPrimeCompact(s *Streams, r PrimeResult) int {
 	fmt.Fprintf(s.Stdout, "  runes:    %d enabled (%d required, %d optional, %d never) — %s\n",
 		r.Omitted.Runes.Total, r.Omitted.Runes.Required, r.Omitted.Runes.Optional, r.Omitted.Runes.Never,
 		strings.Join(r.Omitted.Runes.NextCommand, " "))
-	if r.Omitted.Memories.Returned < r.Omitted.Memories.Total {
-		fmt.Fprintf(s.Stdout, "  memories: %d of %d shown — %s\n",
-			r.Omitted.Memories.Returned, r.Omitted.Memories.Total, strings.Join(r.Omitted.Memories.NextCommand, " "))
+	if r.Omitted.Memories.Returned < r.Omitted.Memories.Optional {
+		fmt.Fprintf(s.Stdout, "  memories: %d total (%d required, %d of %d optional shown) — %s\n",
+			r.Omitted.Memories.Total, r.Omitted.Memories.Required, r.Omitted.Memories.Returned, r.Omitted.Memories.Optional,
+			strings.Join(r.Omitted.Memories.NextCommand, " "))
 	} else {
-		fmt.Fprintf(s.Stdout, "  memories: %d of %d shown\n", r.Omitted.Memories.Returned, r.Omitted.Memories.Total)
+		fmt.Fprintf(s.Stdout, "  memories: %d total (%d required, %d of %d optional shown)\n",
+			r.Omitted.Memories.Total, r.Omitted.Memories.Required, r.Omitted.Memories.Returned, r.Omitted.Memories.Optional)
 	}
 
 	return ExitSuccess

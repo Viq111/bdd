@@ -486,6 +486,42 @@ func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 	}
 }
 
+// --- prime: a memory marked --prime required is inlined, not just
+// summarized (bd bdd-lrak). ---
+
+func TestPrimeRequiredMemoryIsInlined(t *testing.T) {
+	db := newWorkspace(t)
+	run(t, db, "memory", "set", "always run the race tests", "--key", "testing-race", "--prime", "required")
+	run(t, db, "memory", "set", "prefer small PRs", "--key", "pr-size")
+
+	compact := run(t, db, "prime", "--json")
+	if compact.code != 0 {
+		t.Fatalf("prime --json failed: %s", compact.stderr)
+	}
+	var out struct {
+		RequiredContext []struct {
+			Type string `json:"type"`
+			Key  string `json:"key"`
+			Body string `json:"body"`
+		} `json:"required_context"`
+	}
+	if err := json.Unmarshal([]byte(compact.stdout), &out); err != nil {
+		t.Fatalf("prime --json unmarshal: %v (%s)", err, compact.stdout)
+	}
+	found := false
+	for _, e := range out.RequiredContext {
+		if e.Type == "memory" && e.Key == "testing-race" {
+			found = true
+			if e.Body != "always run the race tests" {
+				t.Fatalf("required memory body = %q, want full body", e.Body)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("required_context missing testing-race memory: %+v", out.RequiredContext)
+	}
+}
+
 // --- delete requires --force (section 14, 23). ---
 
 func TestDeleteRequiresForce(t *testing.T) {

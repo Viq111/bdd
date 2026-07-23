@@ -20,6 +20,7 @@ import (
 type Memory struct {
 	Key       string
 	Body      string
+	Prime     string // MemoryPrimeRequired or MemoryPrimeOptional; see Memory.Prime
 	CreatedBy string
 	UpdatedBy string
 	CreatedAt time.Time
@@ -27,12 +28,28 @@ type Memory struct {
 	Revision  int64
 }
 
+// Memory prime designations: whether `bdd prime` inlines a memory's full
+// body (MemoryPrimeRequired) or only a key/first-line summary
+// (MemoryPrimeOptional, the default). Unlike runes, memories have no
+// "never" designation — --no-memories already covers that case.
+const (
+	MemoryPrimeRequired = RunePrimeRequired
+	MemoryPrimeOptional = RunePrimeOptional
+)
+
+func validMemoryPrime(v string) bool {
+	return v == MemoryPrimeRequired || v == MemoryPrimeOptional
+}
+
 // Remember is the input to (*DB).Remember. If Key is empty, Remember
 // derives a readable slug plus a short content hash and reports the
-// generated key on the returned Memory.
+// generated key on the returned Memory. Prime, when nil, leaves an
+// existing memory's designation unchanged and defaults a new memory to
+// MemoryPrimeOptional.
 type Remember struct {
 	Key   string
 	Body  string
+	Prime *string
 	Actor string
 }
 
@@ -52,6 +69,9 @@ func (db *DB) Remember(ctx context.Context, in Remember) (*Memory, error) {
 	if err := db.checkMemoryReady(true); err != nil {
 		return nil, err
 	}
+	if in.Prime != nil && !validMemoryPrime(*in.Prime) {
+		return nil, &ValidationError{Fields: []string{"prime"}}
+	}
 
 	key := strings.TrimSpace(in.Key)
 	if key == "" {
@@ -69,13 +89,18 @@ func (db *DB) Remember(ctx context.Context, in Remember) (*Memory, error) {
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 
 		var existingRevision int64
-		err = tx.QueryRowContext(ctx, `SELECT revision FROM memories WHERE key = ?`, key).Scan(&existingRevision)
+		var existingPrime string
+		err = tx.QueryRowContext(ctx, `SELECT revision, prime FROM memories WHERE key = ?`, key).Scan(&existingRevision, &existingPrime)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
+			prime := MemoryPrimeOptional
+			if in.Prime != nil {
+				prime = *in.Prime
+			}
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO memories (key, body, created_by, updated_by, created_at, updated_at, revision)
-				VALUES (?, ?, ?, ?, ?, ?, 1)`,
-				key, in.Body, in.Actor, in.Actor, now, now); err != nil {
+				INSERT INTO memories (key, body, prime, created_by, updated_by, created_at, updated_at, revision)
+				VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+				key, in.Body, prime, in.Actor, in.Actor, now, now); err != nil {
 				return err
 			}
 			if err := insertMemoryEvent(ctx, tx, key, 1, "memory.create", in.Actor, in.Body, now); err != nil {
@@ -84,10 +109,14 @@ func (db *DB) Remember(ctx context.Context, in Remember) (*Memory, error) {
 		case err != nil:
 			return err
 		default:
+			prime := existingPrime
+			if in.Prime != nil {
+				prime = *in.Prime
+			}
 			newRevision := existingRevision + 1
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE memories SET body = ?, updated_by = ?, updated_at = ?, revision = ? WHERE key = ?`,
-				in.Body, in.Actor, now, newRevision, key); err != nil {
+				UPDATE memories SET body = ?, prime = ?, updated_by = ?, updated_at = ?, revision = ? WHERE key = ?`,
+				in.Body, prime, in.Actor, now, newRevision, key); err != nil {
 				return err
 			}
 			if err := insertMemoryEvent(ctx, tx, key, newRevision, "memory.update", in.Actor, in.Body, now); err != nil {
@@ -96,7 +125,7 @@ func (db *DB) Remember(ctx context.Context, in Remember) (*Memory, error) {
 		}
 
 		m, err := scanMemory(tx.QueryRowContext(ctx, `
-			SELECT key, body, created_by, updated_by, created_at, updated_at, revision
+			SELECT key, body, prime, created_by, updated_by, created_at, updated_at, revision
 			FROM memories WHERE key = ?`, key))
 		if err != nil {
 			return err
@@ -119,7 +148,7 @@ func (db *DB) Memories(ctx context.Context, q MemoryQuery) ([]Memory, error) {
 		return nil, err
 	}
 
-	const columns = `key, body, created_by, updated_by, created_at, updated_at, revision`
+	const columns = `key, body, prime, created_by, updated_by, created_at, updated_at, revision`
 
 	query := strings.TrimSpace(q.Query)
 	var rows *sql.Rows
@@ -161,7 +190,7 @@ func (db *DB) Recall(ctx context.Context, key string) (*Memory, error) {
 	}
 
 	row := db.sql.QueryRowContext(ctx, `
-		SELECT key, body, created_by, updated_by, created_at, updated_at, revision
+		SELECT key, body, prime, created_by, updated_by, created_at, updated_at, revision
 		FROM memories WHERE key = ?`, key)
 	m, err := scanMemory(row)
 	if err != nil {
@@ -264,7 +293,7 @@ func scanMemory(s memoryScanner) (*Memory, error) {
 		createdBy, updatedBy sql.NullString
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&m.Key, &m.Body, &createdBy, &updatedBy, &createdAt, &updatedAt, &m.Revision); err != nil {
+	if err := s.Scan(&m.Key, &m.Body, &m.Prime, &createdBy, &updatedBy, &createdAt, &updatedAt, &m.Revision); err != nil {
 		return nil, err
 	}
 	m.CreatedBy = createdBy.String

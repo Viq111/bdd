@@ -266,6 +266,13 @@ key and first line in its compact context manifest at session start;
 `--memory-limit <n>` and `--no-memories` control how much context that
 costs.
 
+`--prime required|optional` (default `optional`) controls how `bdd prime`
+surfaces a memory, mirroring the rune `--prime` setting: `required` inlines
+the full body every session (subject to the same no-silent-truncation
+budget as required runes), and `optional` includes only a key/first-line
+summary. Memories have no `never` designation — `bdd memory remove` or
+`--no-memories` cover that case.
+
 ## Runes
 
 A rune is a durable, human-keyed record of standing instruction: a role,

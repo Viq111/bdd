@@ -177,6 +177,7 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
   echo "prefer small PRs" | bdd memory set --key style --stdin`,
 				runMemorySet, global, streams, func(f *pflag.FlagSet) {
 					f.String("key", "", "memory key (generated if omitted)")
+					f.String("prime", "", "how `bdd prime` surfaces this memory: required or optional (default)")
 					f.Bool("stdin", false, "read the body from stdin instead of a positional argument")
 				}),
 			newLeaf("get <key>", "Show a memory's full record",

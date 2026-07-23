@@ -31,6 +31,46 @@ func TestMemorySetWithKeyAndGet(t *testing.T) {
 	}
 }
 
+func TestMemorySetPrimeDefaultsToOptionalAndAcceptsRequired(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"memory", "set", "--workspace", dir, "--key", "default-prime", "body", "--json"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+	}
+	var got MemoryResult
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("json.Unmarshal error = %v", err)
+	}
+	if got.Prime != "optional" {
+		t.Fatalf("Prime = %q, want %q by default", got.Prime, "optional")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"memory", "set", "--workspace", dir, "--key", "required-prime", "--prime", "required", "body", "--json"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("json.Unmarshal error = %v", err)
+	}
+	if got.Prime != "required" {
+		t.Fatalf("Prime = %q, want %q", got.Prime, "required")
+	}
+}
+
+func TestMemorySetPrimeRejectsInvalidValue(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"memory", "set", "--workspace", dir, "--key", "bad-prime", "--prime", "sometimes", "body"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(memory set --prime sometimes) exit = %d, want %d (stderr=%s)", code, ExitUsage, stderr.String())
+	}
+}
+
 func TestMemorySetWithoutKeyDerivesOne(t *testing.T) {
 	dir := initTestWorkspace(t)
 

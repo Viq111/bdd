@@ -45,6 +45,7 @@ func runMemory(g GlobalFlags, args []string, s *Streams) int {
 type MemoryResult struct {
 	Key       string `json:"key"`
 	Body      string `json:"body"`
+	Prime     string `json:"prime"`
 	CreatedBy string `json:"created_by"`
 	UpdatedBy string `json:"updated_by"`
 	CreatedAt string `json:"created_at"`
@@ -56,6 +57,7 @@ func toMemoryResult(m *bdd.Memory) MemoryResult {
 	return MemoryResult{
 		Key:       m.Key,
 		Body:      m.Body,
+		Prime:     m.Prime,
 		CreatedBy: m.CreatedBy,
 		UpdatedBy: m.UpdatedBy,
 		CreatedAt: m.CreatedAt.Format(time.RFC3339Nano),
@@ -66,8 +68,8 @@ func toMemoryResult(m *bdd.Memory) MemoryResult {
 
 // runMemorySet implements `bdd memory set [body] [--key <key>] [--stdin]`.
 func runMemorySet(g GlobalFlags, args []string, s *Streams) int {
-	var key, body string
-	var haveBody, useStdin bool
+	var key, body, prime string
+	var haveBody, useStdin, havePrime bool
 
 	i := 0
 	for i < len(args) {
@@ -82,6 +84,15 @@ func runMemorySet(g GlobalFlags, args []string, s *Streams) int {
 				return ExitUsage
 			}
 			key = val
+			i += consumed
+			continue
+		case "--prime":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: memory set: %v\n", err)
+				return ExitUsage
+			}
+			prime, havePrime = val, true
 			i += consumed
 			continue
 		case "--stdin":
@@ -126,8 +137,11 @@ func runMemorySet(g GlobalFlags, args []string, s *Streams) int {
 	}
 	defer db.Close()
 
-	actor := ResolveActor(g.Actor)
-	m, err := db.Remember(ctx, bdd.Remember{Key: key, Body: body, Actor: actor})
+	remember := bdd.Remember{Key: key, Body: body, Actor: ResolveActor(g.Actor)}
+	if havePrime {
+		remember.Prime = &prime
+	}
+	m, err := db.Remember(ctx, remember)
 	if err != nil {
 		s.Errorf("bdd: memory set: %v\n", err)
 		return ExitCode(err)

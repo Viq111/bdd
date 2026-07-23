@@ -29,6 +29,9 @@ func TestRememberCreatesWithExplicitKey(t *testing.T) {
 	if m.CreatedAt.IsZero() || m.UpdatedAt.IsZero() {
 		t.Fatal("CreatedAt/UpdatedAt must be set")
 	}
+	if m.Prime != MemoryPrimeOptional {
+		t.Fatalf("Prime = %q, want %q by default", m.Prime, MemoryPrimeOptional)
+	}
 }
 
 func TestRememberUpdatesExistingKeyAndIncrementsRevision(t *testing.T) {
@@ -54,6 +57,38 @@ func TestRememberUpdatesExistingKeyAndIncrementsRevision(t *testing.T) {
 	}
 	if m.Revision != 2 {
 		t.Fatalf("Revision = %d, want 2", m.Revision)
+	}
+}
+
+func TestRememberPrimeRoundTripsPreservesAndValidates(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	required := MemoryPrimeRequired
+	m, err := db.Remember(ctx, Remember{Key: "role", Body: "mandatory instruction", Prime: &required, Actor: "alice"})
+	if err != nil {
+		t.Fatalf("Remember() error = %v", err)
+	}
+	if m.Prime != MemoryPrimeRequired {
+		t.Fatalf("Prime = %q, want %q", m.Prime, MemoryPrimeRequired)
+	}
+
+	updated, err := db.Remember(ctx, Remember{Key: "role", Body: "mandatory instruction v2", Actor: "alice"})
+	if err != nil {
+		t.Fatalf("Remember() update error = %v", err)
+	}
+	if updated.Prime != MemoryPrimeRequired {
+		t.Fatalf("Prime = %q after unrelated update, want preserved %q", updated.Prime, MemoryPrimeRequired)
+	}
+
+	bogus := "sometimes"
+	if _, err := db.Remember(ctx, Remember{Key: "role", Body: "x", Prime: &bogus, Actor: "alice"}); err == nil {
+		t.Fatal("Remember() with invalid prime value: want error")
+	} else {
+		var verr *ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("Remember() with invalid prime error = %v, want *ValidationError", err)
+		}
 	}
 }
 
