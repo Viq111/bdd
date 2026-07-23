@@ -28,7 +28,7 @@ const (
 	// StatusCategoryDone marks a card as finished, in any of its terminal
 	// forms.
 	StatusCategoryDone StatusCategory = "done"
-	// StatusCategoryFrozen marks a card as intentionally not dispatchable
+	// StatusCategoryFrozen marks a card as intentionally not ready
 	// without being finished (deferred, blocked, etc).
 	StatusCategoryFrozen StatusCategory = "frozen"
 )
@@ -97,7 +97,6 @@ type Card struct {
 	Worktree     string
 	Assignee     string
 	Owner        string
-	Dispatchable bool
 	Labels       []string
 	Parents      []CardRef
 	Children     []CardRef
@@ -202,7 +201,7 @@ type scanner interface {
 // ListCards/SearchCards queries in query.go.
 const cardColumns = `id, title, worktree, description, reproduction, design, acceptance,
 	status, priority, card_type, external_ref, assignee, created_by,
-	owner, dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision`
+	owner, created_at, updated_at, started_at, closed_at, defer_until, revision`
 
 const cardSelectSQL = `SELECT ` + cardColumns + ` FROM cards WHERE id = ?`
 
@@ -326,14 +325,13 @@ func scanCard(row scanner) (*Card, error) {
 	var c Card
 	var status, cardType string
 	var priority int64
-	var dispatchable int64
 	var createdAt, updatedAt string
 	var startedAt, closedAt, deferUntil sql.NullString
 
 	if err := row.Scan(
 		&c.ID, &c.Title, &c.Worktree, &c.Description, &c.Reproduction, &c.Design, &c.Acceptance,
 		&status, &priority, &cardType, &c.ExternalRef, &c.Assignee, &c.CreatedBy,
-		&c.Owner, &dispatchable, &createdAt, &updatedAt, &startedAt, &closedAt, &deferUntil, &c.Revision,
+		&c.Owner, &createdAt, &updatedAt, &startedAt, &closedAt, &deferUntil, &c.Revision,
 	); err != nil {
 		return nil, err
 	}
@@ -341,7 +339,6 @@ func scanCard(row scanner) (*Card, error) {
 	c.Status = Status(status)
 	c.Type = CardType(cardType)
 	c.Priority = int32(priority)
-	c.Dispatchable = dispatchable != 0
 
 	ca, err := parseTime(createdAt)
 	if err != nil {

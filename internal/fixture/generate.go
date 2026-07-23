@@ -158,9 +158,9 @@ func Generate(opts Options) (*Manifest, error) {
 		INSERT INTO cards (
 			id, title, worktree, description, reproduction, design,
 			acceptance, status, priority, card_type, external_ref, assignee,
-			created_by, dispatchable, created_at, updated_at, started_at,
+			created_by, created_at, updated_at, started_at,
 			closed_at, defer_until, revision
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,6 @@ func Generate(opts Options) (*Manifest, error) {
 
 		var startedAt, closedAt, deferUntil any
 		assignee := ""
-		dispatchable := 1
 
 		switch status {
 		case "in_progress", "awaiting_review":
@@ -225,8 +224,6 @@ func Generate(opts Options) (*Manifest, error) {
 			closedAt = rfc3339(updatedAt)
 		case "deferred":
 			deferUntil = rfc3339(updatedAt.Add(30 * 24 * time.Hour))
-		case "blocked":
-			dispatchable = 0
 		}
 
 		word := searchWords[rng.Intn(len(searchWords))]
@@ -253,7 +250,7 @@ func Generate(opts Options) (*Manifest, error) {
 		_, err = insertCard.Exec(
 			id, title, worktree, description, reproduction, design,
 			acceptance, status, priority, typ, externalRef, assignee,
-			actorPool[rng.Intn(len(actorPool))], dispatchable, rfc3339(createdAt),
+			actorPool[rng.Intn(len(actorPool))], rfc3339(createdAt),
 			rfc3339(updatedAt), startedAt, closedAt, deferUntil, 1,
 		)
 		if err != nil {

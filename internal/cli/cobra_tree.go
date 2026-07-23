@@ -293,8 +293,8 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 				f.Int("limit", 20, "maximum number of cards to return (0 = no limit)")
 			}),
 
-		newLeaf("ready [id]", "List dispatchable cards",
-			"List every dispatchable, unassigned, unclaimed card without the human label.\n--explain [id] reports exactly why a given card (or every matching card) is\nexcluded.",
+		newLeaf("ready [id]", "List ready cards",
+			"List every active-category, unassigned, unclaimed card without the human label.\n--explain [id] reports exactly why a given card (or every matching card) is\nexcluded.",
 			"  bdd ready --limit 10\n  bdd ready --explain bdd-a1b", runCardReady, global, streams, func(f *pflag.FlagSet) {
 				f.StringArray("label", nil, "only cards with this label (repeatable)")
 				f.Int("limit", 20, "maximum number of cards to return (0 = no limit)")

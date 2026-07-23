@@ -563,8 +563,8 @@ func validateUpdateCard(in UpdateCard) error {
 const insertCardSQL = `INSERT INTO cards (
 	id, title, worktree, description, reproduction, design, acceptance,
 	status, priority, card_type, external_ref, assignee, created_by,
-	owner, dispatchable, created_at, updated_at, started_at, closed_at, defer_until, revision
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 1)`
+	owner, created_at, updated_at, started_at, closed_at, defer_until, revision
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 1)`
 
 const idAlphabet = "abcdefghijklmnopqrstuvwxyz234567" // lowercase base32 (RFC 4648), shell-safe
 const idSuffixLen = 6
@@ -599,7 +599,7 @@ func insertCardRow(ctx context.Context, tx *sql.Tx, prefix string, in CreateCard
 			id, in.Title, strOrEmpty(in.Worktree), strOrEmpty(in.Description),
 			strOrEmpty(in.Reproduction), strOrEmpty(in.Design), strOrEmpty(in.Acceptance),
 			string(StatusOpen), priority, string(in.Type), strOrEmpty(in.ExternalRef), "",
-			in.CreatedBy, in.Owner, 1, now, now,
+			in.CreatedBy, in.Owner, now, now,
 		)
 		if err == nil {
 			return id, nil

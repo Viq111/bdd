@@ -28,8 +28,8 @@ Lifecycle and claim:
 Parent/child blocking:
   Parent/child edges (set via ` + "`create --parent <id>`" + ` and ` + "`update --add-parent/`" + `
   ` + "`--remove-parent/--add-child/--remove-child <id>`" + `) form an acyclic blocking graph:
-  a card is not dispatchable while any parent is outside a done-category
-  status. ` + "`ready`" + ` lists every dispatchable, unassigned, unclaimed card without
+  a card is not ready while any parent is outside a done-category
+  status. ` + "`ready`" + ` lists every active-category, unassigned, unclaimed card without
   the ` + "`human`" + ` label; ` + "`ready --explain <id>`" + ` reports exactly why a given card is
   excluded, including which parents are unfinished. ` + "`parents <id>`" + ` and
   ` + "`children <id>`" + ` list a card's edges directly.

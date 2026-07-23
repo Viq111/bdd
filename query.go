@@ -49,11 +49,10 @@ type SearchOptions struct {
 
 // ReadyOptions configures ReadyCards. A card is ready exactly when:
 //  1. its status category is active,
-//  2. it is dispatchable,
-//  3. its assignee is empty,
-//  4. it lacks the "human" label,
-//  5. every parent has a done-category status, and
-//  6. it matches every requested label filter (AND).
+//  2. its assignee is empty,
+//  3. it lacks the "human" label,
+//  4. every parent has a done-category status, and
+//  5. it matches every requested label filter (AND).
 //
 // Results are ordered by priority ascending, then created_at ascending,
 // then ID.
@@ -302,13 +301,12 @@ func (db *DB) SearchCards(ctx context.Context, opts SearchOptions) ([]Card, erro
 }
 
 // readyConds is the WHERE-clause fragment shared by ReadyCards and (in
-// spirit; ExplainReady re-checks the same six conditions per-field for a
+// spirit; ExplainReady re-checks the same five conditions per-field for a
 // single card) the readiness predicate: status category active,
-// dispatchable, unassigned, lacking the human label, and every parent
+// unassigned, lacking the human label, and every parent
 // done-category (plan section 16).
 var readyConds = []string{
 	"status IN (SELECT name FROM status_definitions WHERE category = '" + string(StatusCategoryActive) + "')",
-	"dispatchable <> 0",
 	"assignee = ''",
 	"NOT EXISTS (SELECT 1 FROM labels WHERE labels.card_id = cards.id AND labels.label = '" + HumanLabel + "')",
 	"NOT EXISTS (" +
@@ -399,9 +397,6 @@ func (db *DB) ExplainReady(ctx context.Context, id string) ([]string, error) {
 	reasons := []string{}
 	if category != StatusCategoryActive {
 		reasons = append(reasons, fmt.Sprintf("status %q is %s-category, not active", cur.Status, category))
-	}
-	if !cur.Dispatchable {
-		reasons = append(reasons, "not dispatchable")
 	}
 	if cur.Assignee != "" {
 		reasons = append(reasons, fmt.Sprintf("assigned to %s", cur.Assignee))

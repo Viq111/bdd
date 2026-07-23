@@ -479,7 +479,7 @@ func TestReadyExplainListsUnfinishedParent(t *testing.T) {
 	}
 }
 
-func TestReadyOnlyIncludesDispatchableCards(t *testing.T) {
+func TestReadyOnlyIncludesReadyCards(t *testing.T) {
 	dir := initTestWorkspace(t)
 	parent := createCard(t, dir, "--type", "chore", "parent")
 	child := createCard(t, dir, "--type", "chore", "--parent", parent, "child")

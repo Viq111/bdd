@@ -237,7 +237,7 @@ bdd types
 ```
 
 A card is **ready** (returned by `bdd ready`) exactly when: its status
-category is `active`, it is dispatchable, its assignee is empty, it lacks
+category is `active`, its assignee is empty, it lacks
 the `human` label, every parent has reached a done-category status, and it
 matches every requested label filter. Results sort by priority ascending,
 then creation time, then ID; `--limit` defaults to 20 and `--limit 0` means

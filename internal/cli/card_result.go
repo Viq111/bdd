@@ -25,7 +25,6 @@ type CardResult struct {
 	Worktree     string          `json:"worktree"`
 	Assignee     string          `json:"assignee"`
 	Owner        string          `json:"owner"`
-	Dispatchable bool            `json:"dispatchable"`
 	Labels       []string        `json:"labels"`
 	Description  string          `json:"description"`
 	Reproduction string          `json:"reproduction"`
@@ -47,17 +46,16 @@ type CardResult struct {
 // `bdd search`, and `bdd ready`: the core Card fields plus labels, without
 // note/edge expansion.
 type CardSummaryResult struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	Type         string   `json:"type"`
-	Status       string   `json:"status"`
-	Priority     int32    `json:"priority"`
-	Worktree     string   `json:"worktree"`
-	Assignee     string   `json:"assignee"`
-	Dispatchable bool     `json:"dispatchable"`
-	Labels       []string `json:"labels"`
-	CreatedAt    string   `json:"created_at"`
-	UpdatedAt    string   `json:"updated_at"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Type      string   `json:"type"`
+	Status    string   `json:"status"`
+	Priority  int32    `json:"priority"`
+	Worktree  string   `json:"worktree"`
+	Assignee  string   `json:"assignee"`
+	Labels    []string `json:"labels"`
+	CreatedAt string   `json:"created_at"`
+	UpdatedAt string   `json:"updated_at"`
 }
 
 // CardRefResult is a lightweight card reference, as returned by the
@@ -127,7 +125,6 @@ func toCardResult(c *bdd.Card) CardResult {
 		Worktree:     c.Worktree,
 		Assignee:     c.Assignee,
 		Owner:        c.Owner,
-		Dispatchable: c.Dispatchable,
 		Labels:       nonNilLabels(c.Labels),
 		Description:  c.Description,
 		Reproduction: c.Reproduction,
@@ -148,17 +145,16 @@ func toCardResult(c *bdd.Card) CardResult {
 
 func toCardSummaryResult(c bdd.Card) CardSummaryResult {
 	return CardSummaryResult{
-		ID:           c.ID,
-		Title:        c.Title,
-		Type:         string(c.Type),
-		Status:       string(c.Status),
-		Priority:     c.Priority,
-		Worktree:     c.Worktree,
-		Assignee:     c.Assignee,
-		Dispatchable: c.Dispatchable,
-		Labels:       nonNilLabels(c.Labels),
-		CreatedAt:    formatTimestamp(c.CreatedAt),
-		UpdatedAt:    formatTimestamp(c.UpdatedAt),
+		ID:        c.ID,
+		Title:     c.Title,
+		Type:      string(c.Type),
+		Status:    string(c.Status),
+		Priority:  c.Priority,
+		Worktree:  c.Worktree,
+		Assignee:  c.Assignee,
+		Labels:    nonNilLabels(c.Labels),
+		CreatedAt: formatTimestamp(c.CreatedAt),
+		UpdatedAt: formatTimestamp(c.UpdatedAt),
 	}
 }
 
@@ -256,7 +252,6 @@ func renderCard(w io.Writer, r CardResult) {
 	fmt.Fprintf(w, "worktree:     %s\n", sanitizeForTerminal(formatWorktreeDisplay(r.Worktree)))
 	fmt.Fprintf(w, "assignee:     %s\n", sanitizeForTerminal(emptyDash(r.Assignee)))
 	fmt.Fprintf(w, "owner:        %s\n", sanitizeForTerminal(emptyDash(r.Owner)))
-	fmt.Fprintf(w, "dispatchable: %t\n", r.Dispatchable)
 	fmt.Fprintf(w, "labels:       %s\n", sanitizeForTerminal(emptyDash(strings.Join(r.Labels, ", "))))
 	if len(r.Parents) > 0 {
 		parts := make([]string, len(r.Parents))

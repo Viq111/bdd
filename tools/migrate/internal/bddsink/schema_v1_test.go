@@ -291,13 +291,13 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 	if got := sinkCounts(t, ctx, path); got != afterFirstPreservedRerun {
 		t.Fatalf("second preserved-worktree rerun wrote logical rows: got %#v want %#v", got, afterFirstPreservedRerun)
 	}
-	if _, err := raw.ExecContext(ctx, `INSERT INTO cards (id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner,dispatchable,created_at,updated_at,started_at,closed_at,defer_until,revision) VALUES ('native','native','','','','','','open',2,'task','','','','',1,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',NULL,NULL,NULL,1)`); err != nil {
+	if _, err := raw.ExecContext(ctx, `INSERT INTO cards (id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner,created_at,updated_at,started_at,closed_at,defer_until,revision) VALUES ('native','native','','','','','','open',2,'task','','','','','2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',NULL,NULL,NULL,1)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := raw.ExecContext(ctx, `INSERT INTO card_edges (parent_id,child_id,created_at,created_by) VALUES ('src-1','native','2020-01-01T00:00:00Z','native')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := raw.ExecContext(ctx, `INSERT INTO cards (id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner,dispatchable,created_at,updated_at,started_at,closed_at,defer_until,revision) VALUES ('collision','native','','','','','','open',2,'task','','','','',1,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',NULL,NULL,NULL,1)`); err != nil {
+	if _, err := raw.ExecContext(ctx, `INSERT INTO cards (id,title,worktree,description,reproduction,design,acceptance,status,priority,card_type,external_ref,assignee,created_by,owner,created_at,updated_at,started_at,closed_at,defer_until,revision) VALUES ('collision','native','','','','','','open',2,'task','','','','','2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',NULL,NULL,NULL,1)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := raw.ExecContext(ctx, `INSERT INTO runes (key,kind,title,body,metadata_json,enabled,protected,created_by,updated_by,created_at,updated_at,revision) VALUES ('role/collision','role','native','','{"legacy_bd_id":"other"}',1,0,'native','native','2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',1)`); err != nil {
@@ -320,7 +320,7 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 	// counterparts. Keep snapshots that include their complete rows and card
 	// provenance before applying a plan that removes all three.
 	removedCard := projection(t, ctx, path, []projectionQuery{
-		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(dispatchable),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards WHERE id='src-2' ORDER BY id`},
+		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards WHERE id='src-2' ORDER BY id`},
 		{"labels", `SELECT quote(card_id),quote(label) FROM labels WHERE card_id='src-2' ORDER BY card_id,label`},
 		{"events", `SELECT quote(id),quote(subject_kind),quote(subject_key),quote(revision),quote(action),quote(actor),quote(payload_json),quote(created_at) FROM events WHERE subject_kind='card' AND subject_key='src-2' ORDER BY id`},
 	})
@@ -348,7 +348,7 @@ func TestApplyRerunReconcilesOnlyBeadsManagedRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := projection(t, ctx, path, []projectionQuery{
-		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(dispatchable),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards WHERE id='src-2' ORDER BY id`},
+		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards WHERE id='src-2' ORDER BY id`},
 		{"labels", `SELECT quote(card_id),quote(label) FROM labels WHERE card_id='src-2' ORDER BY card_id,label`},
 		{"events", `SELECT quote(id),quote(subject_kind),quote(subject_key),quote(revision),quote(action),quote(actor),quote(payload_json),quote(created_at) FROM events WHERE subject_kind='card' AND subject_key='src-2' ORDER BY id`},
 	}); !bytes.Equal(got, removedCard) {
@@ -413,7 +413,7 @@ func logicalProjection(t *testing.T, ctx context.Context, path string) []byte {
 		{"workspace", `SELECT quote(singleton),quote(prefix),quote(created_at) FROM workspace ORDER BY singleton`},
 		{"status_definitions", `SELECT quote(name),quote(category),quote(built_in) FROM status_definitions ORDER BY name`},
 		{"type_definitions", `SELECT quote(name),quote(built_in) FROM type_definitions ORDER BY name`},
-		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(dispatchable),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards ORDER BY id`},
+		{"cards", `SELECT quote(id),quote(title),quote(worktree),quote(description),quote(reproduction),quote(design),quote(acceptance),quote(status),quote(priority),quote(card_type),quote(external_ref),quote(assignee),quote(created_by),quote(owner),quote(created_at),quote(updated_at),quote(started_at),quote(closed_at),quote(defer_until),quote(revision) FROM cards ORDER BY id`},
 		{"labels", `SELECT quote(card_id),quote(label) FROM labels ORDER BY card_id,label`},
 		{"card_edges", `SELECT quote(parent_id),quote(child_id),quote(created_at),quote(created_by) FROM card_edges ORDER BY parent_id,child_id`},
 		{"notes", `SELECT quote(id),quote(card_id),quote(author),quote(body),quote(created_at) FROM notes ORDER BY id`},

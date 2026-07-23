@@ -6,17 +6,6 @@ import (
 	"testing"
 )
 
-func setDispatchable(t *testing.T, db *DB, id string, dispatchable bool) {
-	t.Helper()
-	v := 0
-	if dispatchable {
-		v = 1
-	}
-	if _, err := db.sql.Exec(`UPDATE cards SET dispatchable = ? WHERE id = ?`, v, id); err != nil {
-		t.Fatalf("setDispatchable(%s) error = %v", id, err)
-	}
-}
-
 func TestReadyCardsExcludesNonActiveCategory(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -41,23 +30,6 @@ func TestReadyCardsExcludesNonActiveCategory(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != active.ID {
 		t.Fatalf("ReadyCards() = %v, want [%s]", cardIDs(got), active.ID)
-	}
-}
-
-func TestReadyCardsExcludesNonDispatchable(t *testing.T) {
-	db := newTestDB(t)
-	ctx := context.Background()
-
-	ready := mustCreate(t, db, "ready")
-	blocked := mustCreate(t, db, "not dispatchable")
-	setDispatchable(t, db, blocked.ID, false)
-
-	got, err := db.ReadyCards(ctx, ReadyOptions{})
-	if err != nil {
-		t.Fatalf("ReadyCards() error = %v", err)
-	}
-	if len(got) != 1 || got[0].ID != ready.ID {
-		t.Fatalf("ReadyCards() = %v, want [%s]", cardIDs(got), ready.ID)
 	}
 }
 
@@ -250,21 +222,20 @@ func TestExplainReadyReportsEveryExclusionReason(t *testing.T) {
 	}
 	// ClaimCard doesn't check parents, so child (still active-category) can
 	// be claimed even with an unfinished parent; that gives us an assignee
-	// exclusion reason alongside status, dispatchable, and the human label.
+	// exclusion reason alongside status and the human label.
 	if _, err := db.ClaimCard(ctx, child.ID, "alice"); err != nil {
 		t.Fatalf("ClaimCard() error = %v", err)
 	}
 	if _, err := db.HumanCard(ctx, child.ID, "alice", "needs review"); err != nil {
 		t.Fatalf("HumanCard() error = %v", err)
 	}
-	setDispatchable(t, db, child.ID, false)
 
 	reasons, err := db.ExplainReady(ctx, child.ID)
 	if err != nil {
 		t.Fatalf("ExplainReady() error = %v", err)
 	}
 	if len(reasons) < 4 {
-		t.Fatalf("ExplainReady() = %v, want at least 4 reasons (status, dispatchable, assignee, human label, unfinished parent)", reasons)
+		t.Fatalf("ExplainReady() = %v, want at least 4 reasons (status, assignee, human label, unfinished parent)", reasons)
 	}
 }
 

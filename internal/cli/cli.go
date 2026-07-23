@@ -27,7 +27,7 @@ const commandsReference = `  init [--prefix <prefix>] [path]   Create a new work
   show <id>                         Show a card's full record
   list [flags]                      List cards matching filters
   search <query> [flags]            Search cards by text
-  ready [flags]                     List dispatchable cards; --explain [id] to see exclusions
+  ready [flags]                     List ready cards; --explain [id] to see exclusions
   update <id> [flags]               Update a card's fields, status, labels, or edges
   note <id> [body] [--stdin]        Append a note to a card
   close <id> [reason]               Close a card
