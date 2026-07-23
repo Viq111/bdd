@@ -325,7 +325,7 @@ func formatWorktreeDisplay(wt string) string {
 // renderCardSummaryLine writes one compact line for a list/search/ready
 // result entry.
 func renderCardSummaryLine(w io.Writer, c CardSummaryResult) {
-	fmt.Fprintf(w, "%s - %s\n", c.ID, sanitizeForTerminal(c.Title))
+	fmt.Fprintf(w, "%s P%d - %s\n", c.ID, c.Priority, sanitizeForTerminal(c.Title))
 }
 
 // emitCardSummaries writes a list/search/ready result set.

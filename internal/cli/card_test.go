@@ -311,6 +311,20 @@ func TestListDefaultExcludesDoneCards(t *testing.T) {
 	}
 }
 
+// TestListHumanLineIncludesPriority guards the bdd-ap5z compact line shape:
+// list/search/ready human output must show `<id> P<priority> - <title>` so
+// an agent can triage without a fan-out of `show` calls.
+func TestListHumanLineIncludesPriority(t *testing.T) {
+	dir := initTestWorkspace(t)
+	id := createCard(t, dir, "--type", "chore", "--priority", "1", "prioritized card")
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "list")
+	want := id + " P1 - prioritized card\n"
+	if stdout != want {
+		t.Fatalf("list stdout = %q, want %q", stdout, want)
+	}
+}
+
 func TestListUnknownFlagVsArgument(t *testing.T) {
 	dir := initTestWorkspace(t)
 
