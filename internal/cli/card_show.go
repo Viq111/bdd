@@ -35,5 +35,5 @@ func runCardShow(g GlobalFlags, args []string, s *Streams) int {
 	}
 
 	result := ShowResult{CardResult: toCardResult(card), Notes: toNoteResults(notes)}
-	return emitShow(s, result)
+	return emitShow(s, result, workspaceDir(db.Path()))
 }

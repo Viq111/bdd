@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -209,8 +210,10 @@ func cardMutationLine(cmdName, id string) string {
 	}
 }
 
-// emitShow writes the result of `bdd show`.
-func emitShow(s *Streams, r ShowResult) int {
+// emitShow writes the result of `bdd show`. workspaceRoot is used only to
+// resolve a relative worktree path for the existence check; the displayed
+// and JSON values stay exactly as stored.
+func emitShow(s *Streams, r ShowResult, workspaceRoot string) int {
 	if s.JSON {
 		if err := NewJSONEncoder(s.Stdout).Object(r); err != nil {
 			s.Errorf("bdd: show: %v\n", err)
@@ -222,7 +225,7 @@ func emitShow(s *Streams, r ShowResult) int {
 		fmt.Fprintln(s.Stdout, r.ID)
 		return ExitSuccess
 	}
-	renderCard(s.Stdout, r.CardResult)
+	renderCard(s.Stdout, r.CardResult, workspaceRoot)
 	if len(r.Notes) > 0 {
 		fmt.Fprintln(s.Stdout)
 		fmt.Fprintln(s.Stdout, "notes:")
@@ -243,13 +246,13 @@ func emitShow(s *Streams, r ShowResult) int {
 // renderCard writes r in the fixed human layout: identity, status, and
 // priority first, then Worktree immediately after (plan section 9), then
 // the remaining fields.
-func renderCard(w io.Writer, r CardResult) {
+func renderCard(w io.Writer, r CardResult, workspaceRoot string) {
 	fmt.Fprintf(w, "id:           %s\n", r.ID)
 	fmt.Fprintf(w, "title:        %s\n", sanitizeForTerminal(r.Title))
 	fmt.Fprintf(w, "type:         %s\n", r.Type)
 	fmt.Fprintf(w, "status:       %s\n", r.Status)
 	fmt.Fprintf(w, "priority:     %d\n", r.Priority)
-	fmt.Fprintf(w, "worktree:     %s\n", sanitizeForTerminal(formatWorktreeDisplay(r.Worktree)))
+	fmt.Fprintf(w, "worktree:     %s\n", sanitizeForTerminal(formatWorktreeDisplay(r.Worktree, workspaceRoot)))
 	fmt.Fprintf(w, "assignee:     %s\n", sanitizeForTerminal(emptyDash(r.Assignee)))
 	fmt.Fprintf(w, "owner:        %s\n", sanitizeForTerminal(emptyDash(r.Owner)))
 	fmt.Fprintf(w, "labels:       %s\n", sanitizeForTerminal(emptyDash(strings.Join(r.Labels, ", "))))
@@ -306,12 +309,18 @@ func emptyDash(s string) string {
 
 // formatWorktreeDisplay annotates wt with a "not present locally" note when
 // it is set but does not exist on disk, without treating that as an error
-// (plan section 9).
-func formatWorktreeDisplay(wt string) string {
+// (plan section 9). The displayed string is always exactly wt as stored; a
+// relative wt is resolved against workspaceRoot only for the existence
+// check, not for display.
+func formatWorktreeDisplay(wt, workspaceRoot string) string {
 	if wt == "" {
 		return "-"
 	}
-	if _, err := os.Stat(wt); err != nil {
+	checkPath := wt
+	if !filepath.IsAbs(wt) && workspaceRoot != "" {
+		checkPath = filepath.Join(workspaceRoot, wt)
+	}
+	if _, err := os.Stat(checkPath); err != nil {
 		return wt + " (not present locally)"
 	}
 	return wt

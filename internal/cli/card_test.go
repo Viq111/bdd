@@ -231,6 +231,67 @@ func TestShowWorktreeAfterIdentityBlock(t *testing.T) {
 	}
 }
 
+// TestShowRelativeWorktreeResolvesAgainstWorkspace guards against
+// formatWorktreeDisplay resolving a relative stored worktree path against
+// the process's actual working directory instead of the discovered
+// workspace root: it must report the worktree as present regardless of
+// where the `bdd` process happens to be running from.
+func TestShowRelativeWorktreeResolvesAgainstWorkspace(t *testing.T) {
+	dir := initTestWorkspace(t)
+	if err := os.MkdirAll(dir+"/.worktrees/example", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id := createCard(t, dir, "--type", "chore", "--worktree", ".worktrees/example", "chore with relative worktree")
+
+	unrelated := t.TempDir()
+
+	for _, tc := range []struct {
+		name string
+		cwd  string
+	}{
+		{"from workspace root", dir},
+		{"from nested subdirectory", dir + "/.worktrees"},
+		{"from unrelated directory", unrelated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(tc.cwd)
+			stdout, _ := runCLI(t, dir, ExitSuccess, "show", id)
+			lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+			if !strings.HasPrefix(lines[5], "worktree:") {
+				t.Fatalf("line 5 = %q, want worktree line (full output:\n%s)", lines[5], stdout)
+			}
+			if strings.Contains(lines[5], "not present locally") {
+				t.Fatalf("worktree line = %q, want no missing-worktree annotation", lines[5])
+			}
+			if !strings.Contains(lines[5], ".worktrees/example") {
+				t.Fatalf("worktree line = %q, want stored relative path unchanged", lines[5])
+			}
+		})
+	}
+
+	t.Run("json worktree field unchanged", func(t *testing.T) {
+		t.Chdir(unrelated)
+		stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "show", id)
+		var show ShowResult
+		if err := json.Unmarshal([]byte(stdout), &show); err != nil {
+			t.Fatal(err)
+		}
+		if show.Worktree != ".worktrees/example" {
+			t.Fatalf("Worktree = %q, want unchanged relative path", show.Worktree)
+		}
+	})
+
+	t.Run("truly missing relative worktree still reports absent", func(t *testing.T) {
+		t.Chdir(unrelated)
+		missingID := createCard(t, dir, "--type", "chore", "--worktree", ".worktrees/missing", "chore with missing relative worktree")
+		stdout, _ := runCLI(t, dir, ExitSuccess, "show", missingID)
+		lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+		if !strings.Contains(lines[5], "not present locally") {
+			t.Fatalf("worktree line = %q, want missing-worktree annotation", lines[5])
+		}
+	})
+}
+
 func TestShowIncludesNotes(t *testing.T) {
 	dir := initTestWorkspace(t)
 	id := createCard(t, dir, "--type", "chore", "with notes")
