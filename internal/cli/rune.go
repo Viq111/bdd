@@ -19,6 +19,7 @@ type RuneResult struct {
 	Title     string `json:"title"`
 	Body      string `json:"body"`
 	Metadata  string `json:"metadata"`
+	Prime     string `json:"prime"`
 	Enabled   bool   `json:"enabled"`
 	Protected bool   `json:"protected"`
 	Revision  int64  `json:"revision"`
@@ -35,6 +36,7 @@ func toRuneResult(r *bdd.Rune) RuneResult {
 		Title:     r.Title,
 		Body:      r.Body,
 		Metadata:  r.Metadata,
+		Prime:     r.Prime,
 		Enabled:   r.Enabled,
 		Protected: r.Protected,
 		Revision:  r.Revision,
@@ -51,6 +53,7 @@ type RuneSummaryResult struct {
 	Key       string `json:"key"`
 	Kind      string `json:"kind"`
 	Title     string `json:"title"`
+	Prime     string `json:"prime"`
 	Enabled   bool   `json:"enabled"`
 	Protected bool   `json:"protected"`
 	Revision  int64  `json:"revision"`
@@ -58,7 +61,7 @@ type RuneSummaryResult struct {
 
 func toRuneSummaryResult(r bdd.RuneSummary) RuneSummaryResult {
 	return RuneSummaryResult{
-		Key: r.Key, Kind: r.Kind, Title: r.Title,
+		Key: r.Key, Kind: r.Kind, Title: r.Title, Prime: r.Prime,
 		Enabled: r.Enabled, Protected: r.Protected, Revision: r.Revision,
 	}
 }
@@ -101,8 +104,8 @@ func runRune(g GlobalFlags, args []string, s *Streams) int {
 func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 	var key string
 	var haveKey bool
-	var kind, title, body, bodyFile, metadata string
-	var haveTitle, haveBody, haveMetadata bool
+	var kind, title, body, bodyFile, metadata, prime string
+	var haveTitle, haveBody, haveMetadata, havePrime bool
 	var protected, createOnly, force bool
 	var expectedRevision *int64
 
@@ -155,6 +158,15 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 				return ExitUsage
 			}
 			metadata, haveMetadata = val, true
+			i += consumed
+			continue
+		case "--prime":
+			val, consumed, err := flagValue(name, inline, hasInline, args, i)
+			if err != nil {
+				s.Errorf("bdd: rune set: %v\n", err)
+				return ExitUsage
+			}
+			prime, havePrime = val, true
 			i += consumed
 			continue
 		case "--if-revision":
@@ -234,6 +246,9 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 	}
 	if haveMetadata {
 		mutation.Metadata = &metadata
+	}
+	if havePrime {
+		mutation.Prime = &prime
 	}
 	if protected {
 		t := true
@@ -534,6 +549,7 @@ func emitRune(s *Streams, cmdName string, r *bdd.Rune) int {
 	fmt.Fprintf(s.Stdout, "key:       %s\n", r.Key)
 	fmt.Fprintf(s.Stdout, "kind:      %s\n", r.Kind)
 	fmt.Fprintf(s.Stdout, "title:     %s\n", r.Title)
+	fmt.Fprintf(s.Stdout, "prime:     %s\n", r.Prime)
 	fmt.Fprintf(s.Stdout, "enabled:   %t\n", r.Enabled)
 	fmt.Fprintf(s.Stdout, "protected: %t\n", r.Protected)
 	fmt.Fprintf(s.Stdout, "revision:  %d\n", r.Revision)
@@ -562,8 +578,8 @@ func emitRuneSummaries(s *Streams, cmdName string, summaries []bdd.RuneSummary) 
 	}
 
 	for _, r := range summaries {
-		fmt.Fprintf(s.Stdout, "%s\t%s\t%s\tenabled=%t protected=%t rev=%d\n",
-			r.Key, r.Kind, r.Title, r.Enabled, r.Protected, r.Revision)
+		fmt.Fprintf(s.Stdout, "%s\t%s\t%s\tprime=%s enabled=%t protected=%t rev=%d\n",
+			r.Key, r.Kind, r.Title, r.Prime, r.Enabled, r.Protected, r.Revision)
 	}
 	return ExitSuccess
 }

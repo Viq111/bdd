@@ -207,6 +207,7 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 					f.String("body", "", "rune body text")
 					f.String("body-file", "", "read the body from this file instead of --body")
 					f.String("metadata", "", "JSON metadata object")
+					f.String("prime", "", "how `bdd prime` surfaces this rune: required, optional (default), or never")
 					f.Bool("protected", false, "require --force to mutate or remove this rune later")
 					f.Bool("create-only", false, "fail if the rune already exists")
 					f.Int64("if-revision", 0, "fail unless the rune is currently at this revision")
@@ -391,11 +392,12 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 				f.Bool("force", false, "acknowledge the destructive restore")
 			}),
 
-		newLeaf("prime", "Print the workspace contract and memories for session start",
-			"Print the workspace contract (command set and semantics) and current\nmemories, for an agent to load at session start.",
-			"  bdd prime\n  bdd prime --memory-limit 20", runPrime, global, streams, func(f *pflag.FlagSet) {
+		newLeaf("prime", "Print a compact session-start manifest",
+			"Print a compact bootstrap manifest (identity, invariant rules, workflow\ncommands, required-rune bodies, and optional-context summaries) for an\nagent to load at session start. --full reproduces the previous full prose\ncontract instead.",
+			"  bdd prime\n  bdd prime --memory-limit 20\n  bdd prime --full", runPrime, global, streams, func(f *pflag.FlagSet) {
 				f.Int("memory-limit", 0, "cap the number of memories printed")
 				f.Bool("no-memories", false, "skip loading memories entirely")
+				f.Bool("full", false, "print the previous full prose contract instead of the compact manifest")
 			}),
 	}
 

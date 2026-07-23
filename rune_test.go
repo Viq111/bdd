@@ -51,6 +51,9 @@ func TestPutRuneCreatesWithDefaults(t *testing.T) {
 	if r.Metadata != "{}" {
 		t.Fatalf("PutRune() Metadata = %q, want {}", r.Metadata)
 	}
+	if r.Prime != RunePrimeOptional {
+		t.Fatalf("PutRune() Prime = %q, want %q by default", r.Prime, RunePrimeOptional)
+	}
 
 	got, err := db.GetRune(ctx, "role/programmer")
 	if err != nil {
@@ -58,6 +61,45 @@ func TestPutRuneCreatesWithDefaults(t *testing.T) {
 	}
 	if got.Title != "Programmer" {
 		t.Fatalf("GetRune().Title = %q, want Programmer", got.Title)
+	}
+}
+
+func TestPutRunePrimeRoundTripsAndValidates(t *testing.T) {
+	db := newRuneTestDB(t)
+	ctx := context.Background()
+
+	r, err := db.PutRune(ctx, PutRune{
+		Key: "role/qa", Kind: "role",
+		Mutation: RuneMutation{Title: ptr("QA"), Body: ptr("body"), Prime: ptr(RunePrimeRequired)},
+		Actor:    "alice",
+	})
+	if err != nil {
+		t.Fatalf("PutRune() error = %v", err)
+	}
+	if r.Prime != RunePrimeRequired {
+		t.Fatalf("PutRune() Prime = %q, want %q", r.Prime, RunePrimeRequired)
+	}
+
+	updated, err := db.PutRune(ctx, PutRune{
+		Key: "role/qa", Kind: "role",
+		Mutation: RuneMutation{Prime: ptr(RunePrimeNever)},
+		Actor:    "alice",
+	})
+	if err != nil {
+		t.Fatalf("PutRune() update error = %v", err)
+	}
+	if updated.Prime != RunePrimeNever {
+		t.Fatalf("PutRune() update Prime = %q, want %q", updated.Prime, RunePrimeNever)
+	}
+
+	_, err = db.PutRune(ctx, PutRune{
+		Key: "role/qa", Kind: "role",
+		Mutation: RuneMutation{Prime: ptr("sometimes")},
+		Actor:    "alice",
+	})
+	var verr *ValidationError
+	if !errors.As(err, &verr) {
+		t.Fatalf("PutRune() with invalid prime error = %v, want *ValidationError", err)
 	}
 }
 

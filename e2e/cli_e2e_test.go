@@ -436,12 +436,12 @@ func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 	run(t, db, "memory", "set", "first memory body", "--key", "k1")
 	run(t, db, "memory", "set", "second memory body", "--key", "k2")
 
-	full := run(t, db, "prime")
-	if full.code != 0 {
-		t.Fatalf("prime failed: %s", full.stderr)
+	compact := run(t, db, "prime")
+	if compact.code != 0 {
+		t.Fatalf("prime failed: %s", compact.stderr)
 	}
-	if !strings.Contains(full.stdout, "k1") || !strings.Contains(full.stdout, "k2") {
-		t.Fatalf("prime output missing memories:\n%s", full.stdout)
+	if !strings.Contains(compact.stdout, "k1") || !strings.Contains(compact.stdout, "k2") {
+		t.Fatalf("prime output missing memories:\n%s", compact.stdout)
 	}
 
 	none := run(t, db, "prime", "--no-memories")
@@ -451,13 +451,38 @@ func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 
 	limited := run(t, db, "prime", "--memory-limit", "1", "--json")
 	var out struct {
-		Memories []json.RawMessage `json:"memories"`
+		OptionalContext []struct {
+			Type string `json:"type"`
+		} `json:"optional_context"`
+		Omitted struct {
+			Memories struct {
+				Total    int `json:"total"`
+				Returned int `json:"returned"`
+			} `json:"memories"`
+		} `json:"omitted"`
 	}
 	if err := json.Unmarshal([]byte(limited.stdout), &out); err != nil {
 		t.Fatalf("prime --json unmarshal: %v (%s)", err, limited.stdout)
 	}
-	if len(out.Memories) != 1 {
-		t.Fatalf("--memory-limit 1 returned %d memories, want 1", len(out.Memories))
+	if out.Omitted.Memories.Total != 2 || out.Omitted.Memories.Returned != 1 {
+		t.Fatalf("--memory-limit 1 omitted.memories = %+v, want total=2 returned=1", out.Omitted.Memories)
+	}
+	memCount := 0
+	for _, e := range out.OptionalContext {
+		if e.Type == "memory" {
+			memCount++
+		}
+	}
+	if memCount != 1 {
+		t.Fatalf("--memory-limit 1 returned %d memory entries in optional_context, want 1", memCount)
+	}
+
+	full := run(t, db, "prime", "--full")
+	if full.code != 0 {
+		t.Fatalf("prime --full failed: %s", full.stderr)
+	}
+	if !strings.Contains(full.stdout, "k1") || !strings.Contains(full.stdout, "k2") {
+		t.Fatalf("prime --full output missing memories:\n%s", full.stdout)
 	}
 }
 

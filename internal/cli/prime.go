@@ -3,17 +3,19 @@ package cli
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/viq111/bdd"
 )
 
-// primeContract is the static, human-readable body of `bdd prime`: the
-// workspace contract an agent needs at session start, generated from the
-// same commandsReference (internal/cli/cli.go) the top-level --help text
-// renders, plus the semantics that don't fit a one-line command summary
-// (lifecycle/claim, blocking, and machine-output rules). It never names a
-// command commandsReference itself does not list, so it cannot advertise
-// something Run's switch does not implement (plan section 19).
+// primeContract is the static, human-readable body of `bdd prime --full`:
+// the workspace contract an agent needs at session start, generated from
+// the same commandsReference (internal/cli/cli.go) the top-level --help
+// text renders, plus the semantics that don't fit a one-line command
+// summary (lifecycle/claim, blocking, and machine-output rules). It never
+// names a command commandsReference itself does not list, so it cannot
+// advertise something Run's switch does not implement (plan section 19).
 const primeContract = `Commands:
 ` + commandsReference + `
 Lifecycle and claim:
@@ -63,24 +65,134 @@ Snapshot and restore:
   (see docs/snapshot-restore.md for details).
 `
 
-// PrimeResult is the JSON result of `bdd prime`. Human output renders
+// primeContractVersion is bumped whenever the shape of the compact `bdd
+// prime` manifest (PrimeResult) changes in a way a consuming agent must
+// notice: a renamed/removed field, a reordered section, or a changed
+// semantic. Purely additive fields do not require a bump.
+const primeContractVersion = 1
+
+// primeRequiredBudgetBytes bounds the total size of required-rune bodies
+// `bdd prime` will inline. Exceeding it fails the command outright (see
+// runPrime) rather than silently truncating a mandatory instruction.
+const primeRequiredBudgetBytes = 32 * 1024
+
+// primeRules are the compact manifest's non-negotiable invariants: the
+// small set of rules that must survive even the most aggressive context
+// trimming. Keep this at or under 8 entries.
+var primeRules = []string{
+	"Discover work via `ready`; it lists every dispatchable, unassigned, unclaimed card without the `human` label.",
+	"A card is dispatchable only once every parent is in a done-category status; parent/child edges block children.",
+	"`update <id> --claim` claims ownership; claiming a card held by a different actor fails (exit 4), as does claiming outside the active category.",
+	"Only `reopen` moves a card back out of a done-category status; never reopen a card implicitly.",
+	"Exit codes: 0 success, 1 other failure, 2 usage/validation error, 3 not found, 4 conflict.",
+	"`--json` emits one object (or a streamed array); `--silent` trims output to the essential identifier; failures always report on stderr.",
+	"Use `bdd show <id>` for a card's full record — there is no `--compact` view.",
+	"Runes listed as required below are binding standing instructions; read every one before proceeding.",
+}
+
+// PrimeWorkflowStep is one entry of the compact manifest's workflow
+// section: the exact command an agent runs to discover, inspect, claim,
+// update, or complete work. Argv is a literal argument vector (no shell
+// quoting involved) so JSON consumers can exec it directly.
+type PrimeWorkflowStep struct {
+	Action string   `json:"action"`
+	Argv   []string `json:"argv"`
+}
+
+var primeWorkflow = []PrimeWorkflowStep{
+	{Action: "discover", Argv: []string{"bdd", "ready"}},
+	{Action: "inspect", Argv: []string{"bdd", "show", "<id>"}},
+	{Action: "claim", Argv: []string{"bdd", "update", "<id>", "--claim"}},
+	{Action: "update", Argv: []string{"bdd", "update", "<id>", "--status", "<status>"}},
+	{Action: "complete", Argv: []string{"bdd", "close", "<id>"}},
+}
+
+// PrimeRequiredRune is a required-prime rune inlined in full in the compact
+// manifest: the whole point of `prime: required` is that a caller must not
+// need a follow-up command to read it.
+type PrimeRequiredRune struct {
+	Key      string `json:"key"`
+	Kind     string `json:"kind"`
+	Title    string `json:"title"`
+	Revision int64  `json:"revision"`
+	Body     string `json:"body"`
+}
+
+// PrimeContextEntry is an optional-prime rune or a memory, summarized
+// rather than inlined: enough to know it exists and decide whether to
+// fetch it, not its full content.
+type PrimeContextEntry struct {
+	Type     string `json:"type"` // "rune" or "memory"
+	Key      string `json:"key"`
+	Kind     string `json:"kind,omitempty"` // rune kind; absent for memories
+	Title    string `json:"title"`          // rune title, or a memory's first line
+	Revision int64  `json:"revision"`
+}
+
+// PrimeOmittedRunes reports how many enabled runes prime saw, split by
+// prime designation, plus the command to see the ones it left out.
+type PrimeOmittedRunes struct {
+	Total       int      `json:"total"`
+	Required    int      `json:"required"`
+	Optional    int      `json:"optional"`
+	Never       int      `json:"never"`
+	NextCommand []string `json:"next_command"`
+}
+
+// PrimeOmittedMemories reports how many memories exist versus how many
+// prime actually returned, plus the command to see the rest.
+type PrimeOmittedMemories struct {
+	Total       int      `json:"total"`
+	Returned    int      `json:"returned"`
+	NextCommand []string `json:"next_command,omitempty"`
+}
+
+// PrimeOmitted is the compact manifest's omission metadata: total and
+// returned counts, plus the exact retrieval command for whatever was left
+// out, so trimming context never means losing track of what exists.
+type PrimeOmitted struct {
+	Runes    PrimeOmittedRunes    `json:"runes"`
+	Memories PrimeOmittedMemories `json:"memories"`
+}
+
+// PrimeResult is the JSON result of the default (compact) `bdd prime`. See
+// runPrime for how it's assembled and emitPrime for human rendering.
+type PrimeResult struct {
+	ContractVersion int     `json:"contract_version"`
+	Workspace       string  `json:"workspace"`
+	Prefix          *string `json:"prefix,omitempty"`
+	SchemaState     string  `json:"schema_state"` // "current" or "upgrade_pending"
+
+	Rules    []string            `json:"rules"`
+	Workflow []PrimeWorkflowStep `json:"workflow"`
+
+	RequiredRunes   []PrimeRequiredRune `json:"required_runes"`
+	OptionalContext []PrimeContextEntry `json:"optional_context"`
+	Omitted         PrimeOmitted        `json:"omitted"`
+}
+
+// PrimeFullResult is the JSON result of `bdd prime --full`: the workspace
+// identity plus every current memory, unabridged. Human output renders
 // primeContract plus the memories section instead of this structure
 // directly.
-type PrimeResult struct {
+type PrimeFullResult struct {
 	Workspace   string         `json:"workspace"`
-	Prefix      *string        `json:"prefix"`
+	Prefix      *string        `json:"prefix,omitempty"`
 	MemoryCount int            `json:"memory_count"`
 	MemoryLimit *int           `json:"memory_limit,omitempty"`
 	Memories    []MemoryResult `json:"memories"`
 }
 
-// runPrime implements `bdd prime [--memory-limit <n>] [--no-memories]`: the
-// command agents run at session start to load the workspace contract and
-// current memories. It must stay fast and deterministic (plan section 7
-// latency discipline) — one DB open, one Memories query, no per-card work.
+// runPrime implements `bdd prime [--memory-limit <n>] [--no-memories]
+// [--full]`: the command agents run at session start to load the workspace
+// contract and current context. By default it prints a compact manifest
+// (identity, invariant rules, workflow commands, required-rune bodies, and
+// optional-context summaries); `--full` reproduces the previous full prose
+// contract instead. It must stay fast and deterministic (plan section 7
+// latency discipline).
 func runPrime(g GlobalFlags, args []string, s *Streams) int {
 	var limitRaw string
-	var haveLimit, noMemories bool
+	var haveLimit, noMemories, full bool
 
 	i := 0
 	for i < len(args) {
@@ -99,6 +211,10 @@ func runPrime(g GlobalFlags, args []string, s *Streams) int {
 			continue
 		case "--no-memories":
 			noMemories = true
+			i++
+			continue
+		case "--full":
+			full = true
 			i++
 			continue
 		}
@@ -134,49 +250,70 @@ func runPrime(g GlobalFlags, args []string, s *Streams) int {
 	}
 	upgradePending := onDisk < current
 
-	result := PrimeResult{
-		Workspace: workspaceDir(db.Path()),
-	}
+	var prefix *string
 	if onDisk > 0 {
-		if prefix, err := db.Prefix(ctx); err == nil {
-			result.Prefix = &prefix
+		if p, err := db.Prefix(ctx); err == nil {
+			prefix = &p
 		}
 	}
 
+	memories, memErr := loadPrimeMemories(ctx, db, noMemories, upgradePending)
+	if memErr != nil {
+		s.Errorf("bdd: prime: %v\n", memErr)
+		return ExitCode(memErr)
+	}
+
+	if full {
+		return runPrimeFull(s, db.Path(), prefix, upgradePending, memories, haveLimit, limit, noMemories)
+	}
+	return runPrimeCompact(ctx, db, s, prefix, upgradePending, memories, haveLimit, limit)
+}
+
+// loadPrimeMemories fetches every memory unless memories are unreachable
+// (a pending schema upgrade); --no-memories is applied by the caller when
+// deciding what to show, not here, so omission metadata can still report
+// an accurate total.
+func loadPrimeMemories(ctx context.Context, db *bdd.DB, noMemories, upgradePending bool) ([]bdd.Memory, error) {
+	if upgradePending {
+		return nil, nil
+	}
+	if noMemories {
+		return nil, nil
+	}
+	return db.Memories(ctx, bdd.MemoryQuery{})
+}
+
+func runPrimeFull(s *Streams, dbPath string, prefix *string, upgradePending bool, memories []bdd.Memory, haveLimit bool, limit int, noMemories bool) int {
+	result := PrimeFullResult{
+		Workspace: workspaceDir(dbPath),
+		Prefix:    prefix,
+	}
 	if !noMemories && !upgradePending {
-		memories, err := db.Memories(ctx, bdd.MemoryQuery{})
-		if err != nil {
-			s.Errorf("bdd: prime: %v\n", err)
-			return ExitCode(err)
-		}
 		result.MemoryCount = len(memories)
+		shown := memories
 		if haveLimit {
 			result.MemoryLimit = &limit
-			if len(memories) > limit {
-				memories = memories[:limit]
+			if len(shown) > limit {
+				shown = shown[:limit]
 			}
 		}
-		result.Memories = make([]MemoryResult, 0, len(memories))
-		for _, m := range memories {
+		result.Memories = make([]MemoryResult, 0, len(shown))
+		for _, m := range shown {
 			result.Memories = append(result.Memories, toMemoryResult(&m))
 		}
 	}
 
-	return emitPrime(s, result, upgradePending)
-}
-
-func emitPrime(s *Streams, r PrimeResult, upgradePending bool) int {
 	if s.JSON {
-		if err := NewJSONEncoder(s.Stdout).Object(r); err != nil {
+		if err := NewJSONEncoder(s.Stdout).Object(result); err != nil {
 			s.Errorf("bdd: prime: %v\n", err)
 			return ExitOther
 		}
 		return ExitSuccess
 	}
 
-	fmt.Fprintf(s.Stdout, "workspace: %s\n", r.Workspace)
-	if r.Prefix != nil {
-		fmt.Fprintf(s.Stdout, "prefix:    %s\n", *r.Prefix)
+	fmt.Fprintf(s.Stdout, "workspace: %s\n", result.Workspace)
+	if result.Prefix != nil {
+		fmt.Fprintf(s.Stdout, "prefix:    %s\n", *result.Prefix)
 	}
 	if upgradePending {
 		fmt.Fprintln(s.Stdout, "⚠ schema upgrade pending — run `bdd status --upgrade`")
@@ -186,7 +323,7 @@ func emitPrime(s *Streams, r PrimeResult, upgradePending bool) int {
 	fmt.Fprint(s.Stdout, primeContract)
 
 	fmt.Fprintln(s.Stdout)
-	if r.Memories == nil {
+	if result.Memories == nil {
 		if upgradePending {
 			fmt.Fprintln(s.Stdout, "Memories: skipped (schema upgrade pending)")
 		} else {
@@ -194,17 +331,177 @@ func emitPrime(s *Streams, r PrimeResult, upgradePending bool) int {
 		}
 		return ExitSuccess
 	}
-	if r.MemoryLimit != nil && r.MemoryCount > *r.MemoryLimit {
-		fmt.Fprintf(s.Stdout, "Memories (%d of %d, --memory-limit %d):\n", len(r.Memories), r.MemoryCount, *r.MemoryLimit)
+	if result.MemoryLimit != nil && result.MemoryCount > *result.MemoryLimit {
+		fmt.Fprintf(s.Stdout, "Memories (%d of %d, --memory-limit %d):\n", len(result.Memories), result.MemoryCount, *result.MemoryLimit)
 	} else {
-		fmt.Fprintf(s.Stdout, "Memories (%d):\n", r.MemoryCount)
+		fmt.Fprintf(s.Stdout, "Memories (%d):\n", result.MemoryCount)
 	}
-	if len(r.Memories) == 0 {
+	if len(result.Memories) == 0 {
 		fmt.Fprintln(s.Stdout, "  (none)")
 		return ExitSuccess
 	}
-	for _, m := range r.Memories {
+	for _, m := range result.Memories {
 		fmt.Fprintf(s.Stdout, "  %s: %s\n", m.Key, firstLine(m.Body))
 	}
+	return ExitSuccess
+}
+
+func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string, upgradePending bool, memories []bdd.Memory, haveLimit bool, limit int) int {
+	result := PrimeResult{
+		ContractVersion: primeContractVersion,
+		Workspace:       workspaceDir(db.Path()),
+		Prefix:          prefix,
+		Rules:           primeRules,
+		Workflow:        primeWorkflow,
+		RequiredRunes:   []PrimeRequiredRune{},
+		OptionalContext: []PrimeContextEntry{},
+	}
+	if upgradePending {
+		result.SchemaState = "upgrade_pending"
+	} else {
+		result.SchemaState = "current"
+	}
+
+	var requiredRuneKeys []string
+	if !upgradePending {
+		summaries, err := db.ListRunes(ctx, bdd.RuneQuery{})
+		if err != nil {
+			s.Errorf("bdd: prime: %v\n", err)
+			return ExitCode(err)
+		}
+
+		for _, r := range summaries {
+			switch r.Prime {
+			case bdd.RunePrimeRequired:
+				result.Omitted.Runes.Required++
+				requiredRuneKeys = append(requiredRuneKeys, r.Key)
+			case bdd.RunePrimeNever:
+				result.Omitted.Runes.Never++
+			default:
+				result.Omitted.Runes.Optional++
+				result.OptionalContext = append(result.OptionalContext, PrimeContextEntry{
+					Type: "rune", Key: r.Key, Kind: r.Kind, Title: r.Title, Revision: r.Revision,
+				})
+			}
+		}
+		result.Omitted.Runes.Total = len(summaries)
+		result.Omitted.Runes.NextCommand = []string{"bdd", "rune", "list", "--all"}
+
+		sort.Strings(requiredRuneKeys)
+		required, totalBytes, err := fetchRequiredRunes(ctx, db, requiredRuneKeys)
+		if err != nil {
+			s.Errorf("bdd: prime: %v\n", err)
+			return ExitCode(err)
+		}
+		if totalBytes > primeRequiredBudgetBytes {
+			s.Errorf("bdd: prime: required rune bodies exceed the prime budget (%d > %d bytes); fetch them individually:\n", totalBytes, primeRequiredBudgetBytes)
+			for _, key := range requiredRuneKeys {
+				s.Errorf("  bdd rune get %s\n", key)
+			}
+			return ExitOther
+		}
+		result.RequiredRunes = required
+	}
+
+	result.Omitted.Memories.Total = len(memories)
+	shown := memories
+	if haveLimit && len(shown) > limit {
+		shown = shown[:limit]
+	}
+	for _, m := range shown {
+		result.OptionalContext = append(result.OptionalContext, PrimeContextEntry{
+			Type: "memory", Key: m.Key, Title: firstLine(m.Body), Revision: m.Revision,
+		})
+	}
+	result.Omitted.Memories.Returned = len(shown)
+	if result.Omitted.Memories.Returned < result.Omitted.Memories.Total {
+		result.Omitted.Memories.NextCommand = []string{"bdd", "memory", "list"}
+	}
+
+	return emitPrimeCompact(s, result)
+}
+
+// fetchRequiredRunes reads the full record for each required-prime rune
+// key, in key order, and returns their total body size alongside them so
+// the caller can enforce the prime budget before committing to inlining
+// any of them.
+func fetchRequiredRunes(ctx context.Context, db *bdd.DB, keys []string) ([]PrimeRequiredRune, int, error) {
+	out := make([]PrimeRequiredRune, 0, len(keys))
+	total := 0
+	for _, key := range keys {
+		r, err := db.GetRune(ctx, key)
+		if err != nil {
+			return nil, 0, err
+		}
+		total += len(r.Body)
+		out = append(out, PrimeRequiredRune{
+			Key: r.Key, Kind: r.Kind, Title: r.Title, Revision: r.Revision, Body: r.Body,
+		})
+	}
+	return out, total, nil
+}
+
+func emitPrimeCompact(s *Streams, r PrimeResult) int {
+	if s.JSON {
+		if err := NewJSONEncoder(s.Stdout).Object(r); err != nil {
+			s.Errorf("bdd: prime: %v\n", err)
+			return ExitOther
+		}
+		return ExitSuccess
+	}
+
+	fmt.Fprintf(s.Stdout, "bdd prime contract v%d\n", r.ContractVersion)
+	fmt.Fprintf(s.Stdout, "workspace: %s\n", r.Workspace)
+	if r.Prefix != nil {
+		fmt.Fprintf(s.Stdout, "prefix:    %s\n", *r.Prefix)
+	}
+	fmt.Fprintf(s.Stdout, "schema:    %s\n", r.SchemaState)
+	if r.SchemaState == "upgrade_pending" {
+		fmt.Fprintln(s.Stdout, "⚠ schema upgrade pending — run `bdd status --upgrade`; context below is skipped until then")
+	}
+
+	fmt.Fprintln(s.Stdout)
+	fmt.Fprintln(s.Stdout, "Rules:")
+	for _, rule := range r.Rules {
+		fmt.Fprintf(s.Stdout, "  - %s\n", rule)
+	}
+
+	fmt.Fprintln(s.Stdout)
+	fmt.Fprintln(s.Stdout, "Workflow:")
+	for _, step := range r.Workflow {
+		fmt.Fprintf(s.Stdout, "  %-9s %s\n", step.Action+":", strings.Join(step.Argv, " "))
+	}
+
+	fmt.Fprintln(s.Stdout)
+	fmt.Fprintln(s.Stdout, "Context:")
+	if len(r.RequiredRunes) == 0 && len(r.OptionalContext) == 0 {
+		fmt.Fprintln(s.Stdout, "  (none)")
+	}
+	for _, rr := range r.RequiredRunes {
+		fmt.Fprintf(s.Stdout, "  [required] rune %s (rev %d): %s\n", rr.Key, rr.Revision, rr.Title)
+		for _, line := range strings.Split(rr.Body, "\n") {
+			fmt.Fprintf(s.Stdout, "      %s\n", line)
+		}
+	}
+	for _, e := range r.OptionalContext {
+		if e.Type == "rune" {
+			fmt.Fprintf(s.Stdout, "  [optional] rune %s (rev %d): %s\n", e.Key, e.Revision, e.Title)
+		} else {
+			fmt.Fprintf(s.Stdout, "  [optional] memory %s (rev %d): %s\n", e.Key, e.Revision, e.Title)
+		}
+	}
+
+	fmt.Fprintln(s.Stdout)
+	fmt.Fprintln(s.Stdout, "Omitted:")
+	fmt.Fprintf(s.Stdout, "  runes:    %d enabled (%d required, %d optional, %d never) — %s\n",
+		r.Omitted.Runes.Total, r.Omitted.Runes.Required, r.Omitted.Runes.Optional, r.Omitted.Runes.Never,
+		strings.Join(r.Omitted.Runes.NextCommand, " "))
+	if r.Omitted.Memories.Returned < r.Omitted.Memories.Total {
+		fmt.Fprintf(s.Stdout, "  memories: %d of %d shown — %s\n",
+			r.Omitted.Memories.Returned, r.Omitted.Memories.Total, strings.Join(r.Omitted.Memories.NextCommand, " "))
+	} else {
+		fmt.Fprintf(s.Stdout, "  memories: %d of %d shown\n", r.Omitted.Memories.Returned, r.Omitted.Memories.Total)
+	}
+
 	return ExitSuccess
 }
