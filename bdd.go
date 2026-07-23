@@ -220,7 +220,13 @@ var prefixPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 // returns ErrAlreadyExists without modifying it.
 func Init(ctx context.Context, opts InitOptions) (*DB, error) {
 	if !prefixPattern.MatchString(opts.Prefix) {
-		return nil, &ValidationError{Fields: []string{"prefix"}}
+		if opts.Prefix == "" {
+			return nil, &ValidationError{Fields: []string{"prefix"}}
+		}
+		return nil, &ValidationError{
+			Fields: []string{"prefix"},
+			Detail: fmt.Sprintf("prefix %q must be lowercase, start with a letter, and contain only letters, digits, and hyphens (max 32 chars)", opts.Prefix),
+		}
 	}
 
 	var dbPath string

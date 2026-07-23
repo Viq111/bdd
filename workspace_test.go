@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/viq111/bdd/internal/schema"
@@ -113,6 +114,20 @@ func TestInitRejectsInvalidPrefix(t *testing.T) {
 		var verr *ValidationError
 		if !errors.As(err, &verr) {
 			t.Fatalf("Init(prefix=%q) error = %v, want *ValidationError", prefix, err)
+		}
+		if prefix == "" {
+			if verr.Detail != "" {
+				t.Fatalf("Init(prefix=%q) Detail = %q, want empty for a genuinely missing value", prefix, verr.Detail)
+			}
+			continue
+		}
+		// A non-empty but malformed prefix was supplied, so the message must
+		// not claim the field is missing.
+		if verr.Detail == "" {
+			t.Fatalf("Init(prefix=%q) Detail is empty, want an explanation of why the supplied prefix is invalid", prefix)
+		}
+		if msg := err.Error(); strings.Contains(msg, "missing required field") {
+			t.Fatalf("Init(prefix=%q) error = %q, must not claim prefix is missing when a value was supplied", prefix, msg)
 		}
 	}
 }

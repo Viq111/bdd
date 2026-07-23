@@ -254,6 +254,13 @@ func runCardCreate(g GlobalFlags, args []string, s *Streams) int {
 	if err != nil {
 		var verr *bdd.ValidationError
 		if errors.As(err, &verr) {
+			if verr.Detail != "" {
+				// A supplied-but-invalid value: verr.Fields lists the field
+				// name, but "missing required field(s)" would mislead the
+				// caller into thinking they omitted a flag they did pass.
+				s.Errorf("bdd: create: %s\n", verr.Detail)
+				return ExitUsage
+			}
 			s.Errorf("bdd: create: missing required field(s): %s\n", strings.Join(verr.Fields, ", "))
 			if hint := bypassHint(verr.Fields); hint != "" {
 				s.Errorf("bdd: create: explicitly pass %s to acknowledge\n", hint)
