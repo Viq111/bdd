@@ -35,7 +35,7 @@ func TestPrimeCompactHumanOutputListsRulesWorkflowAndContext(t *testing.T) {
 
 	out := stdout.String()
 	for _, want := range []string{
-		"bdd prime contract v1",
+		"bdd prime contract v2",
 		"workspace:",
 		"schema:    current",
 		"Rules:",
@@ -139,6 +139,9 @@ func TestPrimeMemoryLimit(t *testing.T) {
 	if result.Omitted.Memories.Total != 3 {
 		t.Fatalf("result.Omitted.Memories.Total = %d, want 3", result.Omitted.Memories.Total)
 	}
+	if result.Omitted.Memories.Optional != 3 {
+		t.Fatalf("result.Omitted.Memories.Optional = %d, want 3", result.Omitted.Memories.Optional)
+	}
 	if result.Omitted.Memories.Returned != 1 {
 		t.Fatalf("result.Omitted.Memories.Returned = %d, want 1", result.Omitted.Memories.Returned)
 	}
@@ -213,11 +216,14 @@ func TestPrimeRequiredRuneInlined(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
 	}
-	if len(result.RequiredRunes) != 1 || result.RequiredRunes[0].Key != "role/programmer" {
-		t.Fatalf("result.RequiredRunes = %+v, want exactly role/programmer", result.RequiredRunes)
+	if len(result.RequiredContext) != 1 || result.RequiredContext[0].Key != "role/programmer" {
+		t.Fatalf("result.RequiredContext = %+v, want exactly role/programmer", result.RequiredContext)
 	}
-	if result.RequiredRunes[0].Body != "Write the code." {
-		t.Fatalf("result.RequiredRunes[0].Body = %q, want full body", result.RequiredRunes[0].Body)
+	if result.RequiredContext[0].Type != "rune" {
+		t.Fatalf("result.RequiredContext[0].Type = %q, want rune", result.RequiredContext[0].Type)
+	}
+	if result.RequiredContext[0].Body != "Write the code." {
+		t.Fatalf("result.RequiredContext[0].Body = %q, want full body", result.RequiredContext[0].Body)
 	}
 
 	foundOptional := false
@@ -252,6 +258,113 @@ func TestPrimeRequiredRuneInlined(t *testing.T) {
 	}
 	if strings.Contains(out, "doc/scratch") || strings.Contains(out, "Not needed.") {
 		t.Fatalf("prime output leaked a prime:never rune; got:\n%s", out)
+	}
+}
+
+func TestPrimeRequiredMemoryInlined(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--workspace", dir, "memory", "set", "always run the race tests", "--key", "testing-race", "--prime", "required"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+	}
+	stdout.Reset()
+	code = Run([]string{"--workspace", dir, "memory", "set", "prefer small PRs", "--key", "pr-size"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"--workspace", dir, "prime", "--json"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(prime --json) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	var result PrimeResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+
+	var required *PrimeRequiredEntry
+	for i, e := range result.RequiredContext {
+		if e.Type == "memory" {
+			required = &result.RequiredContext[i]
+		}
+	}
+	if required == nil {
+		t.Fatalf("no required memory in result.RequiredContext = %+v", result.RequiredContext)
+	}
+	if required.Key != "testing-race" || required.Body != "always run the race tests" {
+		t.Fatalf("required memory = %+v, want key=testing-race with full body", required)
+	}
+
+	foundOptional := false
+	for _, e := range result.OptionalContext {
+		if e.Type == "memory" {
+			if e.Key == "testing-race" {
+				t.Fatalf("prime:required memory testing-race leaked into optional_context: %+v", e)
+			}
+			if e.Key == "pr-size" {
+				foundOptional = true
+			}
+		}
+	}
+	if !foundOptional {
+		t.Fatalf("expected pr-size in optional_context, got %+v", result.OptionalContext)
+	}
+	if result.Omitted.Memories.Total != 2 || result.Omitted.Memories.Required != 1 || result.Omitted.Memories.Optional != 1 {
+		t.Fatalf("result.Omitted.Memories = %+v, want total=2 required=1 optional=1", result.Omitted.Memories)
+	}
+
+	// Human output must inline the required memory's body.
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"--workspace", dir, "prime"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(prime) exit = %d, stderr = %q", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "always run the race tests") {
+		t.Fatalf("prime output missing required memory body; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[required] memory testing-race") {
+		t.Fatalf("prime output missing required memory marker; got:\n%s", out)
+	}
+}
+
+func TestPrimeRequiredContextOverBudgetNamesBothRunesAndMemories(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	huge := strings.Repeat("x", primeRequiredBudgetBytes)
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--workspace", dir, "rune", "set", "role/huge", "--kind", "role", "--title", "Huge", "--body", huge, "--prime", "required"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune set) exit = %d, stderr = %q", code, stderr.String())
+	}
+	stdout.Reset()
+	code = Run([]string{"--workspace", dir, "memory", "set", "also huge", "--key", "huge-memory", "--prime", "required"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"--workspace", dir, "prime"}, &stdout, &stderr, "dev", "unspecified")
+	if code == ExitSuccess {
+		t.Fatalf("Run(prime) exit = %d, want non-success when combined required context exceeds the budget", code)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want no truncated body on budget failure", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "bdd rune get role/huge") {
+		t.Fatalf("stderr = %q, want it to name the rune retrieval command", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "bdd memory get huge-memory") {
+		t.Fatalf("stderr = %q, want it to name the memory retrieval command", stderr.String())
 	}
 }
 

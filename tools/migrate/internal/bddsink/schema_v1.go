@@ -27,7 +27,7 @@ var schemaV1 = map[string][]columnSpec{
 	"labels":             {{"card_id", "TEXT", 1, 1}, {"label", "TEXT", 1, 2}},
 	"card_edges":         {{"parent_id", "TEXT", 1, 1}, {"child_id", "TEXT", 1, 2}, {"created_at", "TEXT", 1, 0}, {"created_by", "TEXT", 0, 0}},
 	"notes":              {{"id", "INTEGER", 0, 1}, {"card_id", "TEXT", 1, 0}, {"author", "TEXT", 0, 0}, {"body", "TEXT", 1, 0}, {"created_at", "TEXT", 1, 0}},
-	"memories":           {{"key", "TEXT", 0, 1}, {"body", "TEXT", 1, 0}, {"created_by", "TEXT", 0, 0}, {"updated_by", "TEXT", 0, 0}, {"created_at", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"revision", "INTEGER", 1, 0}},
+	"memories":           {{"key", "TEXT", 0, 1}, {"body", "TEXT", 1, 0}, {"created_by", "TEXT", 0, 0}, {"updated_by", "TEXT", 0, 0}, {"created_at", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"revision", "INTEGER", 1, 0}, {"prime", "TEXT", 1, 0}},
 	"runes":              {{"key", "TEXT", 0, 1}, {"kind", "TEXT", 1, 0}, {"title", "TEXT", 1, 0}, {"body", "TEXT", 1, 0}, {"metadata_json", "TEXT", 1, 0}, {"enabled", "INTEGER", 1, 0}, {"protected", "INTEGER", 1, 0}, {"created_by", "TEXT", 0, 0}, {"updated_by", "TEXT", 0, 0}, {"created_at", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"revision", "INTEGER", 1, 0}, {"prime", "TEXT", 1, 0}},
 	"events":             {{"id", "INTEGER", 0, 1}, {"subject_kind", "TEXT", 1, 0}, {"subject_key", "TEXT", 1, 0}, {"revision", "INTEGER", 1, 0}, {"action", "TEXT", 1, 0}, {"actor", "TEXT", 0, 0}, {"payload_json", "TEXT", 1, 0}, {"created_at", "TEXT", 1, 0}},
 	"config":             {{"key", "TEXT", 0, 1}, {"value", "TEXT", 1, 0}, {"updated_at", "TEXT", 1, 0}, {"updated_by", "TEXT", 0, 0}},
