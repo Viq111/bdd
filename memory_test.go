@@ -3,6 +3,7 @@ package bdd
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,9 @@ func TestRememberPrimeRoundTripsPreservesAndValidates(t *testing.T) {
 		var verr *ValidationError
 		if !errors.As(err, &verr) {
 			t.Fatalf("Remember() with invalid prime error = %v, want *ValidationError", err)
+		}
+		if strings.Contains(err.Error(), "missing required field") {
+			t.Fatalf("Remember() with invalid (but present) prime value error = %q, must not claim the field is missing", err.Error())
 		}
 	}
 }

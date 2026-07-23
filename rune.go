@@ -163,7 +163,10 @@ func (db *DB) PutRune(ctx context.Context, in PutRune) (*Rune, error) {
 		return nil, &ValidationError{Fields: []string{"metadata"}}
 	}
 	if in.Mutation.Prime != nil && !validRunePrime(*in.Mutation.Prime) {
-		return nil, &ValidationError{Fields: []string{"prime"}}
+		return nil, &ValidationError{
+			Fields: []string{"prime"},
+			Detail: fmt.Sprintf("prime %q must be one of %q, %q, %q", *in.Mutation.Prime, RunePrimeRequired, RunePrimeOptional, RunePrimeNever),
+		}
 	}
 
 	var result *Rune

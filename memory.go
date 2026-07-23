@@ -70,7 +70,10 @@ func (db *DB) Remember(ctx context.Context, in Remember) (*Memory, error) {
 		return nil, err
 	}
 	if in.Prime != nil && !validMemoryPrime(*in.Prime) {
-		return nil, &ValidationError{Fields: []string{"prime"}}
+		return nil, &ValidationError{
+			Fields: []string{"prime"},
+			Detail: fmt.Sprintf("prime %q must be one of %q, %q", *in.Prime, MemoryPrimeRequired, MemoryPrimeOptional),
+		}
 	}
 
 	key := strings.TrimSpace(in.Key)

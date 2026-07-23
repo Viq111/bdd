@@ -101,6 +101,9 @@ func TestPutRunePrimeRoundTripsAndValidates(t *testing.T) {
 	if !errors.As(err, &verr) {
 		t.Fatalf("PutRune() with invalid prime error = %v, want *ValidationError", err)
 	}
+	if strings.Contains(err.Error(), "missing required field") {
+		t.Fatalf("PutRune() with invalid (but present) prime value error = %q, must not claim the field is missing", err.Error())
+	}
 }
 
 func TestPutRuneRejectsBadKeyGrammar(t *testing.T) {
