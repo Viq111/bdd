@@ -522,7 +522,7 @@ func TestRuneSetExecutablePathWithGlobalFlagFirst(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--workspace", dir, "rune", "set", "doc/review-checklist",
-		"--kind", "doc", "--title", "Review checklist", "--body", "..."},
+		"--kind", "doc", "--title", "Review checklist", "--body", "...", "--prime", "required"},
 		&stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("Run(rune set, global flag before subcommand) exit = %d, stderr = %q", code, stderr.String())
@@ -538,7 +538,7 @@ func TestRuneSetExecutablePathWithGlobalFlagFirst(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &r); err != nil {
 		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
 	}
-	if r.Key != "doc/review-checklist" || r.Kind != "doc" {
+	if r.Key != "doc/review-checklist" || r.Kind != "doc" || r.Prime != "required" {
 		t.Fatalf("r = %+v, unexpected", r)
 	}
 }
