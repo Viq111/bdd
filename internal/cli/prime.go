@@ -69,7 +69,7 @@ Snapshot and restore:
 // prime` manifest (PrimeResult) changes in a way a consuming agent must
 // notice: a renamed/removed field, a reordered section, or a changed
 // semantic. Purely additive fields do not require a bump.
-const primeContractVersion = 2
+const primeContractVersion = 3
 
 // primeRequiredBudgetBytes bounds the total size of required-context bodies
 // (required runes plus required memories) `bdd prime` will inline.
@@ -172,9 +172,10 @@ type PrimeResult struct {
 	Rules    []string            `json:"rules"`
 	Workflow []PrimeWorkflowStep `json:"workflow"`
 
-	RequiredContext []PrimeRequiredEntry `json:"required_context"`
-	OptionalContext []PrimeContextEntry  `json:"optional_context"`
-	Omitted         PrimeOmitted         `json:"omitted"`
+	RequiredRunes    []PrimeRequiredEntry `json:"required_runes"`
+	RequiredMemories []PrimeRequiredEntry `json:"required_memories"`
+	OptionalContext  []PrimeContextEntry  `json:"optional_context"`
+	Omitted          PrimeOmitted         `json:"omitted"`
 }
 
 // PrimeFullResult is the JSON result of `bdd prime --full`: the workspace
@@ -357,10 +358,11 @@ func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string
 		ContractVersion: primeContractVersion,
 		Workspace:       workspaceDir(db.Path()),
 		Prefix:          prefix,
-		Rules:           primeRules,
-		Workflow:        primeWorkflow,
-		RequiredContext: []PrimeRequiredEntry{},
-		OptionalContext: []PrimeContextEntry{},
+		Rules:            primeRules,
+		Workflow:         primeWorkflow,
+		RequiredRunes:    []PrimeRequiredEntry{},
+		RequiredMemories: []PrimeRequiredEntry{},
+		OptionalContext:  []PrimeContextEntry{},
 	}
 	if upgradePending {
 		result.SchemaState = "upgrade_pending"
@@ -423,7 +425,7 @@ func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string
 		result.Omitted.Memories.NextCommand = []string{"bdd", "memory", "list"}
 	}
 
-	required, totalBytes, err := fetchRequiredContext(ctx, db, requiredRuneKeys, memories, requiredMemoryKeys)
+	requiredRunes, requiredMemories, totalBytes, err := fetchRequiredContext(ctx, db, requiredRuneKeys, memories, requiredMemoryKeys)
 	if err != nil {
 		s.Errorf("bdd: prime: %v\n", err)
 		return ExitCode(err)
@@ -438,7 +440,8 @@ func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string
 		}
 		return ExitOther
 	}
-	result.RequiredContext = required
+	result.RequiredRunes = requiredRunes
+	result.RequiredMemories = requiredMemories
 
 	return emitPrimeCompact(s, result)
 }
@@ -448,16 +451,16 @@ func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string
 // the already-loaded memories slice, returning their combined total body
 // size alongside them so the caller can enforce the prime budget before
 // committing to inlining any of them.
-func fetchRequiredContext(ctx context.Context, db *bdd.DB, requiredRuneKeys []string, memories []bdd.Memory, requiredMemoryKeys []string) ([]PrimeRequiredEntry, int, error) {
-	out := make([]PrimeRequiredEntry, 0, len(requiredRuneKeys)+len(requiredMemoryKeys))
+func fetchRequiredContext(ctx context.Context, db *bdd.DB, requiredRuneKeys []string, memories []bdd.Memory, requiredMemoryKeys []string) ([]PrimeRequiredEntry, []PrimeRequiredEntry, int, error) {
+	runes := make([]PrimeRequiredEntry, 0, len(requiredRuneKeys))
 	total := 0
 	for _, key := range requiredRuneKeys {
 		r, err := db.GetRune(ctx, key)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, 0, err
 		}
 		total += len(r.Body)
-		out = append(out, PrimeRequiredEntry{
+		runes = append(runes, PrimeRequiredEntry{
 			Type: "rune", Key: r.Key, Kind: r.Kind, Title: r.Title, Revision: r.Revision, Body: r.Body,
 		})
 	}
@@ -466,15 +469,16 @@ func fetchRequiredContext(ctx context.Context, db *bdd.DB, requiredRuneKeys []st
 	for _, m := range memories {
 		byKey[m.Key] = m
 	}
+	mems := make([]PrimeRequiredEntry, 0, len(requiredMemoryKeys))
 	for _, key := range requiredMemoryKeys {
 		m := byKey[key]
 		total += len(m.Body)
-		out = append(out, PrimeRequiredEntry{
+		mems = append(mems, PrimeRequiredEntry{
 			Type: "memory", Key: m.Key, Title: firstLine(m.Body), Revision: m.Revision, Body: m.Body,
 		})
 	}
 
-	return out, total, nil
+	return runes, mems, total, nil
 }
 
 func emitPrimeCompact(s *Streams, r PrimeResult) int {
@@ -510,10 +514,16 @@ func emitPrimeCompact(s *Streams, r PrimeResult) int {
 
 	fmt.Fprintln(s.Stdout)
 	fmt.Fprintln(s.Stdout, "Context:")
-	if len(r.RequiredContext) == 0 && len(r.OptionalContext) == 0 {
+	if len(r.RequiredRunes) == 0 && len(r.RequiredMemories) == 0 && len(r.OptionalContext) == 0 {
 		fmt.Fprintln(s.Stdout, "  (none)")
 	}
-	for _, e := range r.RequiredContext {
+	for _, e := range r.RequiredRunes {
+		fmt.Fprintf(s.Stdout, "  [required] %s %s (rev %d): %s\n", e.Type, e.Key, e.Revision, e.Title)
+		for _, line := range strings.Split(e.Body, "\n") {
+			fmt.Fprintf(s.Stdout, "      %s\n", line)
+		}
+	}
+	for _, e := range r.RequiredMemories {
 		fmt.Fprintf(s.Stdout, "  [required] %s %s (rev %d): %s\n", e.Type, e.Key, e.Revision, e.Title)
 		for _, line := range strings.Split(e.Body, "\n") {
 			fmt.Fprintf(s.Stdout, "      %s\n", line)

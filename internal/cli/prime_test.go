@@ -35,7 +35,7 @@ func TestPrimeCompactHumanOutputListsRulesWorkflowAndContext(t *testing.T) {
 
 	out := stdout.String()
 	for _, want := range []string{
-		"bdd prime contract v2",
+		"bdd prime contract v3",
 		"workspace:",
 		"schema:    current",
 		"Rules:",
@@ -216,14 +216,14 @@ func TestPrimeRequiredRuneInlined(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
 	}
-	if len(result.RequiredContext) != 1 || result.RequiredContext[0].Key != "role/programmer" {
-		t.Fatalf("result.RequiredContext = %+v, want exactly role/programmer", result.RequiredContext)
+	if len(result.RequiredRunes) != 1 || result.RequiredRunes[0].Key != "role/programmer" {
+		t.Fatalf("result.RequiredRunes = %+v, want exactly role/programmer", result.RequiredRunes)
 	}
-	if result.RequiredContext[0].Type != "rune" {
-		t.Fatalf("result.RequiredContext[0].Type = %q, want rune", result.RequiredContext[0].Type)
+	if result.RequiredRunes[0].Type != "rune" {
+		t.Fatalf("result.RequiredRunes[0].Type = %q, want rune", result.RequiredRunes[0].Type)
 	}
-	if result.RequiredContext[0].Body != "Write the code." {
-		t.Fatalf("result.RequiredContext[0].Body = %q, want full body", result.RequiredContext[0].Body)
+	if result.RequiredRunes[0].Body != "Write the code." {
+		t.Fatalf("result.RequiredRunes[0].Body = %q, want full body", result.RequiredRunes[0].Body)
 	}
 
 	foundOptional := false
@@ -289,13 +289,13 @@ func TestPrimeRequiredMemoryInlined(t *testing.T) {
 	}
 
 	var required *PrimeRequiredEntry
-	for i, e := range result.RequiredContext {
+	for i, e := range result.RequiredMemories {
 		if e.Type == "memory" {
-			required = &result.RequiredContext[i]
+			required = &result.RequiredMemories[i]
 		}
 	}
 	if required == nil {
-		t.Fatalf("no required memory in result.RequiredContext = %+v", result.RequiredContext)
+		t.Fatalf("no required memory in result.RequiredMemories = %+v", result.RequiredMemories)
 	}
 	if required.Key != "testing-race" || required.Body != "always run the race tests" {
 		t.Fatalf("required memory = %+v, want key=testing-race with full body", required)

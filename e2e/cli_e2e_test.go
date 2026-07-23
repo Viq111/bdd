@@ -499,17 +499,17 @@ func TestPrimeRequiredMemoryIsInlined(t *testing.T) {
 		t.Fatalf("prime --json failed: %s", compact.stderr)
 	}
 	var out struct {
-		RequiredContext []struct {
+		RequiredMemories []struct {
 			Type string `json:"type"`
 			Key  string `json:"key"`
 			Body string `json:"body"`
-		} `json:"required_context"`
+		} `json:"required_memories"`
 	}
 	if err := json.Unmarshal([]byte(compact.stdout), &out); err != nil {
 		t.Fatalf("prime --json unmarshal: %v (%s)", err, compact.stdout)
 	}
 	found := false
-	for _, e := range out.RequiredContext {
+	for _, e := range out.RequiredMemories {
 		if e.Type == "memory" && e.Key == "testing-race" {
 			found = true
 			if e.Body != "always run the race tests" {
@@ -518,7 +518,7 @@ func TestPrimeRequiredMemoryIsInlined(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("required_context missing testing-race memory: %+v", out.RequiredContext)
+		t.Fatalf("required_memories missing testing-race memory: %+v", out.RequiredMemories)
 	}
 }
 
