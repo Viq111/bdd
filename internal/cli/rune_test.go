@@ -506,3 +506,60 @@ func TestRuneSetCreateOnlyRejectsExisting(t *testing.T) {
 		t.Fatalf("Run(rune set --create-only) exit = %d, want %d", code, ExitConflict)
 	}
 }
+
+// TestRuneSetExecutablePathWithGlobalFlagFirst is a regression test for bd
+// bdd-9b9h: QA's reproduction placed the global --workspace flag before the
+// subcommand (as `bdd --workspace <dir> rune set ...`, the documented
+// invocation shape), rather than after it like the rest of this file's
+// tests. That shape reaches the same Run -> cobra dispatch path, so this
+// pins it directly instead of only ever exercising --workspace after the
+// subcommand name. It also exercises the exact key/kind pairing documented
+// in the `rune set` help example (cobra_tree.go), so a future edit that
+// makes that example violate the "<kind>/<name>" key grammar fails loudly
+// here instead of only surfacing when a user copies it.
+func TestRuneSetExecutablePathWithGlobalFlagFirst(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--workspace", dir, "rune", "set", "doc/review-checklist",
+		"--kind", "doc", "--title", "Review checklist", "--body", "..."},
+		&stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune set, global flag before subcommand) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"--workspace", dir, "rune", "get", "--json", "doc/review-checklist"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(rune get, global flag before subcommand) exit = %d, stderr = %q", code, stderr.String())
+	}
+	var r RuneResult
+	if err := json.Unmarshal(stdout.Bytes(), &r); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	if r.Key != "doc/review-checklist" || r.Kind != "doc" {
+		t.Fatalf("r = %+v, unexpected", r)
+	}
+}
+
+// TestRuneSetRejectsMalformedKeyWithClearMessage is a regression test for bd
+// bdd-9b9h: a rune key without a "<kind>/<name>" separator produced "missing
+// required field(s): key", which reads as though the key was omitted when
+// it was actually present but malformed. That misleading wording is what
+// caused QA's reproduction (a key with no "/") to be misdiagnosed as a
+// broken Cobra dispatch. This pins the corrected, self-explanatory message.
+func TestRuneSetRejectsMalformedKeyWithClearMessage(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"rune", "set", "--workspace", dir, "required-rune",
+		"--kind", "instruction", "--title", "Required rune", "--body", "read this fully"},
+		&stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(rune set, malformed key) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got, want := stderr.String(), `bdd: rune set: bdd: invalid argument: key "required-rune" must have the form "<kind>/<name>" (each segment lowercase, starting with a letter, e.g. "doc/review-checklist")`+"\n"; got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
+}

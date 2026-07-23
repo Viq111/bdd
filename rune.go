@@ -111,7 +111,10 @@ var runeKeySegment = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 func parseRuneKey(key string) (kind, name string, err error) {
 	parts := strings.SplitN(key, "/", 2)
 	if len(parts) != 2 || !runeKeySegment.MatchString(parts[0]) || !runeKeySegment.MatchString(parts[1]) {
-		return "", "", &ValidationError{Fields: []string{"key"}}
+		return "", "", &ValidationError{
+			Fields: []string{"key"},
+			Detail: fmt.Sprintf(`key %q must have the form "<kind>/<name>" (each segment lowercase, starting with a letter, e.g. "doc/review-checklist")`, key),
+		}
 	}
 	return parts[0], parts[1], nil
 }
