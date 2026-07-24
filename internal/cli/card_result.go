@@ -85,6 +85,17 @@ type ShowResult struct {
 	Notes []NoteResult `json:"notes"`
 }
 
+// EventResult is one entry of the JSON/human result of `bdd history`.
+type EventResult struct {
+	ID        int64  `json:"id"`
+	CardID    string `json:"card_id"`
+	Revision  int64  `json:"revision"`
+	Action    string `json:"action"`
+	Actor     string `json:"actor"`
+	Payload   string `json:"payload"`
+	CreatedAt string `json:"created_at"`
+}
+
 func formatTimestamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
@@ -167,6 +178,26 @@ func toNoteResults(notes []bdd.Note) []NoteResult {
 	out := make([]NoteResult, len(notes))
 	for i, n := range notes {
 		out[i] = toNoteResult(n)
+	}
+	return out
+}
+
+func toEventResult(e bdd.Event) EventResult {
+	return EventResult{
+		ID:        e.ID,
+		CardID:    e.CardID,
+		Revision:  e.Revision,
+		Action:    e.Action,
+		Actor:     e.Actor,
+		Payload:   e.Payload,
+		CreatedAt: formatTimestamp(e.CreatedAt),
+	}
+}
+
+func toEventResults(events []bdd.Event) []EventResult {
+	out := make([]EventResult, len(events))
+	for i, e := range events {
+		out[i] = toEventResult(e)
 	}
 	return out
 }

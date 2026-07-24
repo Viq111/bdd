@@ -861,6 +861,46 @@ func TestParentsAndChildren(t *testing.T) {
 	}
 }
 
+func TestHistoryReturnsAuditTrail(t *testing.T) {
+	dir := initTestWorkspace(t)
+	id := createCard(t, dir, "--type", "chore", "tracked")
+	runCLI(t, dir, ExitSuccess, "note", id, "investigated")
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "history", id)
+	var events []EventResult
+	if err := json.Unmarshal([]byte(stdout), &events); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Action != "create" || events[1].Action != "note" {
+		t.Fatalf("history = %+v, want [create note]", events)
+	}
+	for _, e := range events {
+		if e.CardID != id {
+			t.Fatalf("event.CardID = %q, want %q", e.CardID, id)
+		}
+	}
+}
+
+func TestHistoryOnMissingCardReturnsNotFound(t *testing.T) {
+	dir := initTestWorkspace(t)
+	runCLI(t, dir, ExitNotFound, "history", "bdd-missing")
+}
+
+func TestHistorySurvivesCardDeletion(t *testing.T) {
+	dir := initTestWorkspace(t)
+	id := createCard(t, dir, "--type", "chore", "tracked")
+	runCLI(t, dir, ExitSuccess, "delete", id, "--force")
+
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "history", id)
+	var events []EventResult
+	if err := json.Unmarshal([]byte(stdout), &events); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Action != "create" || events[1].Action != "delete" {
+		t.Fatalf("history = %+v, want [create delete]", events)
+	}
+}
+
 func TestLabelAddRemoveList(t *testing.T) {
 	dir := initTestWorkspace(t)
 	id := createCard(t, dir, "--type", "chore", "labelled")

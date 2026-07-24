@@ -403,9 +403,8 @@ sentinels in `errors.go` (`ErrNotFound`, `ErrAlreadyExists`,
 additionally lists every field that failed validation, not just the first.
 
 Every card mutation also appends a row to an internal, append-only events
-table for audit purposes, but that trail is internal-only today: there is no
-`ListEvents` method or `bdd` command to read it back (tracked as a follow-up
-in bd bdd-as31).
+table for audit purposes. Read it back with `(*DB).Events` or `bdd history
+<id>`.
 
 ## More documentation
 

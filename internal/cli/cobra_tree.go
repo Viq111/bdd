@@ -359,6 +359,10 @@ func buildCommands(global GlobalFlags, streams *Streams) []*cobra.Command {
 			"List the cards blocked by the card at <id>.",
 			"  bdd children bdd-a1b", runCardChildren, global, streams, nil),
 
+		newLeaf("history <id>", "Show a card's audit trail",
+			"Print every audit-trail event recorded for the card at <id> (creation,\nupdates, notes, edges, deletion), oldest first.",
+			"  bdd history bdd-a1b", runCardHistory, global, streams, nil),
+
 		newGroup("label", "Manage a card's labels",
 			"Add, remove, or list the labels on a card.",
 			"  bdd label add bdd-a1b urgent\n  bdd label list bdd-a1b",

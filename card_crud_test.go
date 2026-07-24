@@ -769,6 +769,79 @@ func TestNotesOnMissingCardReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestEventsOnMissingCardReturnsNotFound(t *testing.T) {
+	db := newTestDB(t)
+	_, err := db.Events(context.Background(), "bdd-missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Events() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestEventsReturnsChronologicalAuditTrail(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore, CreatedBy: "alice"})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	title := "y"
+	if _, err := db.UpdateCard(ctx, created.ID, UpdateCard{Title: &title, Actor: "bob"}); err != nil {
+		t.Fatalf("UpdateCard() error = %v", err)
+	}
+	if _, err := db.AddNote(ctx, AddNote{CardID: created.ID, Body: "note", Author: "carol"}); err != nil {
+		t.Fatalf("AddNote() error = %v", err)
+	}
+
+	events, err := db.Events(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Events() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("Events() returned %d events, want 3: %+v", len(events), events)
+	}
+	wantActions := []string{"create", "update", "note"}
+	for i, want := range wantActions {
+		if events[i].Action != want {
+			t.Fatalf("events[%d].Action = %q, want %q", i, events[i].Action, want)
+		}
+		if events[i].CardID != created.ID {
+			t.Fatalf("events[%d].CardID = %q, want %q", i, events[i].CardID, created.ID)
+		}
+	}
+	if events[0].Actor != "alice" || events[1].Actor != "bob" || events[2].Actor != "carol" {
+		t.Fatalf("event actors = [%q %q %q], want [alice bob carol]", events[0].Actor, events[1].Actor, events[2].Actor)
+	}
+	if events[1].Payload == "" {
+		t.Fatalf("update event payload is empty")
+	}
+}
+
+func TestEventsSurvivesCardDeletion(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore, CreatedBy: "alice"})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	if _, err := db.DeleteCard(ctx, created.ID, "bob", true); err != nil {
+		t.Fatalf("DeleteCard() error = %v", err)
+	}
+
+	events, err := db.Events(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Events() error = %v, want nil (history must survive deletion)", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("Events() returned %d events, want 2: %+v", len(events), events)
+	}
+	if events[0].Action != "create" || events[1].Action != "delete" {
+		t.Fatalf("events actions = [%q %q], want [create delete]", events[0].Action, events[1].Action)
+	}
+}
+
 func TestCreateCardRejectsMissingParent(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

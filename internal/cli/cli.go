@@ -36,6 +36,7 @@ const commandsReference = `  init [--prefix <prefix>] [path]   Create a new work
   human <id> [reason]               Flag a card as needing human attention
   parents <id>                      List a card's blocking parents
   children <id>                     List a card's blocked children
+  history <id>                      Show a card's audit trail
   label add|remove|list <id> [l]    Manage a card's labels
   delete <id> --force               Hard-delete a card and its edges
   snapshot [--output <path>]        Write an integrity-checked backup of the live database

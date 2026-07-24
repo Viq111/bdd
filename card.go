@@ -131,6 +131,21 @@ type Note struct {
 	CreatedAt time.Time
 }
 
+// Event is one append-only entry in a card's audit trail: the internal
+// events table every mutation writes to (see writeEvent in mutation.go).
+// Payload is the raw JSON object recorded alongside the action, whose shape
+// varies by Action (e.g. "update" records the changed fields, "add_parent"
+// records the parent added).
+type Event struct {
+	ID        int64
+	CardID    string
+	Revision  int64
+	Action    string
+	Actor     string
+	Payload   string
+	CreatedAt time.Time
+}
+
 // GetCard returns the full record for id, including labels, parent links,
 // and child links. Use ListCards, SearchCards, or ReadyCards for bulk reads
 // that do not need the full-fat projection.
@@ -180,6 +195,58 @@ func (db *DB) Notes(ctx context.Context, cardID string) ([]Note, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("bdd: notes: %w", err)
 	}
+	return out, nil
+}
+
+// Events returns cardID's audit trail (every row writeEvent has recorded for
+// it, across creation, updates, notes, edges, and deletion), oldest first.
+// This is the public read path for the internal events table (bd bdd-as31):
+// there is no separate Event-writing API, only this reader.
+func (db *DB) Events(ctx context.Context, cardID string) ([]Event, error) {
+	if err := db.ready(); err != nil {
+		return nil, err
+	}
+
+	// Deleted cards no longer have a row in cards, but DeleteCard preserves
+	// their events (including the "delete" tombstone), so existence is
+	// checked against the events table, not cards, to keep history readable
+	// after deletion. Only an id with no rows in either table is not found.
+	rows, err := db.sql.QueryContext(ctx, `SELECT id, subject_key, revision, action, actor, payload_json, created_at FROM events WHERE subject_kind = 'card' AND subject_key = ? ORDER BY created_at ASC, id ASC`, cardID)
+	if err != nil {
+		return nil, fmt.Errorf("bdd: events: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Event
+	for rows.Next() {
+		var e Event
+		var actor sql.NullString
+		var createdAt string
+		if err := rows.Scan(&e.ID, &e.CardID, &e.Revision, &e.Action, &actor, &e.Payload, &createdAt); err != nil {
+			return nil, fmt.Errorf("bdd: events: %w", err)
+		}
+		e.Actor = actor.String
+		t, err := parseTime(createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("bdd: events: %w", err)
+		}
+		e.CreatedAt = t
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("bdd: events: %w", err)
+	}
+
+	if len(out) == 0 {
+		var exists int
+		if err := db.sql.QueryRowContext(ctx, `SELECT 1 FROM cards WHERE id = ?`, cardID).Scan(&exists); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, fmt.Errorf("bdd: card %s: %w", cardID, ErrNotFound)
+			}
+			return nil, fmt.Errorf("bdd: events: %w", err)
+		}
+	}
+
 	return out, nil
 }
 
