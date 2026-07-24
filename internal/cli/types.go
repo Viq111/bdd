@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+
+	"github.com/spf13/cobra"
 )
 
 // TypeDefResult is one entry of the JSON/human result of `bdd types`.
@@ -12,7 +14,7 @@ type TypeDefResult struct {
 }
 
 // runTypes implements `bdd types`.
-func runTypes(g GlobalFlags, args []string, s *Streams) int {
+func runTypes(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 0 {
 		return reportUnknownArg(s, "types", args[0])
 	}

@@ -3,29 +3,26 @@ package cli
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
 // runCardParents implements `bdd parents <id>`.
-func runCardParents(g GlobalFlags, args []string, s *Streams) int {
+func runCardParents(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	return runCardEdgeList(g, args, s, "parents", func(ctx context.Context, db *bdd.DB, id string) ([]bdd.CardRef, error) {
 		return db.Parents(ctx, id)
 	})
 }
 
 // runCardChildren implements `bdd children <id>`.
-func runCardChildren(g GlobalFlags, args []string, s *Streams) int {
+func runCardChildren(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	return runCardEdgeList(g, args, s, "children", func(ctx context.Context, db *bdd.DB, id string) ([]bdd.CardRef, error) {
 		return db.Children(ctx, id)
 	})
 }
 
 func runCardEdgeList(g GlobalFlags, args []string, s *Streams, cmdName string, fetch func(context.Context, *bdd.DB, string) ([]bdd.CardRef, error)) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, cmdName, arg)
-	}
 	if len(args) != 1 {
 		s.Errorf("bdd: %s: expected exactly one card id argument\n", cmdName)
 		return ExitUsage
@@ -71,37 +68,22 @@ func runCardEdgeList(g GlobalFlags, args []string, s *Streams, cmdName string, f
 	return ExitSuccess
 }
 
-// runCardLabel implements `bdd label add|remove|list <id> [label]`.
-func runCardLabel(g GlobalFlags, args []string, s *Streams) int {
+// runCardLabel implements the `bdd label` group's fallback dispatch for a
+// missing or unknown subcommand; matched subcommands (add, remove, list)
+// are routed directly to their leaf by cobra and never reach here.
+func runCardLabel(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: label: missing subcommand (add, remove, list)\n")
 		return ExitUsage
 	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "label", args[0])
-	}
-	sub, rest := args[0], args[1:]
-
-	switch sub {
-	case "add":
-		return runCardLabelMutate(g, rest, s, true)
-	case "remove":
-		return runCardLabelMutate(g, rest, s, false)
-	case "list":
-		return runCardLabelList(g, rest, s)
-	default:
-		s.Errorf("bdd: label: unknown subcommand %q\n", sub)
-		return ExitUsage
-	}
+	s.Errorf("bdd: label: unknown subcommand %q\n", args[0])
+	return ExitUsage
 }
 
-func runCardLabelMutate(g GlobalFlags, args []string, s *Streams, add bool) int {
+func runCardLabelMutate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams, add bool) int {
 	cmdName := "label remove"
 	if add {
 		cmdName = "label add"
-	}
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, cmdName, arg)
 	}
 	if len(args) != 2 {
 		s.Errorf("bdd: %s: expected a card id and a label argument\n", cmdName)
@@ -132,10 +114,7 @@ func runCardLabelMutate(g GlobalFlags, args []string, s *Streams, add bool) int 
 	return emitCard(s, cmdName, toCardResult(card))
 }
 
-func runCardLabelList(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "label list", arg)
-	}
+func runCardLabelList(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 1 {
 		s.Errorf("bdd: label list: expected exactly one card id argument\n")
 		return ExitUsage

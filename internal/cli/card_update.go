@@ -2,8 +2,8 @@ package cli
 
 import (
 	"context"
-	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
@@ -13,186 +13,36 @@ import (
 // [--worktree <path>|--clear-worktree] [--add-label <l>]...
 // [--remove-label <l>]... [--add-parent <id>]... [--remove-parent <id>]...
 // [--add-child <id>]... [--remove-child <id>]...`.
-func runCardUpdate(g GlobalFlags, args []string, s *Streams) int {
+func runCardUpdate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: update: card id is required\n")
 		return ExitUsage
 	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "update", args[0])
-	}
 	id := args[0]
-	rest := args[1:]
-
-	var claim bool
-	var title, typ, status, priorityRaw, description, reproduce, design, acceptance, externalRef, worktree string
-	var haveTitle, haveType, haveStatus, havePriority, haveDescription, haveReproduce, haveDesign, haveAcceptance, haveExternalRef, haveWorktree bool
-	var clearWorktree bool
-	var addLabels, removeLabels, addParents, removeParents, addChildren, removeChildren []string
-
-	i := 0
-	for i < len(rest) {
-		arg := rest[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--claim":
-			claim = true
-			i++
-			continue
-		case "--clear-worktree":
-			clearWorktree = true
-			i++
-			continue
-		case "--title":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			title, haveTitle = val, true
-			i += consumed
-			continue
-		case "--type":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			typ, haveType = val, true
-			i += consumed
-			continue
-		case "--status":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			status, haveStatus = val, true
-			i += consumed
-			continue
-		case "--priority":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			priorityRaw, havePriority = val, true
-			i += consumed
-			continue
-		case "--description":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			description, haveDescription = val, true
-			i += consumed
-			continue
-		case "--reproduce":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			reproduce, haveReproduce = val, true
-			i += consumed
-			continue
-		case "--design":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			design, haveDesign = val, true
-			i += consumed
-			continue
-		case "--acceptance":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			acceptance, haveAcceptance = val, true
-			i += consumed
-			continue
-		case "--external-ref":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			externalRef, haveExternalRef = val, true
-			i += consumed
-			continue
-		case "--worktree":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			worktree, haveWorktree = val, true
-			i += consumed
-			continue
-		case "--add-label":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			addLabels = append(addLabels, val)
-			i += consumed
-			continue
-		case "--remove-label":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			removeLabels = append(removeLabels, val)
-			i += consumed
-			continue
-		case "--add-parent":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			addParents = append(addParents, val)
-			i += consumed
-			continue
-		case "--remove-parent":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			removeParents = append(removeParents, val)
-			i += consumed
-			continue
-		case "--add-child":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			addChildren = append(addChildren, val)
-			i += consumed
-			continue
-		case "--remove-child":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: update: %v\n", err)
-				return ExitUsage
-			}
-			removeChildren = append(removeChildren, val)
-			i += consumed
-			continue
-		}
-
-		s.Errorf("bdd: update: unknown flag %q\n", arg)
+	if len(args) > 1 {
+		s.Errorf("bdd: update: unknown flag %q\n", args[1])
 		return ExitUsage
 	}
+
+	fs := cmd.Flags()
+	claim := flagBool(fs, "claim")
+	title, haveTitle := flagString(fs, "title")
+	typ, haveType := flagString(fs, "type")
+	status, haveStatus := flagString(fs, "status")
+	priorityRaw, havePriority := flagString(fs, "priority")
+	description, haveDescription := flagString(fs, "description")
+	reproduce, haveReproduce := flagString(fs, "reproduce")
+	design, haveDesign := flagString(fs, "design")
+	acceptance, haveAcceptance := flagString(fs, "acceptance")
+	externalRef, haveExternalRef := flagString(fs, "external-ref")
+	worktree, haveWorktree := flagString(fs, "worktree")
+	clearWorktree := flagBool(fs, "clear-worktree")
+	addLabels := flagStringSlice(fs, "add-label")
+	removeLabels := flagStringSlice(fs, "remove-label")
+	addParents := flagStringSlice(fs, "add-parent")
+	removeParents := flagStringSlice(fs, "remove-parent")
+	addChildren := flagStringSlice(fs, "add-child")
+	removeChildren := flagStringSlice(fs, "remove-child")
 
 	anyFieldChange := haveTitle || haveType || haveStatus || havePriority || haveDescription || haveReproduce ||
 		haveDesign || haveAcceptance || haveExternalRef || haveWorktree || clearWorktree ||

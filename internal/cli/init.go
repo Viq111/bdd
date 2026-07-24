@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
@@ -19,35 +20,15 @@ type InitResult struct {
 }
 
 // runInit implements `bdd init [--prefix <prefix>] [path]`.
-func runInit(g GlobalFlags, args []string, s *Streams) int {
-	var prefix, path string
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		if name == "--prefix" {
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: init: %v\n", err)
-				return ExitUsage
-			}
-			prefix = val
-			i += consumed
-			continue
-		}
-
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: init: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		if path != "" {
-			s.Errorf("bdd: init: unexpected argument %q\n", arg)
-			return ExitUsage
-		}
-		path = arg
-		i++
+func runInit(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	prefix, _ := flagString(cmd.Flags(), "prefix")
+	var path string
+	if len(args) > 0 {
+		path = args[0]
+	}
+	if len(args) > 1 {
+		s.Errorf("bdd: init: unexpected argument %q\n", args[1])
+		return ExitUsage
 	}
 
 	initOpts := bdd.InitOptions{Prefix: prefix}

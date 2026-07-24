@@ -3,45 +3,31 @@ package cli
 import (
 	"context"
 	"io"
-	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
 // runCardNote implements `bdd note <id> [body] [--stdin]`.
-func runCardNote(g GlobalFlags, args []string, s *Streams) int {
+func runCardNote(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: note: card id is required\n")
 		return ExitUsage
 	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "note", args[0])
-	}
 	id := args[0]
 	rest := args[1:]
 
-	var body string
-	var haveBody, stdin bool
+	stdin := flagBool(cmd.Flags(), "stdin")
 
-	i := 0
-	for i < len(rest) {
-		arg := rest[i]
-		if arg == "--stdin" {
-			stdin = true
-			i++
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: note: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		if haveBody {
-			s.Errorf("bdd: note: unexpected argument %q\n", arg)
-			return ExitUsage
-		}
-		body, haveBody = arg, true
-		i++
+	var body string
+	var haveBody bool
+	if len(rest) > 0 {
+		body, haveBody = rest[0], true
+	}
+	if len(rest) > 1 {
+		s.Errorf("bdd: note: unexpected argument %q\n", rest[1])
+		return ExitUsage
 	}
 
 	if stdin && haveBody {
@@ -86,10 +72,7 @@ func runCardNote(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runCardClose implements `bdd close <id> [reason]`.
-func runCardClose(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "close", arg)
-	}
+func runCardClose(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: close: card id is required\n")
 		return ExitUsage
@@ -120,10 +103,7 @@ func runCardClose(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runCardReopen implements `bdd reopen <id>`.
-func runCardReopen(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "reopen", arg)
-	}
+func runCardReopen(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 1 {
 		s.Errorf("bdd: reopen: expected exactly one card id argument\n")
 		return ExitUsage
@@ -147,36 +127,18 @@ func runCardReopen(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runCardDefer implements `bdd defer <id> [--until <RFC3339 timestamp>]`.
-func runCardDefer(g GlobalFlags, args []string, s *Streams) int {
+func runCardDefer(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: defer: card id is required\n")
 		return ExitUsage
 	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "defer", args[0])
-	}
 	id := args[0]
-	rest := args[1:]
-
-	var untilRaw string
-	var haveUntil bool
-
-	i := 0
-	for i < len(rest) {
-		arg := rest[i]
-		name, inline, hasInline := cutFlagValue(arg)
-		if name != "--until" {
-			s.Errorf("bdd: defer: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-		if err != nil {
-			s.Errorf("bdd: defer: %v\n", err)
-			return ExitUsage
-		}
-		untilRaw, haveUntil = val, true
-		i += consumed
+	if len(args) > 1 {
+		s.Errorf("bdd: defer: unknown flag %q\n", args[1])
+		return ExitUsage
 	}
+
+	untilRaw, haveUntil := flagString(cmd.Flags(), "until")
 
 	var until *time.Time
 	if haveUntil {
@@ -205,10 +167,7 @@ func runCardDefer(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runCardHuman implements `bdd human <id> [reason]`.
-func runCardHuman(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "human", arg)
-	}
+func runCardHuman(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: human: card id is required\n")
 		return ExitUsage

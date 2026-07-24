@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
 )
 
 // StatusResult is the JSON/human result of `bdd status`.
@@ -18,16 +20,11 @@ type StatusResult struct {
 }
 
 // runStatus implements `bdd status [--upgrade]`.
-func runStatus(g GlobalFlags, args []string, s *Streams) int {
-	upgrade := false
-	for _, arg := range args {
-		switch arg {
-		case "--upgrade":
-			upgrade = true
-		default:
-			return reportUnknownArg(s, "status", arg)
-		}
+func runStatus(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) > 0 {
+		return reportUnknownArg(s, "status", args[0])
 	}
+	upgrade := flagBool(cmd.Flags(), "upgrade")
 
 	ctx := context.Background()
 	db, code := openDB(ctx, g, "status", s)

@@ -3,14 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
+
+	"github.com/spf13/cobra"
 )
 
 // runCardHistory implements `bdd history <id>`: the public read path for a
 // card's internal audit trail (bd bdd-as31).
-func runCardHistory(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "history", arg)
-	}
+func runCardHistory(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 1 {
 		s.Errorf("bdd: history: expected exactly one card id argument\n")
 		return ExitUsage

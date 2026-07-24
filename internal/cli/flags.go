@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"strings"
+
+	"github.com/spf13/pflag"
 )
 
 // GlobalFlags holds the flags shared by every bdd subcommand.
@@ -28,8 +30,9 @@ type GlobalFlags struct {
 // tokens untouched and in their original relative order. Both
 // "--flag=value" and "--flag value" are accepted for value-taking flags.
 //
-// Command-specific parsing runs on the returned remainder, so a global
-// flag may appear before or after the subcommand name.
+// This pass runs ahead of cobra so a global flag may appear before or after
+// the subcommand name; cobra's own per-command FlagSet parsing (see
+// cobra_tree.go) never sees these four flags.
 func ParseGlobalFlags(args []string) (GlobalFlags, []string, error) {
 	var g GlobalFlags
 	rest := make([]string, 0, len(args))
@@ -59,12 +62,16 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string, error) {
 			continue
 		}
 
-		val, consumed, err := flagValue(name, inline, hasInline, args, i)
-		if err != nil {
-			return GlobalFlags{}, nil, err
+		if hasInline {
+			*target = inline
+			i++
+			continue
 		}
-		*target = val
-		i += consumed
+		if i+1 >= len(args) {
+			return GlobalFlags{}, nil, fmt.Errorf("bdd: flag %s requires a value", name)
+		}
+		*target = args[i+1]
+		i += 2
 	}
 
 	return g, rest, nil
@@ -83,25 +90,16 @@ func cutFlagValue(arg string) (name, value string, hasValue bool) {
 	return arg, "", false
 }
 
-// flagValue resolves a value-taking flag's value, either from an inline
-// "--flag=value" token or from the following token, and reports how many
-// tokens (starting at i) it consumed.
-func flagValue(name, inline string, hasInline bool, args []string, i int) (value string, consumed int, err error) {
-	if hasInline {
-		return inline, 1, nil
-	}
-	if i+1 >= len(args) {
-		return "", 0, fmt.Errorf("bdd: flag %s requires a value", name)
-	}
-	return args[i+1], 2, nil
-}
-
 // reportUnknownArg reports an unrecognized token as an unknown flag if it
 // looks like one (leading "-", covering both "--foo" and "--foo=bar"
 // forms), or as an unknown positional argument otherwise. This is the
 // shared wording convention every bdd subcommand uses so removed or
 // mistyped flags (e.g. the removed global --db) are never misreported as
-// positional arguments.
+// positional arguments. It stays in use post-cobra-migration for arity
+// overflow: cobra's own FlagSet.Parse already rejects unknown flags before
+// a handler runs, but a *known*-shaped positional token past a command's
+// fixed arity (e.g. a third argument to `close <id> [reason]`) is still the
+// handler's job to reject.
 func reportUnknownArg(s *Streams, cmd, arg string) int {
 	if strings.HasPrefix(arg, "-") {
 		s.Errorf("bdd: %s: unknown flag %q\n", cmd, arg)
@@ -111,17 +109,32 @@ func reportUnknownArg(s *Streams, cmd, arg string) int {
 	return ExitUsage
 }
 
-// firstFlagArg returns the first flag-shaped (leading "-") token in args,
-// if any. Commands with a fixed positional arity (e.g. "expects exactly
-// one id argument") must check this before their count check: a stray
-// removed/mistyped flag like --db changes the token count too, and would
-// otherwise be misreported as a wrong-arity error instead of an unknown
-// flag.
-func firstFlagArg(args []string) (string, bool) {
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "-") {
-			return arg, true
-		}
-	}
-	return "", false
+// flagString reads a string flag's value and whether it was explicitly
+// passed (as opposed to left at its zero-value default), the distinction
+// the handwritten "have<Field> bool" pattern used to track by hand.
+func flagString(fs *pflag.FlagSet, name string) (value string, changed bool) {
+	v, _ := fs.GetString(name)
+	return v, fs.Changed(name)
+}
+
+// flagBool reads a bool flag's value; bool flags need no changed/omitted
+// distinction since their zero value (false) is never itself a meaningful
+// "explicitly set" state for any bdd command.
+func flagBool(fs *pflag.FlagSet, name string) bool {
+	v, _ := fs.GetBool(name)
+	return v
+}
+
+// flagStringSlice reads a repeatable string flag's values (e.g. --label,
+// repeated). A nil/empty result means the flag was never passed.
+func flagStringSlice(fs *pflag.FlagSet, name string) []string {
+	v, _ := fs.GetStringArray(name)
+	return v
+}
+
+// flagInt64 reads an int64 flag's value and whether it was explicitly
+// passed.
+func flagInt64(fs *pflag.FlagSet, name string) (value int64, changed bool) {
+	v, _ := fs.GetInt64(name)
+	return v, fs.Changed(name)
 }

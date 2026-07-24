@@ -6,18 +6,21 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
-// primeContract is the static, human-readable body of `bdd prime --full`:
-// the workspace contract an agent needs at session start, generated from
-// the same commandsReference (internal/cli/cli.go) the top-level --help
-// text renders, plus the semantics that don't fit a one-line command
+// primeContractText renders the static, human-readable body of `bdd prime
+// --full`: the workspace contract an agent needs at session start, built
+// from the same commandsReferenceText (internal/cli/cli.go) the top-level
+// --help text renders, plus the semantics that don't fit a one-line command
 // summary (lifecycle/claim, blocking, and machine-output rules). It never
-// names a command commandsReference itself does not list, so it cannot
-// advertise something Run's switch does not implement.
-const primeContract = `Commands:
-` + commandsReference + `
+// names a command commandsReferenceText itself does not list, so it cannot
+// advertise something the command tree does not actually implement (plan
+// section 19).
+func primeContractText() string {
+	return `Commands:
+` + commandsReferenceText() + `
 Lifecycle and claim:
   A card's status has a category (active, done, deferred, ...). ` + "`update <id> --claim`" + `
   moves an active-category card to in_progress and assigns it to the calling
@@ -64,6 +67,7 @@ Snapshot and restore:
     .bdd/
   (see docs/snapshot-restore.md for details).
 `
+}
 
 // primeContractVersion is bumped whenever the shape of the compact `bdd
 // prime` manifest (PrimeResult) changes in a way a consuming agent must
@@ -195,38 +199,18 @@ type PrimeFullResult struct {
 // contract and current context. By default it prints a compact manifest
 // (identity, invariant rules, workflow commands, required-rune bodies, and
 // optional-context summaries); `--full` reproduces the previous full prose
-// contract instead. It must stay fast and deterministic.
-func runPrime(g GlobalFlags, args []string, s *Streams) int {
-	var limitRaw string
-	var haveLimit, noMemories, full bool
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--memory-limit":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: prime: %v\n", err)
-				return ExitUsage
-			}
-			limitRaw, haveLimit = val, true
-			i += consumed
-			continue
-		case "--no-memories":
-			noMemories = true
-			i++
-			continue
-		case "--full":
-			full = true
-			i++
-			continue
-		}
-
-		return reportUnknownArg(s, "prime", arg)
+// contract instead. It must stay fast and deterministic (plan section 7
+// latency discipline).
+func runPrime(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) > 0 {
+		return reportUnknownArg(s, "prime", args[0])
 	}
+
+	fs := cmd.Flags()
+	limitRaw, haveLimit := flagString(fs, "memory-limit")
+	noMemories := flagBool(fs, "no-memories")
+	full := flagBool(fs, "full")
+
 	if haveLimit && noMemories {
 		s.Errorf("bdd: prime: cannot combine --memory-limit with --no-memories\n")
 		return ExitUsage
@@ -326,7 +310,7 @@ func runPrimeFull(s *Streams, dbPath string, prefix *string, upgradePending bool
 	}
 	fmt.Fprintln(s.Stdout)
 
-	fmt.Fprint(s.Stdout, primeContract)
+	fmt.Fprint(s.Stdout, primeContractText())
 
 	fmt.Fprintln(s.Stdout)
 	if result.Memories == nil {
@@ -354,9 +338,9 @@ func runPrimeFull(s *Streams, dbPath string, prefix *string, upgradePending bool
 
 func runPrimeCompact(ctx context.Context, db *bdd.DB, s *Streams, prefix *string, upgradePending bool, memories []bdd.Memory, haveLimit bool, limit int) int {
 	result := PrimeResult{
-		ContractVersion: primeContractVersion,
-		Workspace:       workspaceDir(db.Path()),
-		Prefix:          prefix,
+		ContractVersion:  primeContractVersion,
+		Workspace:        workspaceDir(db.Path()),
+		Prefix:           prefix,
 		Rules:            primeRules,
 		Workflow:         primeWorkflow,
 		RequiredRunes:    []PrimeRequiredEntry{},

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // DeleteResult is the JSON/human result of `bdd delete`.
@@ -14,33 +16,17 @@ type DeleteResult struct {
 }
 
 // runCardDelete implements `bdd delete <id> --force`.
-func runCardDelete(g GlobalFlags, args []string, s *Streams) int {
-	var id string
-	var force bool
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		if arg == "--force" {
-			force = true
-			i++
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: delete: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		if id != "" {
-			s.Errorf("bdd: delete: unexpected argument %q\n", arg)
-			return ExitUsage
-		}
-		id = arg
-		i++
-	}
-	if id == "" {
+func runCardDelete(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) == 0 {
 		s.Errorf("bdd: delete: card id is required\n")
 		return ExitUsage
 	}
+	id := args[0]
+	if len(args) > 1 {
+		s.Errorf("bdd: delete: unexpected argument %q\n", args[1])
+		return ExitUsage
+	}
+	force := flagBool(cmd.Flags(), "force")
 	if !force {
 		s.Errorf("bdd: delete: refusing to delete %s without --force\n", id)
 		return ExitUsage

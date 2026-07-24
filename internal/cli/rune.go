@@ -5,10 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
@@ -66,151 +65,46 @@ func toRuneSummaryResult(r bdd.RuneSummary) RuneSummaryResult {
 	}
 }
 
-// runRune implements `bdd rune set|get|list|search|enable|disable|remove`.
-func runRune(g GlobalFlags, args []string, s *Streams) int {
+// runRune implements the `bdd rune` group's fallback dispatch for a missing
+// or unknown subcommand; matched subcommands are routed directly to their
+// leaf by cobra and never reach here.
+func runRune(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: rune: missing subcommand (set, get, list, search, enable, disable, remove)\n")
 		return ExitUsage
 	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "rune", args[0])
-	}
-	sub, rest := args[0], args[1:]
-
-	switch sub {
-	case "set":
-		return runRuneSet(g, rest, s)
-	case "get":
-		return runRuneGet(g, rest, s)
-	case "list":
-		return runRuneList(g, rest, s)
-	case "search":
-		return runRuneSearch(g, rest, s)
-	case "enable":
-		return runRuneSetEnabled(g, rest, s, true, "rune enable")
-	case "disable":
-		return runRuneSetEnabled(g, rest, s, false, "rune disable")
-	case "remove":
-		return runRuneRemove(g, rest, s)
-	default:
-		s.Errorf("bdd: rune: unknown subcommand %q\n", sub)
-		return ExitUsage
-	}
+	s.Errorf("bdd: rune: unknown subcommand %q\n", args[0])
+	return ExitUsage
 }
 
 // runRuneSet implements `bdd rune set <key> [--kind <kind>] [--title <title>]
 // [--body <body>|--body-file <path>] [--metadata <json>] [--protected]
 // [--create-only] [--if-revision <n>] [--force]`.
-func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
-	var key string
-	var haveKey bool
-	var kind, title, body, bodyFile, metadata, prime string
-	var haveTitle, haveBody, haveMetadata, havePrime bool
-	var protected, createOnly, force bool
-	var expectedRevision *int64
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--kind":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune set: %v\n", err)
-				return ExitUsage
-			}
-			kind = val
-			i += consumed
-			continue
-		case "--title":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune set: %v\n", err)
-				return ExitUsage
-			}
-			title, haveTitle = val, true
-			i += consumed
-			continue
-		case "--body":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune set: %v\n", err)
-				return ExitUsage
-			}
-			body, haveBody = val, true
-			i += consumed
-			continue
-		case "--body-file":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune set: %v\n", err)
-				return ExitUsage
-			}
-			bodyFile = val
-			i += consumed
-			continue
-		case "--metadata":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune set: %v\n", err)
-				return ExitUsage
-			}
-			metadata, haveMetadata = val, true
-			i += consumed
-			continue
-		case "--prime":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune set: %v\n", err)
-				return ExitUsage
-			}
-			prime, havePrime = val, true
-			i += consumed
-			continue
-		case "--if-revision":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune set: %v\n", err)
-				return ExitUsage
-			}
-			n, parseErr := strconv.ParseInt(val, 10, 64)
-			if parseErr != nil {
-				s.Errorf("bdd: rune set: --if-revision must be an integer, got %q\n", val)
-				return ExitUsage
-			}
-			expectedRevision = &n
-			i += consumed
-			continue
-		case "--protected":
-			protected = true
-			i++
-			continue
-		case "--create-only":
-			createOnly = true
-			i++
-			continue
-		case "--force":
-			force = true
-			i++
-			continue
-		default:
-			if strings.HasPrefix(arg, "-") {
-				return reportUnknownArg(s, "rune set", arg)
-			}
-			if haveKey {
-				s.Errorf("bdd: rune set: unexpected argument %q\n", arg)
-				return ExitUsage
-			}
-			key, haveKey = arg, true
-			i++
-			continue
-		}
-	}
-	if !haveKey {
+func runRuneSet(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) == 0 {
 		s.Errorf("bdd: rune set: key is required\n")
 		return ExitUsage
+	}
+	key := args[0]
+	if len(args) > 1 {
+		s.Errorf("bdd: rune set: unexpected argument %q\n", args[1])
+		return ExitUsage
+	}
+
+	fs := cmd.Flags()
+	kind, _ := flagString(fs, "kind")
+	title, haveTitle := flagString(fs, "title")
+	body, haveBody := flagString(fs, "body")
+	bodyFile, _ := flagString(fs, "body-file")
+	metadata, haveMetadata := flagString(fs, "metadata")
+	prime, havePrime := flagString(fs, "prime")
+	protected := flagBool(fs, "protected")
+	createOnly := flagBool(fs, "create-only")
+	force := flagBool(fs, "force")
+
+	var expectedRevision *int64
+	if n, changed := flagInt64(fs, "if-revision"); changed {
+		expectedRevision = &n
 	}
 
 	if bodyFile != "" {
@@ -269,10 +163,7 @@ func runRuneSet(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runRuneGet implements `bdd rune get <key>`.
-func runRuneGet(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "rune get", arg)
-	}
+func runRuneGet(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 1 {
 		s.Errorf("bdd: rune get: expected exactly one key argument\n")
 		return ExitUsage
@@ -295,11 +186,13 @@ func runRuneGet(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runRuneList implements `bdd rune list [--kind <kind>] [--all]`.
-func runRuneList(g GlobalFlags, args []string, s *Streams) int {
-	kind, all, code := parseRuneListFlags(args, s, "rune list")
-	if code != ExitSuccess {
-		return code
+func runRuneList(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) > 0 {
+		return reportUnknownArg(s, "rune list", args[0])
 	}
+	fs := cmd.Flags()
+	kind, _ := flagString(fs, "kind")
+	all := flagBool(fs, "all")
 
 	ctx := context.Background()
 	db, dbCode := openDB(ctx, g, "rune list", s)
@@ -317,48 +210,20 @@ func runRuneList(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runRuneSearch implements `bdd rune search <text> [--kind <kind>] [--all]`.
-func runRuneSearch(g GlobalFlags, args []string, s *Streams) int {
-	var text string
-	var haveText bool
-	var kind string
-	var all bool
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--kind":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: rune search: %v\n", err)
-				return ExitUsage
-			}
-			kind = val
-			i += consumed
-			continue
-		case "--all":
-			all = true
-			i++
-			continue
-		default:
-			if strings.HasPrefix(arg, "-") {
-				return reportUnknownArg(s, "rune search", arg)
-			}
-			if haveText {
-				s.Errorf("bdd: rune search: unexpected argument %q\n", arg)
-				return ExitUsage
-			}
-			text, haveText = arg, true
-			i++
-			continue
-		}
-	}
-	if !haveText {
+func runRuneSearch(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) == 0 {
 		s.Errorf("bdd: rune search: text is required\n")
 		return ExitUsage
 	}
+	text := args[0]
+	if len(args) > 1 {
+		s.Errorf("bdd: rune search: unexpected argument %q\n", args[1])
+		return ExitUsage
+	}
+
+	fs := cmd.Flags()
+	kind, _ := flagString(fs, "kind")
+	all := flagBool(fs, "all")
 
 	ctx := context.Background()
 	db, dbCode := openDB(ctx, g, "rune search", s)
@@ -375,64 +240,19 @@ func runRuneSearch(g GlobalFlags, args []string, s *Streams) int {
 	return emitRuneSummaries(s, "rune search", summaries)
 }
 
-// parseRuneListFlags parses the [--kind <kind>] [--all] flags for
-// `rune list`, which takes no positional arguments.
-func parseRuneListFlags(args []string, s *Streams, cmdName string) (kind string, all bool, code int) {
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--kind":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: %s: %v\n", cmdName, err)
-				return "", false, ExitUsage
-			}
-			kind = val
-			i += consumed
-			continue
-		case "--all":
-			all = true
-			i++
-			continue
-		default:
-			s.Errorf("bdd: %s: unknown flag %q\n", cmdName, arg)
-			return "", false, ExitUsage
-		}
-	}
-	return kind, all, ExitSuccess
-}
-
 // runRuneSetEnabled implements `bdd rune enable|disable <key> [--force]`.
-func runRuneSetEnabled(g GlobalFlags, args []string, s *Streams, enabled bool, cmdName string) int {
-	var key string
-	var force bool
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		if arg == "--force" {
-			force = true
-			i++
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: %s: unknown flag %q\n", cmdName, arg)
-			return ExitUsage
-		}
-		if key != "" {
-			s.Errorf("bdd: %s: unexpected argument %q\n", cmdName, arg)
-			return ExitUsage
-		}
-		key = arg
-		i++
-	}
-	if key == "" {
+func runRuneSetEnabled(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams, enabled bool) int {
+	cmdName := commandName(cmd)
+	if len(args) == 0 {
 		s.Errorf("bdd: %s: key is required\n", cmdName)
 		return ExitUsage
 	}
+	key := args[0]
+	if len(args) > 1 {
+		s.Errorf("bdd: %s: unexpected argument %q\n", cmdName, args[1])
+		return ExitUsage
+	}
+	force := flagBool(cmd.Flags(), "force")
 
 	ctx := context.Background()
 	db, code := openDB(ctx, g, cmdName, s)
@@ -455,33 +275,17 @@ func runRuneSetEnabled(g GlobalFlags, args []string, s *Streams, enabled bool, c
 }
 
 // runRuneRemove implements `bdd rune remove <key> [--force]`.
-func runRuneRemove(g GlobalFlags, args []string, s *Streams) int {
-	var key string
-	var force bool
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		if arg == "--force" {
-			force = true
-			i++
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: rune remove: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		if key != "" {
-			s.Errorf("bdd: rune remove: unexpected argument %q\n", arg)
-			return ExitUsage
-		}
-		key = arg
-		i++
-	}
-	if key == "" {
+func runRuneRemove(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) == 0 {
 		s.Errorf("bdd: rune remove: key is required\n")
 		return ExitUsage
 	}
+	key := args[0]
+	if len(args) > 1 {
+		s.Errorf("bdd: rune remove: unexpected argument %q\n", args[1])
+		return ExitUsage
+	}
+	force := flagBool(cmd.Flags(), "force")
 
 	ctx := context.Background()
 	db, code := openDB(ctx, g, "rune remove", s)

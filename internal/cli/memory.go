@@ -7,37 +7,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
 // runMemory implements the `bdd memory` group's fallback dispatch for a
 // missing or unknown subcommand; matched subcommands are routed directly
 // to their leaf by cobra and never reach here.
-func runMemory(g GlobalFlags, args []string, s *Streams) int {
+func runMemory(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: memory: missing subcommand (set, get, list, search, remove)\n")
 		return ExitUsage
 	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "memory", args[0])
-	}
-	sub, rest := args[0], args[1:]
-
-	switch sub {
-	case "set":
-		return runMemorySet(g, rest, s)
-	case "get":
-		return runMemoryGet(g, rest, s)
-	case "list":
-		return runMemoryList(g, rest, s)
-	case "search":
-		return runMemorySearch(g, rest, s)
-	case "remove":
-		return runMemoryRemove(g, rest, s)
-	default:
-		s.Errorf("bdd: memory: unknown subcommand %q\n", sub)
-		return ExitUsage
-	}
+	s.Errorf("bdd: memory: unknown subcommand %q\n", args[0])
+	return ExitUsage
 }
 
 // MemoryResult is the JSON/human result of `bdd memory set` and
@@ -67,51 +50,20 @@ func toMemoryResult(m *bdd.Memory) MemoryResult {
 }
 
 // runMemorySet implements `bdd memory set [body] [--key <key>] [--stdin]`.
-func runMemorySet(g GlobalFlags, args []string, s *Streams) int {
-	var key, body, prime string
-	var haveBody, useStdin, havePrime bool
+func runMemorySet(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	fs := cmd.Flags()
+	key, _ := flagString(fs, "key")
+	prime, havePrime := flagString(fs, "prime")
+	useStdin := flagBool(fs, "stdin")
 
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--key":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: memory set: %v\n", err)
-				return ExitUsage
-			}
-			key = val
-			i += consumed
-			continue
-		case "--prime":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: memory set: %v\n", err)
-				return ExitUsage
-			}
-			prime, havePrime = val, true
-			i += consumed
-			continue
-		case "--stdin":
-			useStdin = true
-			i++
-			continue
-		}
-
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: memory set: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		if haveBody {
-			s.Errorf("bdd: memory set: unexpected argument %q\n", arg)
-			return ExitUsage
-		}
-		body = arg
-		haveBody = true
-		i++
+	var body string
+	var haveBody bool
+	if len(args) > 0 {
+		body, haveBody = args[0], true
+	}
+	if len(args) > 1 {
+		s.Errorf("bdd: memory set: unexpected argument %q\n", args[1])
+		return ExitUsage
 	}
 
 	if useStdin && haveBody {
@@ -159,7 +111,7 @@ func runMemorySet(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runMemoryList implements `bdd memory list`.
-func runMemoryList(g GlobalFlags, args []string, s *Streams) int {
+func runMemoryList(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) > 0 {
 		return reportUnknownArg(s, "memory list", args[0])
 	}
@@ -167,10 +119,7 @@ func runMemoryList(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runMemorySearch implements `bdd memory search <query>`.
-func runMemorySearch(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "memory search", arg)
-	}
+func runMemorySearch(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 1 {
 		s.Errorf("bdd: memory search: expected exactly one query argument\n")
 		return ExitUsage
@@ -216,10 +165,7 @@ func listMemories(g GlobalFlags, query, label string, s *Streams) int {
 }
 
 // runMemoryGet implements `bdd memory get <key>`.
-func runMemoryGet(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "memory get", arg)
-	}
+func runMemoryGet(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 1 {
 		s.Errorf("bdd: memory get: expected exactly one key argument\n")
 		return ExitUsage
@@ -251,10 +197,7 @@ func runMemoryGet(g GlobalFlags, args []string, s *Streams) int {
 }
 
 // runMemoryRemove implements `bdd memory remove <key>`.
-func runMemoryRemove(g GlobalFlags, args []string, s *Streams) int {
-	if arg, found := firstFlagArg(args); found {
-		return reportUnknownArg(s, "memory remove", arg)
-	}
+func runMemoryRemove(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) != 1 {
 		s.Errorf("bdd: memory remove: expected exactly one key argument\n")
 		return ExitUsage

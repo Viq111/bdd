@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
@@ -22,125 +23,46 @@ func parseLimit(raw string) (int, error) {
 // or ready. An explicit --limit 0 remains the opt-in to unlimited results.
 const defaultListLimit = 20
 
+// resolveLimit applies parseLimit to raw when haveLimit is true, otherwise
+// defaultListLimit, reporting a "bdd: <cmdName>: --limit ..." usage error on
+// a malformed value.
+func resolveLimit(s *Streams, cmdName string, raw string, haveLimit bool) (int, bool) {
+	if !haveLimit {
+		return defaultListLimit, true
+	}
+	n, err := parseLimit(raw)
+	if err != nil {
+		s.Errorf("bdd: %s: --limit %v\n", cmdName, err)
+		return 0, false
+	}
+	return n, true
+}
+
 // runCardList implements `bdd list [--status <s>]... [--status-category
 // <c>]... [--type <t>]... [--label <l>]... [--all] [--parent <id>]
 // [--child <id>] [--description-like <text>] [--sort <field>] [--reverse]
 // [--limit <n>]`.
-func runCardList(g GlobalFlags, args []string, s *Streams) int {
-	var statuses, categories, types, labels []string
-	var parent, child, descLike, sortField string
-	var reverse, all bool
-	var limitRaw string
-	var haveLimit bool
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--status":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			statuses = append(statuses, val)
-			i += consumed
-			continue
-		case "--status-category":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			categories = append(categories, val)
-			i += consumed
-			continue
-		case "--type":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			types = append(types, val)
-			i += consumed
-			continue
-		case "--label":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			labels = append(labels, val)
-			i += consumed
-			continue
-		case "--parent":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			parent = val
-			i += consumed
-			continue
-		case "--child":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			child = val
-			i += consumed
-			continue
-		case "--description-like":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			descLike = val
-			i += consumed
-			continue
-		case "--sort":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			sortField = val
-			i += consumed
-			continue
-		case "--reverse":
-			reverse = true
-			i++
-			continue
-		case "--all":
-			all = true
-			i++
-			continue
-		case "--limit":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: list: %v\n", err)
-				return ExitUsage
-			}
-			limitRaw, haveLimit = val, true
-			i += consumed
-			continue
-		default:
-			return reportUnknownArg(s, "list", arg)
-		}
+func runCardList(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) > 0 {
+		return reportUnknownArg(s, "list", args[0])
 	}
 
-	limit := defaultListLimit
-	if haveLimit {
-		n, err := parseLimit(limitRaw)
-		if err != nil {
-			s.Errorf("bdd: list: --limit %v\n", err)
-			return ExitUsage
-		}
-		limit = n
+	fs := cmd.Flags()
+	statuses := flagStringSlice(fs, "status")
+	categories := flagStringSlice(fs, "status-category")
+	types := flagStringSlice(fs, "type")
+	labels := flagStringSlice(fs, "label")
+	all := flagBool(fs, "all")
+	parent, _ := flagString(fs, "parent")
+	child, _ := flagString(fs, "child")
+	descLike, _ := flagString(fs, "description-like")
+	sortField, _ := flagString(fs, "sort")
+	reverse := flagBool(fs, "reverse")
+	limitRaw, haveLimit := flagString(fs, "limit")
+
+	limit, ok := resolveLimit(s, "list", limitRaw, haveLimit)
+	if !ok {
+		return ExitUsage
 	}
 
 	opts := bdd.ListOptions{
@@ -174,72 +96,25 @@ func runCardList(g GlobalFlags, args []string, s *Streams) int {
 
 // runCardSearch implements `bdd search <query> [--status <s>]... [--all]
 // [--label <l>]... [--limit <n>]`.
-func runCardSearch(g GlobalFlags, args []string, s *Streams) int {
+func runCardSearch(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: search: query is required\n")
 		return ExitUsage
 	}
-	if strings.HasPrefix(args[0], "-") {
-		return reportUnknownArg(s, "search", args[0])
-	}
 	query := args[0]
-	rest := args[1:]
-
-	var statuses, labels []string
-	var all bool
-	var limitRaw string
-	var haveLimit bool
-
-	i := 0
-	for i < len(rest) {
-		arg := rest[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--status":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: search: %v\n", err)
-				return ExitUsage
-			}
-			statuses = append(statuses, val)
-			i += consumed
-			continue
-		case "--label":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: search: %v\n", err)
-				return ExitUsage
-			}
-			labels = append(labels, val)
-			i += consumed
-			continue
-		case "--all":
-			all = true
-			i++
-			continue
-		case "--limit":
-			val, consumed, err := flagValue(name, inline, hasInline, rest, i)
-			if err != nil {
-				s.Errorf("bdd: search: %v\n", err)
-				return ExitUsage
-			}
-			limitRaw, haveLimit = val, true
-			i += consumed
-			continue
-		default:
-			return reportUnknownArg(s, "search", arg)
-		}
+	if len(args) > 1 {
+		return reportUnknownArg(s, "search", args[1])
 	}
 
-	limit := defaultListLimit
-	if haveLimit {
-		n, err := parseLimit(limitRaw)
-		if err != nil {
-			s.Errorf("bdd: search: --limit %v\n", err)
-			return ExitUsage
-		}
-		limit = n
+	fs := cmd.Flags()
+	statuses := flagStringSlice(fs, "status")
+	all := flagBool(fs, "all")
+	labels := flagStringSlice(fs, "label")
+	limitRaw, haveLimit := flagString(fs, "limit")
+
+	limit, ok := resolveLimit(s, "search", limitRaw, haveLimit)
+	if !ok {
+		return ExitUsage
 	}
 
 	ctx := context.Background()
@@ -273,72 +148,28 @@ type ReadyExplainResult struct {
 
 // runCardReady implements `bdd ready [--label <l>]... [--limit <n>]
 // [--explain [<id>]]`.
-func runCardReady(g GlobalFlags, args []string, s *Streams) int {
-	var labels []string
-	var limitRaw string
-	var haveLimit bool
-	var explain bool
-	var positional []string
+func runCardReady(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	fs := cmd.Flags()
+	labels := flagStringSlice(fs, "label")
+	limitRaw, haveLimit := flagString(fs, "limit")
+	explain := flagBool(fs, "explain")
 
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--label":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: ready: %v\n", err)
-				return ExitUsage
-			}
-			labels = append(labels, val)
-			i += consumed
-			continue
-		case "--limit":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: ready: %v\n", err)
-				return ExitUsage
-			}
-			limitRaw, haveLimit = val, true
-			i += consumed
-			continue
-		case "--explain":
-			explain = true
-			i++
-			continue
-		}
-
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: ready: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		positional = append(positional, arg)
-		i++
-	}
-
-	if len(positional) > 1 {
-		s.Errorf("bdd: ready: unexpected argument %q\n", positional[1])
+	if len(args) > 1 {
+		s.Errorf("bdd: ready: unexpected argument %q\n", args[1])
 		return ExitUsage
 	}
-	if len(positional) == 1 && !explain {
-		s.Errorf("bdd: ready: unexpected argument %q (use --explain %s)\n", positional[0], positional[0])
+	if len(args) == 1 && !explain {
+		s.Errorf("bdd: ready: unexpected argument %q (use --explain %s)\n", args[0], args[0])
 		return ExitUsage
 	}
 	var explainID string
-	if len(positional) == 1 {
-		explainID = positional[0]
+	if len(args) == 1 {
+		explainID = args[0]
 	}
 
-	limit := defaultListLimit
-	if haveLimit {
-		n, err := parseLimit(limitRaw)
-		if err != nil {
-			s.Errorf("bdd: ready: --limit %v\n", err)
-			return ExitUsage
-		}
-		limit = n
+	limit, ok := resolveLimit(s, "ready", limitRaw, haveLimit)
+	if !ok {
+		return ExitUsage
 	}
 
 	ctx := context.Background()

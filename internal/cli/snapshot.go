@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
@@ -25,27 +25,11 @@ type SnapshotResult struct {
 // runSnapshot implements `bdd snapshot [--output <path>]`, wrapping
 // (*bdd.DB).Snapshot: a single, integrity-checked, standalone copy of the
 // live database (see docs/snapshot-restore.md).
-func runSnapshot(g GlobalFlags, args []string, s *Streams) int {
-	var output string
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		if name == "--output" {
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: snapshot: %v\n", err)
-				return ExitUsage
-			}
-			output = val
-			i += consumed
-			continue
-		}
-
-		return reportUnknownArg(s, "snapshot", arg)
+func runSnapshot(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) > 0 {
+		return reportUnknownArg(s, "snapshot", args[0])
 	}
+	output, _ := flagString(cmd.Flags(), "output")
 
 	ctx := context.Background()
 	db, code := openDB(ctx, g, "snapshot", s)
@@ -96,33 +80,17 @@ type RestoreResult struct {
 // bdd.Restore. Like `bdd delete`, the destructive operation is refused
 // without --force: Restore always installs Source as the target database,
 // backing up any existing target first.
-func runRestore(g GlobalFlags, args []string, s *Streams) int {
-	var source string
-	var force bool
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		if arg == "--force" {
-			force = true
-			i++
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: restore: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		if source != "" {
-			s.Errorf("bdd: restore: unexpected argument %q\n", arg)
-			return ExitUsage
-		}
-		source = arg
-		i++
-	}
-	if source == "" {
+func runRestore(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) == 0 {
 		s.Errorf("bdd: restore: a snapshot file path is required\n")
 		return ExitUsage
 	}
+	source := args[0]
+	if len(args) > 1 {
+		s.Errorf("bdd: restore: unexpected argument %q\n", args[1])
+		return ExitUsage
+	}
+	force := flagBool(cmd.Flags(), "force")
 	if !force {
 		s.Errorf("bdd: restore: refusing to restore %s without --force\n", source)
 		return ExitUsage

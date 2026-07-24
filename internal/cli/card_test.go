@@ -731,6 +731,35 @@ func TestUpdateClearWorktree(t *testing.T) {
 	}
 }
 
+// TestUpdateOmittedVsExplicitEmptyDistinction is a regression test for the
+// Cobra unification (bd bdd-os9u): flags now bind through
+// cmd.Flags().Changed rather than a handwritten "have<Field> bool" scan, and
+// this must still tell "flag omitted" (field untouched) apart from "flag
+// passed with an explicit empty string" (field cleared) exactly as before.
+func TestUpdateOmittedVsExplicitEmptyDistinction(t *testing.T) {
+	dir := initTestWorkspace(t)
+	id := createCard(t, dir, "--type", "chore", "--description", "original", "desc test")
+
+	// Omitted --description: a claim-only update must leave it untouched.
+	stdout, _ := runCLI(t, dir, ExitSuccess, "--json", "update", id, "--claim")
+	var card CardResult
+	if err := json.Unmarshal([]byte(stdout), &card); err != nil {
+		t.Fatal(err)
+	}
+	if card.Description != "original" {
+		t.Fatalf("description after omitted --description = %q, want unchanged %q", card.Description, "original")
+	}
+
+	// Explicit --description "": must clear it, not be treated as omitted.
+	stdout, _ = runCLI(t, dir, ExitSuccess, "--json", "update", id, "--description", "")
+	if err := json.Unmarshal([]byte(stdout), &card); err != nil {
+		t.Fatal(err)
+	}
+	if card.Description != "" {
+		t.Fatalf("description after --description \"\" = %q, want cleared to empty", card.Description)
+	}
+}
+
 func TestNoteStdin(t *testing.T) {
 	dir := initTestWorkspace(t)
 	id := createCard(t, dir, "--type", "chore", "notable")

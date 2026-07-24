@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/viq111/bdd"
 )
 
@@ -31,135 +32,26 @@ var createTextFields = []createTextField{
 // <path>] [--reproduce ...] [--design ...] [--acceptance ...] [--worktree
 // <path>] [--label <label>]... [--parent <id>]... [--notes <text>]
 // [--stdin]`.
-func runCardCreate(g GlobalFlags, args []string, s *Streams) int {
-	var titleFlag, titlePositional string
-	var haveTitleFlag, haveTitlePositional bool
-	var typ, priorityRaw, worktree, notes string
-	var havePriority, haveNotes bool
-	var labels, parents []string
-	var stdin bool
+func runCardCreate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	fs := cmd.Flags()
 
-	values := map[string]string{}
-	haveValue := map[string]bool{}
-	files := map[string]string{}
-	haveFile := map[string]bool{}
+	titleFlag, haveTitleFlag := flagString(fs, "title")
+	typ, _ := flagString(fs, "type")
+	priorityRaw, havePriority := flagString(fs, "priority")
+	worktree, _ := flagString(fs, "worktree")
+	notes, haveNotes := flagString(fs, "notes")
+	labels := flagStringSlice(fs, "label")
+	parents := flagStringSlice(fs, "parent")
+	stdin := flagBool(fs, "stdin")
 
-	fieldByFlag := map[string]string{}
-	for _, tf := range createTextFields {
-		fieldByFlag[tf.flag] = tf.field
+	var titlePositional string
+	var haveTitlePositional bool
+	if len(args) > 0 {
+		titlePositional, haveTitlePositional = args[0], true
 	}
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		name, inline, hasInline := cutFlagValue(arg)
-
-		switch name {
-		case "--title":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			titleFlag, haveTitleFlag = val, true
-			i += consumed
-			continue
-		case "--type":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			typ = val
-			i += consumed
-			continue
-		case "--priority":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			priorityRaw, havePriority = val, true
-			i += consumed
-			continue
-		case "--worktree":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			worktree = val
-			i += consumed
-			continue
-		case "--notes":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			notes, haveNotes = val, true
-			i += consumed
-			continue
-		case "--label":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			labels = append(labels, val)
-			i += consumed
-			continue
-		case "--parent":
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			parents = append(parents, val)
-			i += consumed
-			continue
-		case "--stdin":
-			stdin = true
-			i++
-			continue
-		}
-
-		if field, ok := fieldByFlag[strings.TrimPrefix(name, "--")]; ok {
-			val, consumed, err := flagValue(name, inline, hasInline, args, i)
-			if err != nil {
-				s.Errorf("bdd: create: %v\n", err)
-				return ExitUsage
-			}
-			values[field] = val
-			haveValue[field] = true
-			i += consumed
-			continue
-		}
-		if strings.HasPrefix(name, "--") && strings.HasSuffix(name, "-file") {
-			base := strings.TrimSuffix(strings.TrimPrefix(name, "--"), "-file")
-			if field, ok := fieldByFlag[base]; ok {
-				val, consumed, err := flagValue(name, inline, hasInline, args, i)
-				if err != nil {
-					s.Errorf("bdd: create: %v\n", err)
-					return ExitUsage
-				}
-				files[field] = val
-				haveFile[field] = true
-				i += consumed
-				continue
-			}
-		}
-
-		if strings.HasPrefix(arg, "-") {
-			s.Errorf("bdd: create: unknown flag %q\n", arg)
-			return ExitUsage
-		}
-		if haveTitlePositional {
-			s.Errorf("bdd: create: unexpected argument %q\n", arg)
-			return ExitUsage
-		}
-		titlePositional, haveTitlePositional = arg, true
-		i++
+	if len(args) > 1 {
+		s.Errorf("bdd: create: unexpected argument %q\n", args[1])
+		return ExitUsage
 	}
 
 	if haveTitleFlag && haveTitlePositional {
@@ -173,19 +65,21 @@ func runCardCreate(g GlobalFlags, args []string, s *Streams) int {
 
 	fieldText := map[string]string{}
 	for _, tf := range createTextFields {
-		if haveValue[tf.field] && haveFile[tf.field] {
+		value, haveValue := flagString(fs, tf.flag)
+		file, haveFile := flagString(fs, tf.flag+"-file")
+		if haveValue && haveFile {
 			s.Errorf("bdd: create: cannot combine --%s and --%s-file\n", tf.flag, tf.flag)
 			return ExitUsage
 		}
-		if haveFile[tf.field] {
-			data, err := os.ReadFile(files[tf.field])
+		if haveFile {
+			data, err := os.ReadFile(file)
 			if err != nil {
-				s.Errorf("bdd: create: reading %s: %v\n", files[tf.field], err)
+				s.Errorf("bdd: create: reading %s: %v\n", file, err)
 				return ExitOther
 			}
 			fieldText[tf.field] = string(data)
-		} else if haveValue[tf.field] {
-			fieldText[tf.field] = values[tf.field]
+		} else if haveValue {
+			fieldText[tf.field] = value
 		}
 	}
 
