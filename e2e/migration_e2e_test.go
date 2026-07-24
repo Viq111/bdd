@@ -120,9 +120,15 @@ func sourceSnapshot(t *testing.T, workspace, bd string) string {
 		{"--readonly", "export", "--all"},
 	} {
 		r := runCommand(t, workspace, bd, args...)
+		if r.code != 0 {
+			// Surface the failing read directly: folding a nonzero exit code
+			// into the hash would otherwise turn a source-read failure into a
+			// confusing "migration changed source" hash mismatch instead of
+			// naming the command and its error.
+			t.Fatalf("source snapshot: bd %s failed: code=%d stderr=%s", strings.Join(args, " "), r.code, r.stderr)
+		}
 		h.Write([]byte(strings.Join(args, "\x00")))
 		h.Write([]byte{0})
-		h.Write([]byte{byte(r.code)})
 		h.Write([]byte(r.stdout))
 		h.Write([]byte{0})
 		h.Write([]byte(r.stderr))
