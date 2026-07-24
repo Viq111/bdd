@@ -94,32 +94,38 @@ func seedSingleRoleWorkspace(t *testing.T) string {
 	return workspace
 }
 
-func beadsDigest(t *testing.T, workspace string) string {
+// sourceSnapshot fingerprints exactly what the migration tool itself reads
+// from the source (see sourcebd.Runner): version, statuses, types, the three
+// config keys it consults, and the full export. Comparing this snapshot
+// before and after a migration run proves the migration observed a
+// consistent, unmodified source.
+//
+// An earlier version of this check hashed the raw bytes under .beads
+// instead. That was flaky: bd's embedded Dolt storage engine performs
+// journal/manifest housekeeping (compaction, checkpointing) that can touch
+// on-disk bytes even for --readonly commands, without any change to the
+// logical data the migration tool actually reads. That produced
+// intermittent "migration changed source .beads" failures unrelated to the
+// migration tool's own behavior.
+func sourceSnapshot(t *testing.T, workspace, bd string) string {
 	t.Helper()
-	root := filepath.Join(workspace, ".beads")
-	var names []string
-	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			names = append(names, path)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(names)
 	h := sha256.New()
-	for _, name := range names {
-		rel, _ := filepath.Rel(root, name)
-		contents, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		h.Write([]byte(filepath.ToSlash(rel)))
+	for _, args := range [][]string{
+		{"--readonly", "version"},
+		{"--readonly", "statuses", "--json"},
+		{"--readonly", "types", "--json"},
+		{"--readonly", "config", "get", "status.custom"},
+		{"--readonly", "config", "get", "types.custom"},
+		{"--readonly", "config", "get", "issue-prefix"},
+		{"--readonly", "export", "--all"},
+	} {
+		r := runCommand(t, workspace, bd, args...)
+		h.Write([]byte(strings.Join(args, "\x00")))
 		h.Write([]byte{0})
-		h.Write(contents)
+		h.Write([]byte{byte(r.code)})
+		h.Write([]byte(r.stdout))
+		h.Write([]byte{0})
+		h.Write([]byte(r.stderr))
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
@@ -165,10 +171,15 @@ exec '` + real + `' "$@"
 
 func runMigration(t *testing.T, workspace, bd, destination string) result {
 	t.Helper()
-	before := beadsDigest(t, workspace)
+	// Snapshot through the real bd binary, not the bd argument: bd here may be
+	// a shim (recordingBD, timestampBD) whose behavior depends on the exact
+	// sequence or count of invocations it sees, which extra snapshot calls
+	// would otherwise perturb.
+	real := migrationBD(t)
+	before := sourceSnapshot(t, workspace, real)
 	r := runCommand(t, workspace, migrationBinary, "--workspace", workspace, "--bd", bd, "--destination", destination)
-	if after := beadsDigest(t, workspace); after != before {
-		t.Fatalf("migration changed source .beads: before=%s after=%s", before, after)
+	if after := sourceSnapshot(t, workspace, real); after != before {
+		t.Fatalf("migration changed source: before=%s after=%s", before, after)
 	}
 	return r
 }
@@ -187,10 +198,11 @@ func canonicalDestination(t *testing.T, destination string) string {
 // must discover .beads without a subcommand or explicit source flag.
 func runMigrationFromWorkspace(t *testing.T, workspace, bd, destination string) result {
 	t.Helper()
-	before := beadsDigest(t, workspace)
+	real := migrationBD(t)
+	before := sourceSnapshot(t, workspace, real)
 	r := runCommand(t, workspace, migrationBinary, "--bd", bd, "--destination", destination)
-	if after := beadsDigest(t, workspace); after != before {
-		t.Fatalf("migration changed source .beads: before=%s after=%s", before, after)
+	if after := sourceSnapshot(t, workspace, real); after != before {
+		t.Fatalf("migration changed source: before=%s after=%s", before, after)
 	}
 	return r
 }
