@@ -429,11 +429,11 @@ func TestSearchCardsMatchesIDPrefixAndSubstring(t *testing.T) {
 	}
 }
 
-// TestSearchQueryUsesFTS5TrigramIndex is a query-plan regression test for
-// bd bdd-cdm: SearchCards' Query text must be satisfied via the cards_fts/
-// notes_fts trigram-tokenized virtual tables (migration
-// 0004_fts5_search.sql), not a full table scan of cards, which was the
-// dominant cost behind SearchCards missing its section 7 latency budget.
+// TestSearchQueryUsesFTS5TrigramIndex is a query-plan regression test:
+// SearchCards' Query text must be satisfied via the cards_fts/notes_fts
+// trigram-tokenized virtual tables (migration 0004_fts5_search.sql), not a
+// full table scan of cards, which was the dominant cost behind SearchCards
+// missing its latency budget.
 func TestSearchQueryUsesFTS5TrigramIndex(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -490,8 +490,8 @@ func TestSearchQueryUsesFTS5TrigramIndex(t *testing.T) {
 	}
 }
 
-// TestDeleteCardRemovesItAndItsNotesFromSearch is a regression test for bd
-// bdd-cdm: an earlier version of migration 0004_fts5_search.sql added a
+// TestDeleteCardRemovesItAndItsNotesFromSearch is a regression test: an
+// earlier version of migration 0004_fts5_search.sql added a
 // redundant BEFORE DELETE ON cards trigger to clean up notes_fts, on the
 // mistaken assumption that an FK ON DELETE CASCADE removing a card's notes
 // does not itself fire notes_fts_ad. It does, so the extra trigger raced

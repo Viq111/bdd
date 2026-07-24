@@ -338,9 +338,9 @@ func TestRuneGetMissingIsNotFound(t *testing.T) {
 	}
 }
 
-// TestRuneSetGetErrorPrefixes is a regression test for bd bdd-jlte: handler
-// errors for `rune set`/`rune get` must identify themselves by their current
-// names, not the retired `rune put`/`rune show` names.
+// TestRuneSetGetErrorPrefixes is a regression test: handler errors for
+// `rune set`/`rune get` must identify themselves by their current names,
+// not the retired `rune put`/`rune show` names.
 func TestRuneSetGetErrorPrefixes(t *testing.T) {
 	dir := initTestWorkspace(t)
 
@@ -364,8 +364,8 @@ func TestRuneSetGetErrorPrefixes(t *testing.T) {
 	}
 }
 
-// TestRuneSetFlagsBeforeKey is a regression test for bd bdd-j2us: `rune set`
-// treated args[0] as the key unconditionally, so any flag placed before the
+// TestRuneSetFlagsBeforeKey is a regression test: `rune set` treated
+// args[0] as the key unconditionally, so any flag placed before the
 // positional key was misparsed as the key itself.
 func TestRuneSetFlagsBeforeKey(t *testing.T) {
 	dir := initTestWorkspace(t)
@@ -393,9 +393,9 @@ func TestRuneSetFlagsBeforeKey(t *testing.T) {
 	}
 }
 
-// TestRuneSearchFlagsBeforeText is a regression test for bd bdd-j2us: `rune
-// search` treated args[0] as the search text unconditionally, so any flag
-// placed before the positional text was misparsed as the text itself.
+// TestRuneSearchFlagsBeforeText is a regression test: `rune search` treated
+// args[0] as the search text unconditionally, so any flag placed before
+// the positional text was misparsed as the text itself.
 func TestRuneSearchFlagsBeforeText(t *testing.T) {
 	dir := initTestWorkspace(t)
 
@@ -416,8 +416,8 @@ func TestRuneSearchFlagsBeforeText(t *testing.T) {
 	}
 }
 
-// TestRuneSetKeyInterleavedWithFlags is a regression test for bd bdd-j2us:
-// the key may appear between flags, not just before or after all of them.
+// TestRuneSetKeyInterleavedWithFlags is a regression test: the key may
+// appear between flags, not just before or after all of them.
 func TestRuneSetKeyInterleavedWithFlags(t *testing.T) {
 	dir := initTestWorkspace(t)
 
@@ -507,8 +507,8 @@ func TestRuneSetCreateOnlyRejectsExisting(t *testing.T) {
 	}
 }
 
-// TestRuneSetExecutablePathWithGlobalFlagFirst is a regression test for bd
-// bdd-9b9h: QA's reproduction placed the global --workspace flag before the
+// TestRuneSetExecutablePathWithGlobalFlagFirst is a regression test: QA's
+// reproduction placed the global --workspace flag before the
 // subcommand (as `bdd --workspace <dir> rune set ...`, the documented
 // invocation shape), rather than after it like the rest of this file's
 // tests. That shape reaches the same Run -> cobra dispatch path, so this
@@ -543,8 +543,8 @@ func TestRuneSetExecutablePathWithGlobalFlagFirst(t *testing.T) {
 	}
 }
 
-// TestRuneSetRejectsMalformedKeyWithClearMessage is a regression test for bd
-// bdd-9b9h: a rune key without a "<kind>/<name>" separator produced "missing
+// TestRuneSetRejectsMalformedKeyWithClearMessage is a regression test: a
+// rune key without a "<kind>/<name>" separator produced "missing
 // required field(s): key", which reads as though the key was omitted when
 // it was actually present but malformed. That misleading wording is what
 // caused QA's reproduction (a key with no "/") to be misdiagnosed as a

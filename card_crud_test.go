@@ -135,9 +135,9 @@ func TestCreateCardCustomTypeHasNoExtraRequiredFields(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	// Registering custom types is out of scope for this card (bdd-4y7n);
-	// insert the type_definitions row directly to exercise the
-	// no-extra-required-fields rule for an already-registered custom type.
+	// There is no public API for registering custom types; insert the
+	// type_definitions row directly to exercise the no-extra-required-fields
+	// rule for an already-registered custom type.
 	if _, err := db.sql.ExecContext(ctx, `INSERT INTO type_definitions (name, built_in) VALUES ('incident', 0)`); err != nil {
 		t.Fatalf("seeding custom type: %v", err)
 	}
@@ -828,10 +828,10 @@ func TestCreateCardWithParentsAttachesEdges(t *testing.T) {
 	}
 }
 
-// TestGetCardExposesParentLinks covers bdd-otzf's acceptance criterion "A
-// card created with multiple parents shows them all in GetCard" (bdd-ej0):
-// GetCard must expand parent edges itself rather than requiring a separate
-// Parents() call.
+// TestGetCardExposesParentLinks covers the acceptance criterion "a card
+// created with multiple parents shows them all in GetCard": GetCard must
+// expand parent edges itself rather than requiring a separate Parents()
+// call.
 func TestGetCardExposesParentLinks(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -880,9 +880,9 @@ func TestGetCardExposesParentLinks(t *testing.T) {
 	}
 }
 
-// TestGetCardExposesChildLinks guards against the regression fixed in
-// bdd-ui9: GetCard must expand child edges itself, mirroring its parent-edge
-// expansion, rather than requiring a separate Children() call.
+// TestGetCardExposesChildLinks guards against a past regression: GetCard
+// must expand child edges itself, mirroring its parent-edge expansion,
+// rather than requiring a separate Children() call.
 func TestGetCardExposesChildLinks(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

@@ -1,14 +1,13 @@
 # Benchmark and compatibility policy
 
-Owner: Programmer (bd bdd-4m6x). Why this exists: phase 4 (open-source
-hardening) requires stating, in one place, what latency `bdd` promises and
-on what machine, and what API/CLI stability it promises before and after a
-tagged v1 (plan section 24 phase 4).
+Owner: Programmer. Why this exists: open-source hardening requires stating,
+in one place, what latency `bdd` promises and on what machine, and what
+API/CLI stability it promises before and after a tagged v1.
 
 ## Benchmark policy
 
 Fast agent tool calls are a first-class requirement, not a later
-optimization (plan section 7). `bdd` promises the following warm-cache
+optimization. `bdd` promises the following warm-cache
 subprocess latencies, measured with `./tools/build.sh --bench` (see
 [`docs/benchmark.md`](benchmark.md) for the harness) against a workspace of
 at least 10,000 cards:
@@ -51,8 +50,8 @@ production.
   package), the CLI's flags and subcommands, its JSON field names and
   shapes, and its exit codes may all still change without a deprecation
   period.
-- Parent/child blocking semantics (section 4 vocabulary: parent, child,
-  blocks — never dependency/prerequisite), the sentinel error set in
+- Parent/child blocking semantics (parent, child, blocks — never
+  dependency/prerequisite), the sentinel error set in
   `errors.go`, and the five-exit-code scheme are treated as frozen design
   decisions and are not expected to change even pre-v1; everything else is
   open to revision based on review findings.

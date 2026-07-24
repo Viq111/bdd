@@ -362,7 +362,7 @@ func runCardReady(g GlobalFlags, args []string, s *Streams) int {
 
 // runReadyExplain evaluates the readiness predicate against id (if
 // non-empty) or every card matching labels otherwise, printing every
-// exclusion reason (plan section 16).
+// exclusion reason.
 func runReadyExplain(ctx context.Context, db *bdd.DB, s *Streams, id string, labels []string, limit int) int {
 	var targets []string
 	if id != "" {

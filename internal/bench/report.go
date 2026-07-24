@@ -6,10 +6,9 @@ import (
 )
 
 // Report is the machine-readable output of a full benchmark run: the
-// section 7 latency table (one Result per Command) plus enough environment
-// detail to judge whether two reports are comparable. See
-// docs/benchmark.md for the reference-machine assumptions this format
-// depends on.
+// latency table (one Result per Command) plus enough environment detail to
+// judge whether two reports are comparable. See docs/benchmark.md for the
+// reference-machine assumptions this format depends on.
 type Report struct {
 	GeneratedAt time.Time `json:"generated_at"`
 	Binary      string    `json:"binary"`

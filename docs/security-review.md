@@ -1,9 +1,8 @@
-# Security review and fuzzing (bd bdd-ifik)
+# Security review and fuzzing
 
-Owner: Programmer. Why this exists: phase 4 open-source hardening requires a
-security pass over external inputs before the v1 tag (plan section 24 phase
-4). This documents what was reviewed, what fuzz targets now cover it, and
-what was fixed versus filed for later.
+Owner: Programmer. Why this exists: a security pass over external inputs is
+required before the v1 tag. This documents what was reviewed, what fuzz
+targets now cover it, and what was fixed versus filed for later.
 
 ## Findings
 
@@ -24,7 +23,7 @@ suffix) before opening it, which incidentally blocks the attack when the
 target must already exist — but `bdd init` creates a *new* file, so
 `os.Stat` observes `IsNotExist` on the full string and falls through to
 `sqlite.Open` with the injected suffix intact. Confirmed exploitable before
-the fix, via the now-removed `--db` flag (bd bdd-0wx9):
+the fix, via the now-removed `--db` flag:
 
 ```
 $ bdd --db "/tmp/x.sqlite?_pragma=journal_mode(delete)" init
@@ -91,7 +90,7 @@ Deciding how to fix this (reject at write time like labels, replace at
 write time, or leave storage permissive and only sanitize on the way out)
 is a design decision affecting the public `CreateCard`/`UpdateCard`
 contract and touches existing test fixtures, so it's filed as a follow-up
-rather than fixed inline here: bd bdd-l4v.
+rather than fixed inline here.
 
 ### 4. Unbounded stdin/file reads (documented, out of scope)
 
@@ -163,9 +162,9 @@ for every "in scope" area from the task:
 - `FuzzCreateCardDecode`, `FuzzUpdateCardDecode` (`mutation_fuzz_test.go`) —
   decodes arbitrary JSON directly into `CreateCard`/`UpdateCard` and runs
   their validation, explicitly checking that the tri-state
-  missing-vs-explicitly-empty distinction (section 10) survives
-  `encoding/json`'s decoder: a present `""` key must decode to a non-nil
-  pointer, an absent key must decode to nil.
+  missing-vs-explicitly-empty distinction survives `encoding/json`'s
+  decoder: a present `""` key must decode to a non-nil pointer, an absent
+  key must decode to nil.
 - `FuzzParseStatusCustom`, `FuzzParseTypesCustom` (`config_fuzz_test.go`) —
   the `status.custom`/`types.custom` config grammars.
 - `FuzzCycleDetection` (`edge_fuzz_test.go`) — drives random

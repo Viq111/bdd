@@ -8,7 +8,7 @@ import (
 // FuzzCreateCardDecode feeds arbitrary JSON into CreateCard, the struct
 // whose pointer-typed text fields (Description, Reproduction, Design,
 // Acceptance) exist specifically to distinguish an omitted JSON property
-// from one explicitly set to "" (section 10). It checks two things: that
+// from one explicitly set to "". It checks two things: that
 // decoding and validating never panics, and that the omitted-vs-empty
 // distinction survives encoding/json's decoder exactly as CreateCard's
 // contract requires (a present-but-empty key must decode to a non-nil

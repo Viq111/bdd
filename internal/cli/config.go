@@ -212,12 +212,11 @@ func runConfigUnset(g GlobalFlags, args []string, s *Streams) int {
 
 // statusCategoryImpact reports, for every status present in both the old and
 // new status.custom value whose category changed, how many existing cards
-// currently hold that status. This is the "config set previews readiness
-// impact" mitigation from plan section 25: a custom status silently
-// switching to (or out of) the active category can unexpectedly change which
-// cards dispatch. Parsing here is best-effort and only for display; by the
-// time this runs, ConfigSet has already validated and applied the
-// authoritative status.custom grammar.
+// currently hold that status: a custom status silently switching to (or out
+// of) the active category can unexpectedly change which cards dispatch.
+// Parsing here is best-effort and only for display; by the time this runs,
+// ConfigSet has already validated and applied the authoritative
+// status.custom grammar.
 func statusCategoryImpact(ctx context.Context, db *bdd.DB, oldValue, newValue string) []string {
 	oldCats := parseNameCategoryLoose(oldValue)
 	newCats := parseNameCategoryLoose(newValue)

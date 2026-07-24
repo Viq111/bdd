@@ -15,7 +15,7 @@ import (
 // text renders, plus the semantics that don't fit a one-line command
 // summary (lifecycle/claim, blocking, and machine-output rules). It never
 // names a command commandsReference itself does not list, so it cannot
-// advertise something Run's switch does not implement (plan section 19).
+// advertise something Run's switch does not implement.
 const primeContract = `Commands:
 ` + commandsReference + `
 Lifecycle and claim:
@@ -195,8 +195,7 @@ type PrimeFullResult struct {
 // contract and current context. By default it prints a compact manifest
 // (identity, invariant rules, workflow commands, required-rune bodies, and
 // optional-context summaries); `--full` reproduces the previous full prose
-// contract instead. It must stay fast and deterministic (plan section 7
-// latency discipline).
+// contract instead. It must stay fast and deterministic.
 func runPrime(g GlobalFlags, args []string, s *Streams) int {
 	var limitRaw string
 	var haveLimit, noMemories, full bool

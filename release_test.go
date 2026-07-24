@@ -68,8 +68,8 @@ func TestReleaseVersionWiringMatchesMain(t *testing.T) {
 	}
 }
 
-// TestReleaseArchivesAreReproducible is the regression test for bd bdd-f8m:
-// running the release script twice for the same commit and version used to
+// TestReleaseArchivesAreReproducible is the regression test: running the
+// release script twice for the same commit and version used to
 // produce six different SHA256SUMS, because build-time filesystem
 // timestamps (directory creation time, archive-time) leaked into the tar.gz
 // and zip entries. It runs the real script twice, with a delay in between

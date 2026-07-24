@@ -15,7 +15,7 @@ import (
 
 // Config keys that carry dedicated grammar and side effects on
 // status_definitions/type_definitions, in addition to being stored
-// verbatim in the config table (plan section 10).
+// verbatim in the config table.
 const (
 	ConfigKeyStatusCustom = "status.custom"
 	ConfigKeyTypesCustom  = "types.custom"

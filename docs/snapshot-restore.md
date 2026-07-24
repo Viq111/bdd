@@ -1,11 +1,10 @@
 # Online snapshot and restore
 
-Owner: Programmer (bd bdd-ab8s). Why this exists: point-in-time backup/restore
-needs a consistent SQLite snapshot, never a copy of the live WAL-mode
-database — copying `bdd.sqlite` directly loses recent transactions sitting
-in its WAL file. `(*DB).Snapshot` and `Restore` (in the root `bdd` package)
-give a single, integrity-checked, standalone snapshot file instead (plan
-section 21).
+Owner: Programmer. Why this exists: point-in-time backup/restore needs a
+consistent SQLite snapshot, never a copy of the live WAL-mode database —
+copying `bdd.sqlite` directly loses recent transactions sitting in its WAL
+file. `(*DB).Snapshot` and `Restore` (in the root `bdd` package) give a
+single, integrity-checked, standalone snapshot file instead.
 
 ## Library API
 
@@ -39,10 +38,10 @@ bdd snapshot --output /path/to/backup.sqlite
 bdd restore bdd_backup.sqlite --force
 ```
 
-`bdd prime --full` (bd bdd-0zmi) echoes the recommended `.gitignore` entries
-below in its own output, so an agent reading the full prose contract sees
-them without having to read this file. The default compact manifest (bd
-bdd-1a4k) omits this to stay small.
+`bdd prime --full` echoes the recommended `.gitignore` entries below in its
+own output, so an agent reading the full prose contract sees them without
+having to read this file. The default compact manifest omits this to stay
+small.
 
 ## Recommended `.gitignore` entries for a bdd workspace
 

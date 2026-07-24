@@ -244,8 +244,8 @@ func emitShow(s *Streams, r ShowResult, workspaceRoot string) int {
 }
 
 // renderCard writes r in the fixed human layout: identity, status, and
-// priority first, then Worktree immediately after (plan section 9), then
-// the remaining fields.
+// priority first, then Worktree immediately after, then the remaining
+// fields.
 func renderCard(w io.Writer, r CardResult, workspaceRoot string) {
 	fmt.Fprintf(w, "id:           %s\n", r.ID)
 	fmt.Fprintf(w, "title:        %s\n", sanitizeForTerminal(r.Title))
@@ -308,10 +308,10 @@ func emptyDash(s string) string {
 }
 
 // formatWorktreeDisplay annotates wt with a "not present locally" note when
-// it is set but does not exist on disk, without treating that as an error
-// (plan section 9). The displayed string is always exactly wt as stored; a
-// relative wt is resolved against workspaceRoot only for the existence
-// check, not for display.
+// it is set but does not exist on disk, without treating that as an error.
+// The displayed string is always exactly wt as stored; a relative wt is
+// resolved against workspaceRoot only for the existence check, not for
+// display.
 func formatWorktreeDisplay(wt, workspaceRoot string) string {
 	if wt == "" {
 		return "-"

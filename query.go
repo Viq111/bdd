@@ -205,7 +205,7 @@ func (db *DB) ListCards(ctx context.Context, opts ListOptions) ([]Card, error) {
 		args = append(args, toAnySlice(opts.StatusCategories)...)
 	case !opts.All:
 		// Empty status selection without All defaults to every
-		// non-done-category card (plan section 17).
+		// non-done-category card.
 		conds = append(conds, "status IN (SELECT name FROM status_definitions WHERE category <> '"+string(StatusCategoryDone)+"')")
 	}
 
@@ -279,7 +279,7 @@ func (db *DB) SearchCards(ctx context.Context, opts SearchOptions) ([]Card, erro
 		args = append(args, toAnySlice(opts.Statuses)...)
 	case !opts.All:
 		// Empty status selection without All defaults to every
-		// non-done-category card, matching ListCards (plan section 17).
+		// non-done-category card, matching ListCards.
 		conds = append(conds, "status IN (SELECT name FROM status_definitions WHERE category <> '"+string(StatusCategoryDone)+"')")
 	}
 
@@ -304,7 +304,7 @@ func (db *DB) SearchCards(ctx context.Context, opts SearchOptions) ([]Card, erro
 // spirit; ExplainReady re-checks the same five conditions per-field for a
 // single card) the readiness predicate: status category active,
 // unassigned, lacking the human label, and every parent
-// done-category (plan section 16).
+// done-category.
 var readyConds = []string{
 	"status IN (SELECT name FROM status_definitions WHERE category = '" + string(StatusCategoryActive) + "')",
 	"assignee = ''",
@@ -421,7 +421,7 @@ func (db *DB) ExplainReady(ctx context.Context, id string) ([]string, error) {
 
 // runCardQuery executes a SELECT built around cardColumns, scans every row
 // with scanCard, then fetches labels for the whole result page in one
-// bounded follow-up query (avoiding N+1 per plan section 7).
+// bounded follow-up query (avoiding N+1 queries).
 func runCardQuery(ctx context.Context, q execer, query string, args []any) ([]Card, error) {
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -528,9 +528,7 @@ var searchQueryTextColumns = []string{
 // searchMatchCondition builds the "id IN (...)" WHERE condition and its args
 // for SearchCards' Query text, as a UNION of two subqueries against the
 // cards_fts/notes_fts trigram-tokenized virtual tables (migration
-// 0004_fts5_search.sql, plan section 7's anticipated fallback: "Add an FTS5
-// table maintained transactionally if the latency benchmark exceeds budget
-// at the target database size"):
+// 0004_fts5_search.sql):
 //
 //  1. a case-insensitive substring match ("%query%") OR'd across every
 //     searched column of cards_fts;

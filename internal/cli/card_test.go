@@ -334,9 +334,9 @@ func TestShowSanitizesControlCharsInTitle(t *testing.T) {
 	}
 }
 
-// TestShowExposesChildren guards against the regression fixed in bdd-ui9:
-// `show` must surface a card's children (in both --json and human output),
-// not just its parents.
+// TestShowExposesChildren guards against a past regression: `show` must
+// surface a card's children (in both --json and human output), not just
+// its parents.
 func TestShowExposesChildren(t *testing.T) {
 	dir := initTestWorkspace(t)
 	parent := createCard(t, dir, "--type", "chore", "parent")
@@ -373,8 +373,8 @@ func TestListDefaultExcludesDoneCards(t *testing.T) {
 	}
 }
 
-// TestListDefaultLimitIs20 guards the bdd-tpbr default: with no --limit,
-// list returns at most 20 cards even when more exist, while an explicit
+// TestListDefaultLimitIs20 guards the default: with no --limit, list
+// returns at most 20 cards even when more exist, while an explicit
 // --limit 0 opts back into unlimited results.
 func TestListDefaultLimitIs20(t *testing.T) {
 	dir := initTestWorkspace(t)
@@ -408,7 +408,7 @@ func TestListDefaultLimitIs20(t *testing.T) {
 	}
 }
 
-// TestListHumanLineIncludesPriority guards the bdd-ap5z compact line shape:
+// TestListHumanLineIncludesPriority guards the compact line shape:
 // list/search/ready human output must show `<id> P<priority> - <title>` so
 // an agent can triage without a fan-out of `show` calls.
 func TestListHumanLineIncludesPriority(t *testing.T) {
@@ -1005,7 +1005,7 @@ func TestCardCommandsRejectRemovedDBFlag(t *testing.T) {
 // removed --db exposure isn't in the leading id but in an optional
 // free-form trailing positional (close/human's [reason]): --db there must
 // still be rejected as an unknown flag, not accepted as literal reason
-// text that lets the command mutate the card (bd bdd-md64).
+// text that lets the command mutate the card.
 func TestCardOptionalTrailingFieldsRejectRemovedDBFlag(t *testing.T) {
 	dir := initTestWorkspace(t)
 

@@ -1,9 +1,8 @@
 # Release procedure
 
-Owner: Programmer (bd bdd-0bms). Why this exists: phase 4's exit criterion is
-a tagged v1 release with reproducible binaries and published API docs (plan
-section 24). This document covers the reproducible-binary and packaging half
-of that; API docs are `bd bdd-4m6x`.
+Owner: Programmer. Why this exists: a tagged v1 release requires
+reproducible binaries and published API docs. This document covers the
+reproducible-binary and packaging half of that.
 
 ## What a release produces
 
@@ -21,7 +20,7 @@ platform:
 | darwin  | amd64, arm64      |
 | windows | amd64, arm64      |
 
-linux and darwin on amd64/arm64 are the required minimum (plan section 24).
+linux and darwin on amd64/arm64 are the required minimum.
 windows builds and runs cleanly under `CGO_ENABLED=0` with no extra effort,
 so it's included too — if a future dependency ever breaks that, drop it from
 `PLATFORMS` in `scripts/release.sh` and note why here.

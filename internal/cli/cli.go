@@ -15,7 +15,7 @@ import (
 // command set: helpText renders it verbatim, and `bdd prime` (internal/cli/
 // prime.go) derives its command-set section from it, so the two can never
 // drift apart into `prime` advertising a command Run's switch below does
-// not actually implement (plan section 19).
+// not actually implement.
 const commandsReference = `  init [--prefix <prefix>] [path]   Create a new workspace database
   status [--upgrade]                Show the resolved workspace, database, and schema state
   config get|set|unset|list         Read or write workspace configuration

@@ -475,9 +475,9 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 	return card, nil
 }
 
-// requiredCreateFields checks the creation-time required-field matrix
-// (plan section 10): presence only, not content, and only for built-in
-// types. Custom types carry no extra required fields.
+// requiredCreateFields checks the creation-time required-field matrix:
+// presence only, not content, and only for built-in types. Custom types
+// carry no extra required fields.
 func requiredCreateFields(in CreateCard) error {
 	var missing []string
 
@@ -571,8 +571,8 @@ const idSuffixLen = 6
 const maxIDAttempts = 8
 
 // randomIDSuffix returns a crypto/rand-derived, lowercase, shell-safe
-// suffix for card IDs (plan section 15). idAlphabet has exactly 32 symbols,
-// so masking a random byte with &31 is unbiased.
+// suffix for card IDs. idAlphabet has exactly 32 symbols, so masking a
+// random byte with &31 is unbiased.
 func randomIDSuffix() (string, error) {
 	raw := make([]byte, idSuffixLen)
 	if _, err := rand.Read(raw); err != nil {

@@ -1,5 +1,5 @@
-// Command bddbench runs the section 7 subprocess latency benchmark: it
-// executes the compiled bdd binary against a fixture workspace for each of
+// Command bddbench runs the subprocess latency benchmark: it executes the
+// compiled bdd binary against a fixture workspace for each of
 // version/help, show <id>, update <id> --claim, ready --limit 100, and
 // search <text> --limit 50, and reports p50/p95 per command plus a
 // separate cold-start sample. See docs/benchmark.md for methodology,
@@ -136,8 +136,7 @@ func loadManifest(path string) (*fixture.Manifest, error) {
 }
 
 // stageWorkspace copies the fixture database into workDir/.bdd/bdd.sqlite so
-// bdd's workspace discovery (once implemented) finds it the same way it
-// would in real use.
+// bdd's workspace discovery finds it the same way it would in real use.
 func stageWorkspace(workDir, fixturePath string) error {
 	bddDir := filepath.Join(workDir, ".bdd")
 	if err := os.MkdirAll(bddDir, 0o755); err != nil {

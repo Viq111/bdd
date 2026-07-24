@@ -137,11 +137,11 @@ func TestUpgradeSeedsBuiltinStatusesAndTypes(t *testing.T) {
 	}
 }
 
-// legacySchemaV1SQL is the 0001_initial.sql seed as it shipped before bd
-// bdd-zj9 fixed it: built_in wontfix instead of awaiting_review. Workspaces
-// created by that build ran exactly this SQL and are now stuck at schema
-// version 1 (or 2) with the wrong built-in status set, since a migration
-// that already ran is never re-applied (bd bdd-3wx).
+// legacySchemaV1SQL is the 0001_initial.sql seed as it originally shipped,
+// with built_in wontfix instead of awaiting_review. Workspaces created by
+// that build ran exactly this SQL and are now stuck at schema version 1
+// (or 2) with the wrong built-in status set, since a migration that
+// already ran is never re-applied.
 const legacySchemaV1SQL = `
 CREATE TABLE schema_versions (
   version    INTEGER PRIMARY KEY,
@@ -271,9 +271,9 @@ INSERT INTO type_definitions (name, built_in) VALUES
   ('chore', 1);
 `
 
-// seedLegacyV1 sets up db as a workspace initialized before bd bdd-zj9 and
-// already upgraded to schema version 1, bypassing the current (fixed)
-// migrations entirely.
+// seedLegacyV1 sets up db as a workspace initialized with the legacy
+// (pre-fix) schema, already upgraded to schema version 1, bypassing the
+// current migrations entirely.
 func seedLegacyV1(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 	if _, err := db.ExecContext(ctx, legacySchemaV1SQL); err != nil {

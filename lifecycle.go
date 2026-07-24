@@ -13,7 +13,7 @@ import (
 
 // HumanLabel is the reserved label ReadyCards and the readiness predicate
 // treat as "needs human attention": a card carrying it is never ready,
-// regardless of status (plan section 16).
+// regardless of status.
 const HumanLabel = "human"
 
 // statusCategory resolves status to its StatusCategory, checking built-in
@@ -41,8 +41,7 @@ func statusCategory(ctx context.Context, q execer, status Status) (StatusCategor
 // a done-category card can only move to a different done-category status
 // (closed, or a custom done status) through UpdateCard.
 // Un-closing a card requires ReopenCard instead, since only it clears the
-// ClosedAt/StartedAt/Assignee fields a done-category card accumulated
-// (plan section 16).
+// ClosedAt/StartedAt/Assignee fields a done-category card accumulated.
 func categoryTransitionAllowed(from, to StatusCategory) bool {
 	if from == to {
 		return true

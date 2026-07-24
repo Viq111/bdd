@@ -1,7 +1,7 @@
 // Package e2e_test is QA's black-box, subprocess-level verification of the
-// bdd CLI contract (plan sections 7, 19, 23). Unlike cmd/bdd's in-process
-// unit tests, every test here execs the actual compiled binary, matching
-// how a real agent invokes it and how internal/bench measures latency.
+// bdd CLI contract. Unlike cmd/bdd's in-process unit tests, every test here
+// execs the actual compiled binary, matching how a real agent invokes it
+// and how internal/bench measures latency.
 package e2e_test
 
 import (
@@ -136,7 +136,7 @@ func TestVersionAndHelpFastPath(t *testing.T) {
 	}
 }
 
-// --- Missing-required-field contract (section 10, 23). ---
+// --- Missing-required-field contract. ---
 
 func TestMissingRequiredFieldsListedAllAtOnceNoDBWrite(t *testing.T) {
 	db := newWorkspace(t)
@@ -170,7 +170,7 @@ func TestExplicitEmptyAcknowledgesRequiredField(t *testing.T) {
 	}
 }
 
-// --- create --silent exact output (section 19). ---
+// --- create --silent exact output. ---
 
 func TestCreateSilentEmitsOnlyID(t *testing.T) {
 	db := newWorkspace(t)
@@ -193,7 +193,7 @@ func TestCreateSilentEmitsOnlyID(t *testing.T) {
 	}
 }
 
-// --- Both flag syntaxes (section 19, 23). ---
+// --- Both flag syntaxes. ---
 
 func TestBothFlagSyntaxes(t *testing.T) {
 	db := newWorkspace(t)
@@ -209,7 +209,7 @@ func TestBothFlagSyntaxes(t *testing.T) {
 	}
 }
 
-// --- Repeated parent/child flags, atomic multi-edge update (section 14, 23). ---
+// --- Repeated parent/child flags, atomic multi-edge update. ---
 
 func TestRepeatedParentFlagsAtomic(t *testing.T) {
 	db := newWorkspace(t)
@@ -251,7 +251,7 @@ func TestSelfEdgeAndCycleRejected(t *testing.T) {
 	}
 }
 
-// --- File and stdin input (section 19, 23). ---
+// --- File and stdin input. ---
 
 func TestStdinNote(t *testing.T) {
 	db := newWorkspace(t)
@@ -281,7 +281,7 @@ func TestDescriptionFile(t *testing.T) {
 	}
 }
 
-// --- Golden human output: Worktree near the top of `show` (section 9, 23). ---
+// --- Golden human output: Worktree near the top of `show`. ---
 
 func TestShowHumanWorktreeNearTop(t *testing.T) {
 	db := newWorkspace(t)
@@ -302,15 +302,15 @@ func TestShowHumanWorktreeNearTop(t *testing.T) {
 	if worktreeLine == -1 {
 		t.Fatalf("show output has no worktree line:\n%s", r.stdout)
 	}
-	// "Near the top": identity, title, status, and priority all come first
-	// per plan section 9, so worktree must appear within the first several
-	// lines, not buried after unrelated fields.
+	// "Near the top": identity, title, status, and priority all come first,
+	// so worktree must appear within the first several lines, not buried
+	// after unrelated fields.
 	if worktreeLine > 5 {
 		t.Fatalf("worktree line at index %d, want it near the top (<=5):\n%s", worktreeLine, r.stdout)
 	}
 }
 
-// --- JSON conventions: singular object, plural array, RFC3339, null/empty (section 19, 23). ---
+// --- JSON conventions: singular object, plural array, RFC3339, null/empty. ---
 
 func TestJSONConventions(t *testing.T) {
 	db := newWorkspace(t)
@@ -353,7 +353,7 @@ func TestJSONConventions(t *testing.T) {
 	}
 }
 
-// --- Stream discipline: no stderr on success under --json/--silent (section 19, 23). ---
+// --- Stream discipline: no stderr on success under --json/--silent. ---
 
 func TestNoStderrOnSuccess(t *testing.T) {
 	db := newWorkspace(t)
@@ -374,7 +374,7 @@ func TestNoStderrOnSuccess(t *testing.T) {
 	}
 }
 
-// --- Exit-code contract: 0/2/3/4/1 (section 19, 23). ---
+// --- Exit-code contract: 0/2/3/4/1. ---
 
 func TestExitCodeContract(t *testing.T) {
 	db := newWorkspace(t)
@@ -409,7 +409,7 @@ func TestExitCodeContract(t *testing.T) {
 	}
 }
 
-// --- Protected rune mutations/removal require --force (section 12, 23). ---
+// --- Protected rune mutations/removal require --force. ---
 
 func TestProtectedRuneRequiresForce(t *testing.T) {
 	db := newWorkspace(t)
@@ -429,7 +429,7 @@ func TestProtectedRuneRequiresForce(t *testing.T) {
 	}
 }
 
-// --- prime: memory inclusion and context limits (section 11, 19, 23). ---
+// --- prime: memory inclusion and context limits. ---
 
 func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 	db := newWorkspace(t)
@@ -487,7 +487,7 @@ func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 }
 
 // --- prime: a memory marked --prime required is inlined, not just
-// summarized (bd bdd-lrak). ---
+// summarized. ---
 
 func TestPrimeRequiredMemoryIsInlined(t *testing.T) {
 	db := newWorkspace(t)
@@ -523,7 +523,7 @@ func TestPrimeRequiredMemoryIsInlined(t *testing.T) {
 }
 
 // --- prime: a rune marked --prime required is inlined via the compiled
-// binary, matching the exact invocation QA reported failing (bd bdd-noea):
+// binary, matching the exact invocation that once failed:
 // `rune set role/required --kind role ... --prime required` must exit 0 and
 // the rune must surface under required_runes with its full body. ---
 
@@ -571,7 +571,7 @@ func TestPrimeRequiredRuneExecutablePath(t *testing.T) {
 	}
 }
 
-// --- delete requires --force (section 14, 23). ---
+// --- delete requires --force. ---
 
 func TestDeleteRequiresForce(t *testing.T) {
 	db := newWorkspace(t)
@@ -585,7 +585,7 @@ func TestDeleteRequiresForce(t *testing.T) {
 	}
 }
 
-// --- Label add/remove idempotence (section 10, 16, 23). ---
+// --- Label add/remove idempotence. ---
 
 func TestLabelIdempotence(t *testing.T) {
 	db := newWorkspace(t)
@@ -603,10 +603,10 @@ func TestLabelIdempotence(t *testing.T) {
 
 // --- Per-command -h contract: every subcommand and every subcommand-group
 // member supports -h with a Usage: line and an Examples: section, and
-// never touches a workspace or database (cobra migration, bd bdd-s7m). This
-// table is the external contract: it must be updated by hand whenever a
-// command is added, so a missing entry (and therefore a missing -h) is
-// caught by review rather than by reflecting cobra's own command tree. ---
+// never touches a workspace or database. This table is the external
+// contract: it must be updated by hand whenever a command is added, so a
+// missing entry (and therefore a missing -h) is caught by review rather
+// than by reflecting cobra's own command tree. ---
 
 var allSubcommands = [][]string{
 	{"init"},
@@ -679,7 +679,7 @@ func TestHelpFlagEverySubcommand(t *testing.T) {
 	}
 }
 
-// --- Post-migration exit-code contract, black-box side (bd bdd-s7m). ---
+// --- Exit-code contract, black-box side. ---
 
 func TestUnknownCommandAndFlagExitUsage(t *testing.T) {
 	db := newWorkspace(t)
@@ -749,10 +749,10 @@ func TestRemovedDBFlagRejected(t *testing.T) {
 	}
 }
 
-// TestRemovedDBFlagRejectedInTrailingPositional is a regression test for
-// bd bdd-md64: --db appearing after the required id, in an optional
-// free-form positional slot (close/human's [reason]), must be rejected as
-// an unknown flag before any mutation happens -- not accepted as literal
+// TestRemovedDBFlagRejectedInTrailingPositional is a regression test:
+// --db appearing after the required id, in an optional free-form
+// positional slot (close/human's [reason]), must be rejected as an
+// unknown flag before any mutation happens -- not accepted as literal
 // reason text.
 func TestRemovedDBFlagRejectedInTrailingPositional(t *testing.T) {
 	db := newWorkspace(t)

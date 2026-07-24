@@ -11,7 +11,7 @@ import (
 
 // MaxLabelBytes is the maximum length, in UTF-8 bytes, of a single label.
 // Labels require no registration: any non-empty valid UTF-8 string up to
-// this length is accepted, and add/remove is idempotent (plan section 10).
+// this length is accepted, and add/remove is idempotent.
 const MaxLabelBytes = 128
 
 // StatusCategory groups statuses into the four buckets the readiness
@@ -365,8 +365,7 @@ func scanCard(row scanner) (*Card, error) {
 	return &c, nil
 }
 
-// formatTime renders t as a UTC RFC3339 string with fractional seconds
-// (plan section 18).
+// formatTime renders t as a UTC RFC3339 string with fractional seconds.
 func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }

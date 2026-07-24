@@ -1,17 +1,16 @@
 # Subprocess latency benchmark harness
 
-Owner: QA (bd bdd-hqo2). Why this exists: `bdd` treats warm-start CLI latency
-as a first-class requirement (plan section 7), so the harness and its 10k-card
-fixture are built in phase 0, ahead of the CLI commands they benchmark, so
-every later change can be checked against the budget.
+Owner: QA. Why this exists: `bdd` treats warm-start CLI latency as a
+first-class requirement, so this harness and its 10k-card fixture exist
+independently of the CLI commands they benchmark, so every change can be
+checked against the budget in [`docs/policy.md`](policy.md).
 
-This card builds the *measurement* harness only. Enforcing the section 7
-latency targets as pass/fail is a separate, later card (bd bdd-5re7), which
-reuses this harness.
+This harness performs *measurement* only; enforcing those latency targets
+as pass/fail is a separate concern that reuses this harness.
 
 ## What it measures
 
-For each of the section 7 commands:
+For each of the following commands:
 
 - `version` / `help`
 - `show <id>`
@@ -21,8 +20,8 @@ For each of the section 7 commands:
 
 the harness executes the real, compiled `bdd` binary as a subprocess (never
 the Go library directly), so the numbers include process start, flag
-parsing, and (once implemented) workspace discovery and SQLite open — the
-same overhead a real invocation pays.
+parsing, workspace discovery, and SQLite open — the same overhead a real
+invocation pays.
 
 For each command it reports:
 
@@ -30,12 +29,11 @@ For each command it reports:
 - **p50** / **p95** over `-iterations` warm, timed runs, after `-warmup`
   untimed runs so the OS file cache for the fixture database is populated.
 
-A command that has not been implemented yet (anything except `version`/
-`help` today) is detected from cmd/bdd's `unknown command` exit path and
-reported with `"status": "unimplemented"` instead of being timed or crashing
-the harness. Any other non-zero exit is reported as `"status": "error"` with
-the command's stderr, so one broken command never aborts the rest of the
-run.
+A command that is not yet implemented is detected from cmd/bdd's
+`unknown command` exit path and reported with `"status": "unimplemented"`
+instead of being timed or crashing the harness. Any other non-zero exit is
+reported as `"status": "error"` with the command's stderr, so one broken
+command never aborts the rest of the run.
 
 ## Reference machine assumptions
 
@@ -84,13 +82,10 @@ go run ./cmd/bddbench -binary bin/bdd -manifest fixture.manifest.json \
 
 ## The fixture
 
-`internal/fixture` generates a bdd-shaped SQLite database directly via SQL —
-it does not use the `bdd` library, since the storage layer (bd bdd-8urh) is
-not implemented yet. The schema is QA's best-effort reconstruction of plan
-section 18 from the frozen public API (bd bdd-4s2w) and the table list
-described in bdd-8urh's card. **Once bdd-8urh lands, reconcile this schema
-against the real migrations** so fixtures stay openable by the real `bdd`
-binary; see the doc comment on `internal/fixture/schema.go` for specifics.
+`internal/fixture` generates a bdd-shaped SQLite database using the same
+embedded migrations (`internal/schema`) as the real bdd storage layer, so
+fixtures stay openable by the real `bdd` binary; see the doc comment on
+`internal/fixture/schema.go` for specifics.
 
 Generation is deterministic: the same `-seed` and `-cards` always produce a
 byte-identical file. By default it creates 10,000 cards with:
