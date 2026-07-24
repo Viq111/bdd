@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -60,8 +61,23 @@ var (
 // names never start with "-", scanning it in full is equivalent to scanning
 // just the matched leaf's own arguments, without needing to re-derive that
 // slice here.
+//
+// A missing-value error (e.g. "bdd create --title" with nothing after it)
+// is adapted the same way, matching the wording ParseGlobalFlags has always
+// used for the four global flags ("bdd: flag --title requires a value"; see
+// flags.go) rather than pflag's own "flag needs an argument: --title". No
+// bdd flag has a shorthand (global -C is stripped before cobra ever parses,
+// see registerGlobalFlags), so only the long-form message needs handling.
 func flagErrorFunc(streams *Streams, rawArgs []string) func(*cobra.Command, error) error {
 	return func(cmd *cobra.Command, err error) error {
+		cmdName := commandName(cmd)
+
+		var valueRequired *pflag.ValueRequiredError
+		if errors.As(err, &valueRequired) {
+			streams.Errorf("bdd: %s: bdd: flag --%s requires a value\n", cmdName, valueRequired.GetSpecifiedName())
+			return exitError{ExitUsage}
+		}
+
 		name := ""
 		if m := reUnknownFlag.FindStringSubmatch(err.Error()); m != nil {
 			name = m[1]
@@ -69,7 +85,6 @@ func flagErrorFunc(streams *Streams, rawArgs []string) func(*cobra.Command, erro
 			name = m[1]
 		}
 
-		cmdName := commandName(cmd)
 		if name != "" {
 			for _, a := range rawArgs {
 				if n, _, _ := cutFlagValue(a); n == name {

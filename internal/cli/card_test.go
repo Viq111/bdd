@@ -55,6 +55,25 @@ func TestCreateRequiredFieldsFailure(t *testing.T) {
 	}
 }
 
+// TestMissingFlagValueDiagnostic locks in the pre-Cobra wording for a known
+// flag given with no value ("bdd: <cmd>: bdd: flag --title requires a
+// value"), the same message ParseGlobalFlags has always produced for the
+// global flags. cobra/pflag's own wording ("flag needs an argument: --title")
+// must not leak through; see bdd-raa8.
+func TestMissingFlagValueDiagnostic(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	_, stderr := runCLI(t, dir, ExitUsage, "create", "--title")
+	if want := `bdd: create: bdd: flag --title requires a value`; !strings.Contains(stderr, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", stderr, want)
+	}
+
+	_, stderr = runCLI(t, dir, ExitUsage, "update", "acme-1", "--title")
+	if want := `bdd: update: bdd: flag --title requires a value`; !strings.Contains(stderr, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", stderr, want)
+	}
+}
+
 func TestCreateReproduceEmptyStringAcknowledges(t *testing.T) {
 	dir := initTestWorkspace(t)
 
