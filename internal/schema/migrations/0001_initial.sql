@@ -1,5 +1,5 @@
--- Schema version 1: initial logical schema (bdd plan section 18) plus
--- seed data for the six built-in statuses and six built-in types.
+-- Schema version 1: initial logical schema plus seed data for the six
+-- built-in statuses and six built-in types.
 
 CREATE TABLE schema_versions (
   version    INTEGER PRIMARY KEY,
@@ -124,7 +124,7 @@ CREATE INDEX idx_notes_card_created ON notes(card_id, created_at);
 CREATE INDEX idx_memories_updated_at ON memories(updated_at);
 CREATE INDEX idx_runes_kind_enabled_updated ON runes(kind, enabled, updated_at);
 
--- Built-in statuses (bdd plan section 10 / card.go BuiltinStatusCategories).
+-- Built-in statuses (see card.go BuiltinStatusCategories).
 INSERT INTO status_definitions (name, category, built_in) VALUES
   ('open',            'active', 1),
   ('in_progress',     'wip',    1),
@@ -133,7 +133,7 @@ INSERT INTO status_definitions (name, category, built_in) VALUES
   ('deferred',        'frozen', 1),
   ('closed',          'done',   1);
 
--- Built-in types (bdd plan section 10 / card.go CardType constants).
+-- Built-in types (see card.go CardType constants).
 INSERT INTO type_definitions (name, built_in) VALUES
   ('bug', 1),
   ('task', 1),
