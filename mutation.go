@@ -619,6 +619,11 @@ func strOrEmpty(p *string) string {
 	return *p
 }
 
+// writeEvent appends one row to the internal, append-only events table that
+// backs every "audited" claim in the docs. This trail is internal-only: there
+// is no ListEvents method or CLI command to read it back today. See bd
+// bdd-as31 for the tracked follow-up to either add a public reader or make
+// peace with that permanently.
 func writeEvent(ctx context.Context, tx *sql.Tx, cardID string, revision int64, action, actor, now string, payload []byte) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO events (subject_kind, subject_key, revision, action, actor, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"card", cardID, revision, action, actor, string(payload), now)
