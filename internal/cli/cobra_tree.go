@@ -222,16 +222,24 @@ func buildCommands(global GlobalFlags, streams *Streams, rawArgs []string) []*co
 
 		newGroup("memory", "Manage durable, keyed, workspace-scoped memories",
 			"Create, read, list, search, and remove durable, keyed, workspace-scoped\nmemories.",
-			`  bdd memory set "prefer small PRs" --key style
+			`  bdd memory create "prefer small PRs" --key style
   bdd memory get style
   bdd memory search style`,
 			runMemory, global, streams, rawArgs,
-			newLeaf("set [body]", "Create or update a memory",
-				"Create or update a durable, keyed, workspace-scoped memory. Supply the body\nas a positional argument, or pipe it via --stdin.",
-				`  bdd memory set "prefer small PRs" --key style
-  echo "prefer small PRs" | bdd memory set --key style --stdin`,
-				runMemorySet, global, streams, rawArgs, func(f *pflag.FlagSet) {
-					f.String("key", "", "memory key (generated if omitted)")
+			newLeaf("create [body]", "Create a new memory",
+				"Create a new durable, keyed, workspace-scoped memory. --key is required and\nmust not already exist. Supply the body as a positional argument, or pipe\nit via --stdin.",
+				`  bdd memory create "prefer small PRs" --key style
+  echo "prefer small PRs" | bdd memory create --key style --stdin`,
+				runMemoryCreate, global, streams, rawArgs, func(f *pflag.FlagSet) {
+					f.String("key", "", "memory key (required)")
+					f.String("prime", "", "how `bdd prime` surfaces this memory: required or optional (default)")
+					f.Bool("stdin", false, "read the body from stdin instead of a positional argument")
+				}),
+			newLeaf("update <key> [body]", "Update an existing memory",
+				"Update the memory stored at <key>, which must already exist. Supply the\nbody as a positional argument, or pipe it via --stdin.",
+				`  bdd memory update style "prefer small PRs, always"
+  echo "prefer small PRs, always" | bdd memory update style --stdin`,
+				runMemoryUpdate, global, streams, rawArgs, func(f *pflag.FlagSet) {
 					f.String("prime", "", "how `bdd prime` surfaces this memory: required or optional (default)")
 					f.Bool("stdin", false, "read the body from stdin instead of a positional argument")
 				}),

@@ -18,9 +18,9 @@ func TestPrimeCompactHumanOutputListsRulesWorkflowAndContext(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "memory", "set", "hello there", "--key", "greeting"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"--workspace", dir, "memory", "create", "hello there", "--key", "greeting"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
@@ -59,14 +59,14 @@ func TestPrimeCompactJSONShape(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "memory", "set", "first", "--key", "a"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"--workspace", dir, "memory", "create", "first", "--key", "a"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d", code)
+		t.Fatalf("Run(memory create) exit = %d", code)
 	}
 	stdout.Reset()
-	code = Run([]string{"--workspace", dir, "memory", "set", "second", "--key", "b"}, &stdout, &stderr, "dev", "unspecified")
+	code = Run([]string{"--workspace", dir, "memory", "create", "second", "--key", "b"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d", code)
+		t.Fatalf("Run(memory create) exit = %d", code)
 	}
 
 	stdout.Reset()
@@ -120,9 +120,9 @@ func TestPrimeMemoryLimit(t *testing.T) {
 
 	for _, key := range []string{"a", "b", "c"} {
 		var stdout, stderr bytes.Buffer
-		code := Run([]string{"--workspace", dir, "memory", "set", "body-" + key, "--key", key}, &stdout, &stderr, "dev", "unspecified")
+		code := Run([]string{"--workspace", dir, "memory", "create", "body-" + key, "--key", key}, &stdout, &stderr, "dev", "unspecified")
 		if code != ExitSuccess {
-			t.Fatalf("Run(memory set) exit = %d", code)
+			t.Fatalf("Run(memory create) exit = %d", code)
 		}
 	}
 
@@ -155,9 +155,9 @@ func TestPrimeNoMemories(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "memory", "set", "hidden", "--key", "secret"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"--workspace", dir, "memory", "create", "hidden", "--key", "secret"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d", code)
+		t.Fatalf("Run(memory create) exit = %d", code)
 	}
 
 	stdout.Reset()
@@ -266,14 +266,14 @@ func TestPrimeRequiredMemoryInlined(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "memory", "set", "always run the race tests", "--key", "testing-race", "--prime", "required"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"--workspace", dir, "memory", "create", "always run the race tests", "--key", "testing-race", "--prime", "required"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 	stdout.Reset()
-	code = Run([]string{"--workspace", dir, "memory", "set", "prefer small PRs", "--key", "pr-size"}, &stdout, &stderr, "dev", "unspecified")
+	code = Run([]string{"--workspace", dir, "memory", "create", "prefer small PRs", "--key", "pr-size"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
@@ -346,9 +346,9 @@ func TestPrimeRequiredContextOverBudgetNamesBothRunesAndMemories(t *testing.T) {
 		t.Fatalf("Run(rune set) exit = %d, stderr = %q", code, stderr.String())
 	}
 	stdout.Reset()
-	code = Run([]string{"--workspace", dir, "memory", "set", "also huge", "--key", "huge-memory", "--prime", "required"}, &stdout, &stderr, "dev", "unspecified")
+	code = Run([]string{"--workspace", dir, "memory", "create", "also huge", "--key", "huge-memory", "--prime", "required"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
@@ -398,9 +398,9 @@ func TestPrimeFullReproducesProseContract(t *testing.T) {
 	initWorkspace(t, dir)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--workspace", dir, "memory", "set", "hello there", "--key", "greeting"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"--workspace", dir, "memory", "create", "hello there", "--key", "greeting"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()

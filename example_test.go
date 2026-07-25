@@ -135,12 +135,12 @@ func ExampleDB_ReadyCards() {
 	// Output: First
 }
 
-func ExampleDB_Remember() {
+func ExampleDB_CreateMemory() {
 	db, cleanup := exampleDB()
 	defer cleanup()
 	ctx := context.Background()
 
-	mem, err := db.Remember(ctx, bdd.Remember{
+	mem, err := db.CreateMemory(ctx, bdd.Remember{
 		Key:   "testing-race",
 		Body:  "Always run the race tests",
 		Actor: "alice",

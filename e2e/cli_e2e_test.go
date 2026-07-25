@@ -433,8 +433,8 @@ func TestProtectedRuneRequiresForce(t *testing.T) {
 
 func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 	db := newWorkspace(t)
-	run(t, db, "memory", "set", "first memory body", "--key", "k1")
-	run(t, db, "memory", "set", "second memory body", "--key", "k2")
+	run(t, db, "memory", "create", "first memory body", "--key", "k1")
+	run(t, db, "memory", "create", "second memory body", "--key", "k2")
 
 	compact := run(t, db, "prime")
 	if compact.code != 0 {
@@ -491,8 +491,8 @@ func TestPrimeMemoryInclusionAndLimits(t *testing.T) {
 
 func TestPrimeRequiredMemoryIsInlined(t *testing.T) {
 	db := newWorkspace(t)
-	run(t, db, "memory", "set", "always run the race tests", "--key", "testing-race", "--prime", "required")
-	run(t, db, "memory", "set", "prefer small PRs", "--key", "pr-size")
+	run(t, db, "memory", "create", "always run the race tests", "--key", "testing-race", "--prime", "required")
+	run(t, db, "memory", "create", "prefer small PRs", "--key", "pr-size")
 
 	compact := run(t, db, "prime", "--json")
 	if compact.code != 0 {
@@ -619,7 +619,8 @@ var allSubcommands = [][]string{
 	{"statuses"},
 	{"types"},
 	{"memory"},
-	{"memory", "set"},
+	{"memory", "create"},
+	{"memory", "update"},
 	{"memory", "get"},
 	{"memory", "list"},
 	{"memory", "search"},

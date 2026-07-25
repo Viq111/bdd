@@ -2,9 +2,7 @@ package bdd
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,11 +39,10 @@ func validMemoryPrime(v string) bool {
 	return v == MemoryPrimeRequired || v == MemoryPrimeOptional
 }
 
-// Remember is the input to (*DB).Remember. If Key is empty, Remember
-// derives a readable slug plus a short content hash and reports the
-// generated key on the returned Memory. Prime, when nil, leaves an
-// existing memory's designation unchanged and defaults a new memory to
-// MemoryPrimeOptional.
+// Remember is the input to (*DB).CreateMemory and (*DB).UpdateMemory. Key is
+// required on both. Prime, when nil, leaves an existing memory's
+// designation unchanged (UpdateMemory) or defaults a new memory to
+// MemoryPrimeOptional (CreateMemory).
 type Remember struct {
 	Key   string
 	Body  string
@@ -59,72 +56,46 @@ type MemoryQuery struct {
 	Query string
 }
 
-// Remember atomically creates or updates a memory by key. When in.Key is
-// empty (after trimming), a key is derived from in.Body: a readable slug
-// followed by a short content hash, so repeated calls with identical
-// untitled content converge on the same record instead of piling up
-// duplicates. Every call increments Revision and writes an audit event
-// (memory.create or memory.update) in the same transaction as the write.
-func (db *DB) Remember(ctx context.Context, in Remember) (*Memory, error) {
-	if err := db.checkMemoryReady(true); err != nil {
+// CreateMemory inserts a new memory at in.Key, which must be non-empty
+// (after trimming). It fails with ErrAlreadyExists if the key is already in
+// use, leaving the existing memory untouched. Prime, when nil, defaults to
+// MemoryPrimeOptional. Writes an audit event (memory.create) in the same
+// transaction as the insert.
+func (db *DB) CreateMemory(ctx context.Context, in Remember) (*Memory, error) {
+	key, err := db.checkRememberInput(in)
+	if err != nil {
 		return nil, err
-	}
-	if in.Prime != nil && !validMemoryPrime(*in.Prime) {
-		return nil, &ValidationError{
-			Fields: []string{"prime"},
-			Detail: fmt.Sprintf("prime %q must be one of %q, %q", *in.Prime, MemoryPrimeRequired, MemoryPrimeOptional),
-		}
-	}
-
-	key := strings.TrimSpace(in.Key)
-	if key == "" {
-		key = deriveMemoryKey(in.Body)
 	}
 
 	var out *Memory
-	err := sqlite.Retry(ctx, func() error {
+	err = sqlite.Retry(ctx, func() error {
 		tx, err := db.sql.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
 		defer tx.Rollback()
 
-		now := time.Now().UTC().Format(time.RFC3339Nano)
-
-		var existingRevision int64
-		var existingPrime string
-		err = tx.QueryRowContext(ctx, `SELECT revision, prime FROM memories WHERE key = ?`, key).Scan(&existingRevision, &existingPrime)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			prime := MemoryPrimeOptional
-			if in.Prime != nil {
-				prime = *in.Prime
-			}
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO memories (key, body, prime, created_by, updated_by, created_at, updated_at, revision)
-				VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-				key, in.Body, prime, in.Actor, in.Actor, now, now); err != nil {
-				return err
-			}
-			if err := insertMemoryEvent(ctx, tx, key, 1, "memory.create", in.Actor, in.Body, now); err != nil {
-				return err
-			}
-		case err != nil:
+		exists, err := memoryExists(ctx, tx, key)
+		if err != nil {
 			return err
-		default:
-			prime := existingPrime
-			if in.Prime != nil {
-				prime = *in.Prime
-			}
-			newRevision := existingRevision + 1
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE memories SET body = ?, prime = ?, updated_by = ?, updated_at = ?, revision = ? WHERE key = ?`,
-				in.Body, prime, in.Actor, now, newRevision, key); err != nil {
-				return err
-			}
-			if err := insertMemoryEvent(ctx, tx, key, newRevision, "memory.update", in.Actor, in.Body, now); err != nil {
-				return err
-			}
+		}
+		if exists {
+			return ErrAlreadyExists
+		}
+
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		prime := MemoryPrimeOptional
+		if in.Prime != nil {
+			prime = *in.Prime
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO memories (key, body, prime, created_by, updated_by, created_at, updated_at, revision)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+			key, in.Body, prime, in.Actor, in.Actor, now, now); err != nil {
+			return err
+		}
+		if err := insertMemoryEvent(ctx, tx, key, 1, "memory.create", in.Actor, in.Body, now); err != nil {
+			return err
 		}
 
 		m, err := scanMemory(tx.QueryRowContext(ctx, `
@@ -138,9 +109,105 @@ func (db *DB) Remember(ctx context.Context, in Remember) (*Memory, error) {
 		return tx.Commit()
 	})
 	if err != nil {
-		return nil, fmt.Errorf("bdd: remember %s: %w", key, err)
+		return nil, fmt.Errorf("bdd: create memory %s: %w", key, err)
 	}
 	return out, nil
+}
+
+// UpdateMemory overwrites the body (and optionally prime) of the memory at
+// in.Key, which must be non-empty (after trimming). It fails with
+// ErrNotFound if the key does not exist. Prime, when nil, leaves the
+// existing memory's designation unchanged. Increments Revision and writes an
+// audit event (memory.update) in the same transaction as the write.
+func (db *DB) UpdateMemory(ctx context.Context, in Remember) (*Memory, error) {
+	key, err := db.checkRememberInput(in)
+	if err != nil {
+		return nil, err
+	}
+
+	var out *Memory
+	err = sqlite.Retry(ctx, func() error {
+		tx, err := db.sql.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+
+		var existingRevision int64
+		var existingPrime string
+		err = tx.QueryRowContext(ctx, `SELECT revision, prime FROM memories WHERE key = ?`, key).Scan(&existingRevision, &existingPrime)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrNotFound
+		case err != nil:
+			return err
+		}
+
+		prime := existingPrime
+		if in.Prime != nil {
+			prime = *in.Prime
+		}
+		newRevision := existingRevision + 1
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE memories SET body = ?, prime = ?, updated_by = ?, updated_at = ?, revision = ? WHERE key = ?`,
+			in.Body, prime, in.Actor, now, newRevision, key); err != nil {
+			return err
+		}
+		if err := insertMemoryEvent(ctx, tx, key, newRevision, "memory.update", in.Actor, in.Body, now); err != nil {
+			return err
+		}
+
+		m, err := scanMemory(tx.QueryRowContext(ctx, `
+			SELECT key, body, prime, created_by, updated_by, created_at, updated_at, revision
+			FROM memories WHERE key = ?`, key))
+		if err != nil {
+			return err
+		}
+		out = m
+
+		return tx.Commit()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("bdd: update memory %s: %w", key, err)
+	}
+	return out, nil
+}
+
+// checkRememberInput validates in for CreateMemory/UpdateMemory: the
+// database must be ready for writes, in.Key must be non-empty after
+// trimming, and Prime, if set, must be a valid designation. It returns the
+// trimmed key.
+func (db *DB) checkRememberInput(in Remember) (string, error) {
+	if err := db.checkMemoryReady(true); err != nil {
+		return "", err
+	}
+	if in.Prime != nil && !validMemoryPrime(*in.Prime) {
+		return "", &ValidationError{
+			Fields: []string{"prime"},
+			Detail: fmt.Sprintf("prime %q must be one of %q, %q", *in.Prime, MemoryPrimeRequired, MemoryPrimeOptional),
+		}
+	}
+	key := strings.TrimSpace(in.Key)
+	if key == "" {
+		return "", &ValidationError{Fields: []string{"key"}, Detail: "key is required"}
+	}
+	return key, nil
+}
+
+// memoryExists reports whether a memory row exists at key within tx.
+func memoryExists(ctx context.Context, tx *sql.Tx, key string) (bool, error) {
+	var one int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM memories WHERE key = ?`, key).Scan(&one)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	case err != nil:
+		return false, err
+	default:
+		return true, nil
+	}
 }
 
 // Memories returns memories matching q, searching case-insensitively across
@@ -314,48 +381,6 @@ func scanMemory(s memoryScanner) (*Memory, error) {
 	m.UpdatedAt = ut
 
 	return &m, nil
-}
-
-// deriveMemoryKey builds a readable key from body when the caller does not
-// supply one: a slug of the body's leading alphanumeric content, followed by
-// a short content hash so repeated Remember calls with identical body
-// converge on the same key instead of creating duplicates.
-func deriveMemoryKey(body string) string {
-	hash := sha256.Sum256([]byte(body))
-	suffix := hex.EncodeToString(hash[:])[:8]
-
-	slug := slugify(body, 40)
-	if slug == "" {
-		return "memory-" + suffix
-	}
-	return slug + "-" + suffix
-}
-
-// slugify lowercases s, collapses runs of non-alphanumeric characters into a
-// single hyphen, and truncates to maxLen.
-func slugify(s string, maxLen int) string {
-	var b strings.Builder
-	prevDash := true // suppress a leading hyphen
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
-			b.WriteRune(r)
-			prevDash = false
-		default:
-			if !prevDash && b.Len() > 0 {
-				b.WriteByte('-')
-				prevDash = true
-			}
-		}
-		if b.Len() >= maxLen {
-			break
-		}
-	}
-	out := strings.TrimRight(b.String(), "-")
-	if len(out) > maxLen {
-		out = strings.TrimRight(out[:maxLen], "-")
-	}
-	return out
 }
 
 // escapeLike escapes SQL LIKE metacharacters in s so it can be safely

@@ -41,7 +41,7 @@ Parent/child blocking:
 
 Note, memory, rune, and worktree commands:
   ` + "`note <id> [body]`" + ` appends an append-only, task-scoped annotation to one
-  card. ` + "`memory set/get/list/search/remove`" + ` manage durable, keyed,
+  card. ` + "`memory create/update/get/list/search/remove`" + ` manage durable, keyed,
   workspace-scoped memories that survive across cards and sessions — this
   command's own memories section below lists what's currently stored.
   ` + "`rune set/get/list/search/enable/disable/remove`" + ` manage rune

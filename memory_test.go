@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-func TestRememberCreatesWithExplicitKey(t *testing.T) {
+func TestCreateMemoryCreatesWithExplicitKey(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	m, err := db.Remember(ctx, Remember{Key: "greeting", Body: "hello there", Actor: "alice"})
+	m, err := db.CreateMemory(ctx, Remember{Key: "greeting", Body: "hello there", Actor: "alice"})
 	if err != nil {
-		t.Fatalf("Remember() error = %v", err)
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 	if m.Key != "greeting" {
 		t.Fatalf("Key = %q, want %q", m.Key, "greeting")
@@ -35,17 +35,39 @@ func TestRememberCreatesWithExplicitKey(t *testing.T) {
 	}
 }
 
-func TestRememberUpdatesExistingKeyAndIncrementsRevision(t *testing.T) {
+func TestCreateMemoryFailsOnExistingKey(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	if _, err := db.Remember(ctx, Remember{Key: "greeting", Body: "hello", Actor: "alice"}); err != nil {
-		t.Fatalf("first Remember() error = %v", err)
+	if _, err := db.CreateMemory(ctx, Remember{Key: "greeting", Body: "hello", Actor: "alice"}); err != nil {
+		t.Fatalf("first CreateMemory() error = %v", err)
 	}
 
-	m, err := db.Remember(ctx, Remember{Key: "greeting", Body: "hi there", Actor: "bob"})
+	if _, err := db.CreateMemory(ctx, Remember{Key: "greeting", Body: "hi there", Actor: "bob"}); !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("CreateMemory() on existing key error = %v, want ErrAlreadyExists", err)
+	}
+
+	// The original memory must be untouched.
+	m, err := db.Recall(ctx, "greeting")
 	if err != nil {
-		t.Fatalf("second Remember() error = %v", err)
+		t.Fatalf("Recall() error = %v", err)
+	}
+	if m.Body != "hello" || m.UpdatedBy != "alice" || m.Revision != 1 {
+		t.Fatalf("Recall() after failed create = %+v, want the original record unchanged", m)
+	}
+}
+
+func TestUpdateMemoryUpdatesExistingKeyAndIncrementsRevision(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.CreateMemory(ctx, Remember{Key: "greeting", Body: "hello", Actor: "alice"}); err != nil {
+		t.Fatalf("CreateMemory() error = %v", err)
+	}
+
+	m, err := db.UpdateMemory(ctx, Remember{Key: "greeting", Body: "hi there", Actor: "bob"})
+	if err != nil {
+		t.Fatalf("UpdateMemory() error = %v", err)
 	}
 	if m.Body != "hi there" {
 		t.Fatalf("Body = %q, want %q", m.Body, "hi there")
@@ -61,77 +83,75 @@ func TestRememberUpdatesExistingKeyAndIncrementsRevision(t *testing.T) {
 	}
 }
 
-func TestRememberPrimeRoundTripsPreservesAndValidates(t *testing.T) {
+func TestUpdateMemoryFailsOnMissingKey(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.UpdateMemory(ctx, Remember{Key: "missing", Body: "x", Actor: "alice"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateMemory() on missing key error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMemoryPrimeRoundTripsPreservesAndValidates(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
 	required := MemoryPrimeRequired
-	m, err := db.Remember(ctx, Remember{Key: "role", Body: "mandatory instruction", Prime: &required, Actor: "alice"})
+	m, err := db.CreateMemory(ctx, Remember{Key: "role", Body: "mandatory instruction", Prime: &required, Actor: "alice"})
 	if err != nil {
-		t.Fatalf("Remember() error = %v", err)
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 	if m.Prime != MemoryPrimeRequired {
 		t.Fatalf("Prime = %q, want %q", m.Prime, MemoryPrimeRequired)
 	}
 
-	updated, err := db.Remember(ctx, Remember{Key: "role", Body: "mandatory instruction v2", Actor: "alice"})
+	updated, err := db.UpdateMemory(ctx, Remember{Key: "role", Body: "mandatory instruction v2", Actor: "alice"})
 	if err != nil {
-		t.Fatalf("Remember() update error = %v", err)
+		t.Fatalf("UpdateMemory() error = %v", err)
 	}
 	if updated.Prime != MemoryPrimeRequired {
 		t.Fatalf("Prime = %q after unrelated update, want preserved %q", updated.Prime, MemoryPrimeRequired)
 	}
 
 	bogus := "sometimes"
-	if _, err := db.Remember(ctx, Remember{Key: "role", Body: "x", Prime: &bogus, Actor: "alice"}); err == nil {
-		t.Fatal("Remember() with invalid prime value: want error")
+	if _, err := db.UpdateMemory(ctx, Remember{Key: "role", Body: "x", Prime: &bogus, Actor: "alice"}); err == nil {
+		t.Fatal("UpdateMemory() with invalid prime value: want error")
 	} else {
 		var verr *ValidationError
 		if !errors.As(err, &verr) {
-			t.Fatalf("Remember() with invalid prime error = %v, want *ValidationError", err)
+			t.Fatalf("UpdateMemory() with invalid prime error = %v, want *ValidationError", err)
 		}
 		if strings.Contains(err.Error(), "missing required field") {
-			t.Fatalf("Remember() with invalid (but present) prime value error = %q, must not claim the field is missing", err.Error())
+			t.Fatalf("UpdateMemory() with invalid (but present) prime value error = %q, must not claim the field is missing", err.Error())
 		}
 	}
 }
 
-func TestRememberDerivesKeyWhenOmitted(t *testing.T) {
+func TestCreateMemoryRequiresKey(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	m, err := db.Remember(ctx, Remember{Body: "Prefer tabs over spaces in Go files", Actor: "alice"})
-	if err != nil {
-		t.Fatalf("Remember() error = %v", err)
-	}
-	if m.Key == "" {
-		t.Fatal("Remember() with empty Key produced an empty generated key")
-	}
-
-	// A second call with identical body and no key converges on the same
-	// generated key rather than creating a duplicate.
-	m2, err := db.Remember(ctx, Remember{Body: "Prefer tabs over spaces in Go files", Actor: "alice"})
-	if err != nil {
-		t.Fatalf("second Remember() error = %v", err)
-	}
-	if m2.Key != m.Key {
-		t.Fatalf("generated key changed across identical calls: %q vs %q", m.Key, m2.Key)
-	}
-	if m2.Revision != 2 {
-		t.Fatalf("Revision = %d, want 2 (should have updated the same record)", m2.Revision)
+	if _, err := db.CreateMemory(ctx, Remember{Body: "no key here", Actor: "alice"}); err == nil {
+		t.Fatal("CreateMemory() with empty key: want error")
+	} else {
+		var verr *ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("CreateMemory() with empty key error = %v, want *ValidationError", err)
+		}
 	}
 }
 
-func TestRememberDerivedKeyForEmptyBody(t *testing.T) {
+func TestUpdateMemoryRequiresKey(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	m, err := db.Remember(ctx, Remember{Body: "!!! ??? ...", Actor: "alice"})
-	if err != nil {
-		t.Fatalf("Remember() error = %v", err)
-	}
-	if m.Key == "" {
-		t.Fatal("expected a non-empty fallback key for content with no alphanumeric characters")
+	if _, err := db.UpdateMemory(ctx, Remember{Body: "no key here", Actor: "alice"}); err == nil {
+		t.Fatal("UpdateMemory() with empty key: want error")
+	} else {
+		var verr *ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("UpdateMemory() with empty key error = %v, want *ValidationError", err)
+		}
 	}
 }
 
@@ -149,9 +169,9 @@ func TestRecallReturnsFullRecord(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	created, err := db.Remember(ctx, Remember{Key: "k1", Body: "body one", Actor: "alice"})
+	created, err := db.CreateMemory(ctx, Remember{Key: "k1", Body: "body one", Actor: "alice"})
 	if err != nil {
-		t.Fatalf("Remember() error = %v", err)
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 
 	got, err := db.Recall(ctx, "k1")
@@ -167,10 +187,10 @@ func TestMemoriesListsAllWhenQueryEmpty(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	if _, err := db.Remember(ctx, Remember{Key: "alpha", Body: "first"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "alpha", Body: "first"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "beta", Body: "second"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "beta", Body: "second"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -187,10 +207,10 @@ func TestMemoriesSearchesKeyAndBodyCaseInsensitively(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	if _, err := db.Remember(ctx, Remember{Key: "sqlite-notes", Body: "WAL mode is enabled"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "sqlite-notes", Body: "WAL mode is enabled"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "unrelated", Body: "nothing to see here"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "unrelated", Body: "nothing to see here"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,10 +243,10 @@ func TestMemoriesQueryLikeMetacharactersAreLiteral(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	if _, err := db.Remember(ctx, Remember{Key: "percent", Body: "100% done"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "percent", Body: "100% done"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "other", Body: "100x done"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "other", Body: "100x done"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -243,7 +263,7 @@ func TestForgetDeletesAndIsNotFoundAfter(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	if _, err := db.Remember(ctx, Remember{Key: "k1", Body: "body", Actor: "alice"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "k1", Body: "body", Actor: "alice"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -271,7 +291,7 @@ func TestForgetWritesAuditEvent(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	if _, err := db.Remember(ctx, Remember{Key: "k1", Body: "body", Actor: "alice"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "k1", Body: "body", Actor: "alice"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Forget(ctx, "k1", "alice"); err != nil {
@@ -288,14 +308,14 @@ func TestForgetWritesAuditEvent(t *testing.T) {
 	}
 }
 
-func TestRememberWritesAuditEvents(t *testing.T) {
+func TestMemoryWritesAuditEvents(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	if _, err := db.Remember(ctx, Remember{Key: "k1", Body: "v1", Actor: "alice"}); err != nil {
+	if _, err := db.CreateMemory(ctx, Remember{Key: "k1", Body: "v1", Actor: "alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "k1", Body: "v2", Actor: "alice"}); err != nil {
+	if _, err := db.UpdateMemory(ctx, Remember{Key: "k1", Body: "v2", Actor: "alice"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -322,8 +342,8 @@ func TestMemoryMethodsOnReadOnlyDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
-	if _, err := init.Remember(ctx, Remember{Key: "k1", Body: "body", Actor: "alice"}); err != nil {
-		t.Fatalf("seeding Remember() error = %v", err)
+	if _, err := init.CreateMemory(ctx, Remember{Key: "k1", Body: "body", Actor: "alice"}); err != nil {
+		t.Fatalf("seeding CreateMemory() error = %v", err)
 	}
 	init.Close()
 
@@ -334,8 +354,11 @@ func TestMemoryMethodsOnReadOnlyDB(t *testing.T) {
 	}
 	defer db.Close()
 
-	if _, err := db.Remember(ctx, Remember{Key: "k2", Body: "body"}); !errors.Is(err, ErrInvalidArgument) {
-		t.Fatalf("Remember() on read-only db error = %v, want ErrInvalidArgument", err)
+	if _, err := db.CreateMemory(ctx, Remember{Key: "k2", Body: "body"}); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("CreateMemory() on read-only db error = %v, want ErrInvalidArgument", err)
+	}
+	if _, err := db.UpdateMemory(ctx, Remember{Key: "k1", Body: "body"}); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("UpdateMemory() on read-only db error = %v, want ErrInvalidArgument", err)
 	}
 	if err := db.Forget(ctx, "k1", "alice"); !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("Forget() on read-only db error = %v, want ErrInvalidArgument", err)

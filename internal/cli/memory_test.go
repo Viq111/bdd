@@ -8,13 +8,13 @@ import (
 	"testing"
 )
 
-func TestMemorySetWithKeyAndGet(t *testing.T) {
+func TestMemoryCreateWithKeyAndGet(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"memory", "set", "--workspace", dir, "--key", "testing-race", "Always run the race tests"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"memory", "create", "--workspace", dir, "--key", "testing-race", "Always run the race tests"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 	if got := strings.TrimSpace(stdout.String()); got != "testing-race" {
 		t.Fatalf("stdout = %q, want %q", got, "testing-race")
@@ -31,13 +31,105 @@ func TestMemorySetWithKeyAndGet(t *testing.T) {
 	}
 }
 
-func TestMemorySetPrimeDefaultsToOptionalAndAcceptsRequired(t *testing.T) {
+func TestMemoryCreateRequiresKey(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"memory", "set", "--workspace", dir, "--key", "default-prime", "body", "--json"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"memory", "create", "--workspace", dir, "body with no key"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(memory create without --key) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--key is required") {
+		t.Fatalf("stderr = %q, want it to mention --key is required", stderr.String())
+	}
+}
+
+func TestMemoryCreateFailsOnExistingKey(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"memory", "create", "--workspace", dir, "--key", "dup", "first body"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"memory", "create", "--workspace", dir, "--key", "dup", "second body"}, &stdout, &stderr, "dev", "unspecified")
+	if code == ExitSuccess {
+		t.Fatalf("Run(memory create) on existing key: want failure, got exit 0")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"memory", "get", "--workspace", dir, "dup"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory get) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "first body" {
+		t.Fatalf("stdout = %q, want the original body %q left intact", got, "first body")
+	}
+}
+
+func TestMemoryUpdateModifiesExistingKey(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"memory", "create", "--workspace", dir, "--key", "style", "prefer small PRs"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{"memory", "update", "--workspace", dir, "style", "prefer small PRs, always"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory update) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "style" {
+		t.Fatalf("stdout = %q, want %q", got, "style")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"memory", "get", "--workspace", dir, "style"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory get) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "prefer small PRs, always" {
+		t.Fatalf("stdout = %q, want %q", got, "prefer small PRs, always")
+	}
+}
+
+func TestMemoryUpdateFailsOnMissingKey(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"memory", "update", "--workspace", dir, "missing-key", "x"}, &stdout, &stderr, "dev", "unspecified")
+	if code == ExitSuccess {
+		t.Fatalf("Run(memory update) on missing key: want failure, got exit 0")
+	}
+}
+
+func TestMemorySetIsRemoved(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"memory", "set", "--workspace", dir, "body"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(memory set) exit = %d, want %d, stderr = %q", code, ExitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "create") || !strings.Contains(stderr.String(), "update") {
+		t.Fatalf("stderr = %q, want it to steer the user to create/update", stderr.String())
+	}
+}
+
+func TestMemoryCreatePrimeDefaultsToOptionalAndAcceptsRequired(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"memory", "create", "--workspace", dir, "--key", "default-prime", "body", "--json"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 	var got MemoryResult
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
@@ -49,9 +141,9 @@ func TestMemorySetPrimeDefaultsToOptionalAndAcceptsRequired(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"memory", "set", "--workspace", dir, "--key", "required-prime", "--prime", "required", "body", "--json"}, &stdout, &stderr, "dev", "unspecified")
+	code = Run([]string{"memory", "create", "--workspace", dir, "--key", "required-prime", "--prime", "required", "body", "--json"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("json.Unmarshal error = %v", err)
@@ -61,37 +153,17 @@ func TestMemorySetPrimeDefaultsToOptionalAndAcceptsRequired(t *testing.T) {
 	}
 }
 
-func TestMemorySetPrimeRejectsInvalidValue(t *testing.T) {
+func TestMemoryCreatePrimeRejectsInvalidValue(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"memory", "set", "--workspace", dir, "--key", "bad-prime", "--prime", "sometimes", "body"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"memory", "create", "--workspace", dir, "--key", "bad-prime", "--prime", "sometimes", "body"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
-		t.Fatalf("Run(memory set --prime sometimes) exit = %d, want %d (stderr=%s)", code, ExitUsage, stderr.String())
+		t.Fatalf("Run(memory create --prime sometimes) exit = %d, want %d (stderr=%s)", code, ExitUsage, stderr.String())
 	}
 }
 
-func TestMemorySetWithoutKeyDerivesOne(t *testing.T) {
-	dir := initTestWorkspace(t)
-
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"memory", "set", "--workspace", dir, "--json", "Some memorable body"}, &stdout, &stderr, "dev", "unspecified")
-	if code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
-	}
-	var m MemoryResult
-	if err := json.Unmarshal(stdout.Bytes(), &m); err != nil {
-		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
-	}
-	if !strings.HasPrefix(m.Key, "some-memorable-body-") {
-		t.Fatalf("m.Key = %q, want derived slug prefix", m.Key)
-	}
-	if m.Revision != 1 {
-		t.Fatalf("m.Revision = %d, want 1", m.Revision)
-	}
-}
-
-func TestMemorySetStdin(t *testing.T) {
+func TestMemoryCreateStdin(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	r, w, err := os.Pipe()
@@ -108,9 +180,9 @@ func TestMemorySetStdin(t *testing.T) {
 	defer func() { os.Stdin = origStdin }()
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"memory", "set", "--workspace", dir, "--key", "from-pipe", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
+	code := Run([]string{"memory", "create", "--workspace", dir, "--key", "from-pipe", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitSuccess {
-		t.Fatalf("Run(memory set --stdin) exit = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("Run(memory create --stdin) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()
@@ -124,13 +196,68 @@ func TestMemorySetStdin(t *testing.T) {
 	}
 }
 
-func TestMemorySetRejectsBodyAndStdinTogether(t *testing.T) {
+func TestMemoryUpdateStdin(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"memory", "set", "--workspace", dir, "body", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
+	if code := Run([]string{"memory", "create", "--workspace", dir, "--key", "from-pipe", "original"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString("from stdin"); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+
+	origStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = origStdin }()
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{"memory", "update", "--workspace", dir, "from-pipe", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory update --stdin) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"memory", "get", "--workspace", dir, "from-pipe"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(memory get) exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "from stdin" {
+		t.Fatalf("stdout = %q, want %q", got, "from stdin")
+	}
+}
+
+func TestMemoryCreateRejectsBodyAndStdinTogether(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"memory", "create", "--workspace", dir, "--key", "x", "body", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
 	if code != ExitUsage {
-		t.Fatalf("Run(memory set) exit = %d, want %d", code, ExitUsage)
+		t.Fatalf("Run(memory create) exit = %d, want %d", code, ExitUsage)
+	}
+}
+
+func TestMemoryUpdateRejectsBodyAndStdinTogether(t *testing.T) {
+	dir := initTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"memory", "create", "--workspace", dir, "--key", "x", "body"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{"memory", "update", "--workspace", dir, "x", "body", "--stdin"}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitUsage {
+		t.Fatalf("Run(memory update) exit = %d, want %d", code, ExitUsage)
 	}
 }
 
@@ -140,9 +267,9 @@ func TestMemoryListListsEverything(t *testing.T) {
 	run := func(args ...string) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		full := append([]string{"memory", "set", "--workspace", dir}, args...)
+		full := append([]string{"memory", "create", "--workspace", dir}, args...)
 		if code := Run(full, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
-			t.Fatalf("Run(memory set %v) exit = %d, stderr = %q", args, code, stderr.String())
+			t.Fatalf("Run(memory create %v) exit = %d, stderr = %q", args, code, stderr.String())
 		}
 	}
 	run("--key", "alpha", "about cats")
@@ -168,9 +295,9 @@ func TestMemorySearchQueryFiltersByKeyOrBody(t *testing.T) {
 	run := func(args ...string) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		full := append([]string{"memory", "set", "--workspace", dir}, args...)
+		full := append([]string{"memory", "create", "--workspace", dir}, args...)
 		if code := Run(full, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
-			t.Fatalf("Run(memory set %v) exit = %d, stderr = %q", args, code, stderr.String())
+			t.Fatalf("Run(memory create %v) exit = %d, stderr = %q", args, code, stderr.String())
 		}
 	}
 	run("--key", "alpha", "about cats")
@@ -194,8 +321,8 @@ func TestMemoryRemoveDeletesMemory(t *testing.T) {
 	dir := initTestWorkspace(t)
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"memory", "set", "--workspace", dir, "--key", "temp", "body"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
-		t.Fatalf("Run(memory set) exit = %d, stderr = %q", code, stderr.String())
+	if code := Run([]string{"memory", "create", "--workspace", dir, "--key", "temp", "body"}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(memory create) exit = %d, stderr = %q", code, stderr.String())
 	}
 
 	stdout.Reset()

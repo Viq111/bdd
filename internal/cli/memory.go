@@ -16,15 +16,20 @@ import (
 // to their leaf by cobra and never reach here.
 func runMemory(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
-		s.Errorf("bdd: memory: missing subcommand (set, get, list, search, remove)\n")
+		s.Errorf("bdd: memory: missing subcommand (create, update, get, list, search, remove)\n")
+		return ExitUsage
+	}
+	if args[0] == "set" {
+		s.Errorf("bdd: memory: \"set\" was split into \"create\" (fails if the key exists) and \"update\" (fails if it doesn't)\n")
 		return ExitUsage
 	}
 	s.Errorf("bdd: memory: unknown subcommand %q\n", args[0])
 	return ExitUsage
 }
 
-// MemoryResult is the JSON/human result of `bdd memory set` and
-// `bdd memory get`, and (per entry) `bdd memory list`/`bdd memory search`.
+// MemoryResult is the JSON/human result of `bdd memory create` and
+// `bdd memory update`/`bdd memory get`, and (per entry) `bdd memory
+// list`/`bdd memory search`.
 type MemoryResult struct {
 	Key       string `json:"key"`
 	Body      string `json:"body"`
@@ -49,10 +54,14 @@ func toMemoryResult(m *bdd.Memory) MemoryResult {
 	}
 }
 
-// runMemorySet implements `bdd memory set [body] [--key <key>] [--stdin]`.
-func runMemorySet(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+// runMemoryCreate implements `bdd memory create [body] --key <key> [--stdin]`.
+func runMemoryCreate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	fs := cmd.Flags()
 	key, _ := flagString(fs, "key")
+	if strings.TrimSpace(key) == "" {
+		s.Errorf("bdd: memory create: --key is required\n")
+		return ExitUsage
+	}
 	prime, havePrime := flagString(fs, "prime")
 	useStdin := flagBool(fs, "stdin")
 
@@ -62,28 +71,28 @@ func runMemorySet(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) 
 		body, haveBody = args[0], true
 	}
 	if len(args) > 1 {
-		s.Errorf("bdd: memory set: unexpected argument %q\n", args[1])
+		s.Errorf("bdd: memory create: unexpected argument %q\n", args[1])
 		return ExitUsage
 	}
 
 	if useStdin && haveBody {
-		s.Errorf("bdd: memory set: cannot combine a positional body with --stdin\n")
+		s.Errorf("bdd: memory create: cannot combine a positional body with --stdin\n")
 		return ExitUsage
 	}
 	if useStdin {
 		data, err := io.ReadAll(s.Stdin)
 		if err != nil {
-			s.Errorf("bdd: memory set: reading stdin: %v\n", err)
+			s.Errorf("bdd: memory create: reading stdin: %v\n", err)
 			return ExitOther
 		}
 		body = string(data)
 	} else if !haveBody {
-		s.Errorf("bdd: memory set: a positional body or --stdin is required\n")
+		s.Errorf("bdd: memory create: a positional body or --stdin is required\n")
 		return ExitUsage
 	}
 
 	ctx := context.Background()
-	db, code := openDB(ctx, g, "memory set", s)
+	db, code := openDB(ctx, g, "memory create", s)
 	if db == nil {
 		return code
 	}
@@ -93,15 +102,82 @@ func runMemorySet(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) 
 	if havePrime {
 		remember.Prime = &prime
 	}
-	m, err := db.Remember(ctx, remember)
+	m, err := db.CreateMemory(ctx, remember)
 	if err != nil {
-		s.Errorf("bdd: memory set: %v\n", err)
+		s.Errorf("bdd: memory create: %v\n", err)
 		return ExitCode(err)
 	}
 
 	if s.JSON {
 		if err := NewJSONEncoder(s.Stdout).Object(toMemoryResult(m)); err != nil {
-			s.Errorf("bdd: memory set: %v\n", err)
+			s.Errorf("bdd: memory create: %v\n", err)
+			return ExitOther
+		}
+		return ExitSuccess
+	}
+	fmt.Fprintln(s.Stdout, m.Key)
+	return ExitSuccess
+}
+
+// runMemoryUpdate implements `bdd memory update <key> [body] [--stdin]`.
+func runMemoryUpdate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
+	if len(args) == 0 {
+		s.Errorf("bdd: memory update: key is required\n")
+		return ExitUsage
+	}
+	key := args[0]
+	rest := args[1:]
+
+	fs := cmd.Flags()
+	prime, havePrime := flagString(fs, "prime")
+	useStdin := flagBool(fs, "stdin")
+
+	var body string
+	var haveBody bool
+	if len(rest) > 0 {
+		body, haveBody = rest[0], true
+	}
+	if len(rest) > 1 {
+		s.Errorf("bdd: memory update: unexpected argument %q\n", rest[1])
+		return ExitUsage
+	}
+
+	if useStdin && haveBody {
+		s.Errorf("bdd: memory update: cannot combine a positional body with --stdin\n")
+		return ExitUsage
+	}
+	if useStdin {
+		data, err := io.ReadAll(s.Stdin)
+		if err != nil {
+			s.Errorf("bdd: memory update: reading stdin: %v\n", err)
+			return ExitOther
+		}
+		body = string(data)
+	} else if !haveBody {
+		s.Errorf("bdd: memory update: a positional body or --stdin is required\n")
+		return ExitUsage
+	}
+
+	ctx := context.Background()
+	db, code := openDB(ctx, g, "memory update", s)
+	if db == nil {
+		return code
+	}
+	defer db.Close()
+
+	remember := bdd.Remember{Key: key, Body: body, Actor: ResolveActor(g.Actor)}
+	if havePrime {
+		remember.Prime = &prime
+	}
+	m, err := db.UpdateMemory(ctx, remember)
+	if err != nil {
+		s.Errorf("bdd: memory update: %v\n", err)
+		return ExitCode(err)
+	}
+
+	if s.JSON {
+		if err := NewJSONEncoder(s.Stdout).Object(toMemoryResult(m)); err != nil {
+			s.Errorf("bdd: memory update: %v\n", err)
 			return ExitOther
 		}
 		return ExitSuccess

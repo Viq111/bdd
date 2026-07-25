@@ -53,8 +53,8 @@ func TestSnapshotProducesIntegrityCheckedCopyWithData(t *testing.T) {
 	}
 	defer db.Close()
 
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.CreateMemory(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 
 	out := filepath.Join(dir, "snap.sqlite")
@@ -122,8 +122,14 @@ func TestSnapshotSucceedsWhileWritesAreOngoing(t *testing.T) {
 				return
 			default:
 			}
-			if _, err := db.Remember(ctx, Remember{Key: "counter", Body: strconv.Itoa(i), Actor: "writer"}); err != nil {
-				t.Errorf("Remember() error = %v", err)
+			var err error
+			if i == 0 {
+				_, err = db.CreateMemory(ctx, Remember{Key: "counter", Body: strconv.Itoa(i), Actor: "writer"})
+			} else {
+				_, err = db.UpdateMemory(ctx, Remember{Key: "counter", Body: strconv.Itoa(i), Actor: "writer"})
+			}
+			if err != nil {
+				t.Errorf("remembering counter: %v", err)
 				return
 			}
 			i++
@@ -157,8 +163,8 @@ func TestRestoreRoundTripsData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.CreateMemory(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 
 	snapPath := filepath.Join(dir, "snap.sqlite")
@@ -166,8 +172,8 @@ func TestRestoreRoundTripsData(t *testing.T) {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
 
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.UpdateMemory(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
+		t.Fatalf("UpdateMemory() error = %v", err)
 	}
 	db.Close()
 
@@ -215,8 +221,8 @@ func TestRestoreFromDefaultBackupPathPreservesSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.CreateMemory(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 
 	// Snapshot with no Output defaults to <dir>/.bdd/backup.sqlite.
@@ -229,8 +235,8 @@ func TestRestoreFromDefaultBackupPathPreservesSource(t *testing.T) {
 		t.Fatalf("Snapshot().Path = %q, want %q", snap.Path, wantDefault)
 	}
 
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.UpdateMemory(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
+		t.Fatalf("UpdateMemory() error = %v", err)
 	}
 	db.Close()
 
@@ -267,8 +273,8 @@ func TestRestoreExplicitBackupPathCollidingWithSourcePreservesSource(t *testing.
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.CreateMemory(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 
 	// A non-default snapshot destination that opts also names as BackupPath
@@ -279,8 +285,8 @@ func TestRestoreExplicitBackupPathCollidingWithSourcePreservesSource(t *testing.
 		t.Fatalf("Snapshot() error = %v", err)
 	}
 
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.UpdateMemory(ctx, Remember{Key: "hello", Body: "changed", Actor: "tester"}); err != nil {
+		t.Fatalf("UpdateMemory() error = %v", err)
 	}
 	db.Close()
 
@@ -536,8 +542,8 @@ func TestRestoreRejectsConcurrentOpenDuringHandoffWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
-	if _, err := db.Remember(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+	if _, err := db.CreateMemory(ctx, Remember{Key: "hello", Body: "world", Actor: "tester"}); err != nil {
+		t.Fatalf("CreateMemory() error = %v", err)
 	}
 
 	snapPath := filepath.Join(dir, "snap.sqlite")

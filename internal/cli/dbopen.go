@@ -17,7 +17,7 @@ type KeyResult struct {
 // and returning the mapped exit code on failure. Callers check for a nil db
 // to detect failure:
 //
-//	db, code := openDB(ctx, g, "memory set", s)
+//	db, code := openDB(ctx, g, "memory create", s)
 //	if db == nil {
 //		return code
 //	}

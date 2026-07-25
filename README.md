@@ -251,20 +251,21 @@ survives sessions and agent/account rotation — unlike a card `note`, which
 is append-only and scoped to one card, a memory is keyed and updatable.
 
 ```sh
-bdd memory set "Always run the race tests" --key testing-race
+bdd memory create "Always run the race tests" --key testing-race
+bdd memory update testing-race "Always run the race tests, twice on Fridays"
 bdd memory list          # list every memory
 bdd memory search "race" # search key and body, case-insensitively
 bdd memory get testing-race
 bdd memory remove testing-race
 ```
 
-Without `--key`, `memory set` derives a readable slug plus a short content
-hash and prints the generated key, so repeated calls with identical
-untitled content converge on one record instead of piling up duplicates.
-Every write or delete is audited. `bdd prime` summarizes every memory by
-key and first line in its compact context manifest at session start;
-`--memory-limit <n>` and `--no-memories` control how much context that
-costs.
+`--key` is required on `memory create` and fails if the key already exists;
+`memory update` takes the key as a positional argument and fails if it does
+not exist — each command targets exactly one case, so a typo'd key can
+never silently overwrite or update the wrong memory. Every write or delete
+is audited. `bdd prime` summarizes every memory by key and first line in
+its compact context manifest at session start; `--memory-limit <n>` and
+`--no-memories` control how much context that costs.
 
 `--prime required|optional` (default `optional`) controls how `bdd prime`
 surfaces a memory, mirroring the rune `--prime` setting: `required` inlines
