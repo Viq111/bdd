@@ -72,6 +72,17 @@ func Run(args []string, stdout, stderr io.Writer, version, commit string) int {
 
 	streams := &Streams{Stdout: stdout, Stderr: stderr, Stdin: os.Stdin, JSON: global.JSON, Silent: global.Silent}
 
+	// "memory set" is intercepted here, before cobra ever parses cmdArgs,
+	// so the create/update guidance fires regardless of what flags follow
+	// (e.g. "memory set body --key foo"): "set" isn't a registered leaf, so
+	// any flag not known to the "memory" group itself (like --key) would
+	// otherwise surface as cobra's own "unknown flag" error rather than
+	// this steering message.
+	if cmd == "memory" && len(cmdArgs) > 0 && cmdArgs[0] == "set" {
+		streams.Errorf("bdd: memory: \"set\" was split into \"create\" (fails if the key exists) and \"update\" (fails if it doesn't)\n")
+		return ExitUsage
+	}
+
 	execArgs := append([]string{cmd}, cmdArgs...)
 	root := buildRoot(global, streams, execArgs)
 	root.SetArgs(execArgs)

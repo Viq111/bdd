@@ -13,14 +13,13 @@ import (
 
 // runMemory implements the `bdd memory` group's fallback dispatch for a
 // missing or unknown subcommand; matched subcommands are routed directly
-// to their leaf by cobra and never reach here.
+// to their leaf by cobra and never reach here. "memory set" specifically is
+// intercepted earlier, in Run (internal/cli/cli.go), before cobra ever
+// parses cmdArgs, so its create/update steering message fires regardless of
+// what flags follow "set" — see the comment there for why.
 func runMemory(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int {
 	if len(args) == 0 {
 		s.Errorf("bdd: memory: missing subcommand (create, update, get, list, search, remove)\n")
-		return ExitUsage
-	}
-	if args[0] == "set" {
-		s.Errorf("bdd: memory: \"set\" was split into \"create\" (fails if the key exists) and \"update\" (fails if it doesn't)\n")
 		return ExitUsage
 	}
 	s.Errorf("bdd: memory: unknown subcommand %q\n", args[0])
