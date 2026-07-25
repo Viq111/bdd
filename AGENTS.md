@@ -3,7 +3,7 @@ current command reference and session-close protocol.
 
 ## Project
 
-`bdd` is a CLI for tracking small cards. It starts as a blank implementation;
+`bdd` is a lightweight, fast CLI for tracking cards. It starts as a blank implementation;
 the active Beads card and the conventions card are the source of truth for
 scope and acceptance criteria.
 

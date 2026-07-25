@@ -63,7 +63,7 @@ for platform in "${PLATFORMS[@]}"; do
   GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build \
     -trimpath \
     -buildvcs=false \
-    -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -s -w" \
+    -ldflags "-X main.commit=${COMMIT} -s -w" \
     -o "${build_dir}/${bin_name}" \
     "$MODULE"
 

@@ -24,7 +24,7 @@ func commandsReferenceText() string {
 
 // helpTextFor renders the top-level `bdd help`/`bdd`/`bdd --help` text.
 func helpTextFor() string {
-	return `bdd is a CLI for tracking small cards.
+	return `bdd is a lightweight, fast CLI for tracking cards.
 
 Usage:
   bdd [global flags] <command> [flags]
@@ -37,8 +37,6 @@ Global flags:
 
 Commands:
 ` + commandsReferenceText() + `
-Run 'bdd help' or 'bdd version' at any time: neither command touches a
-workspace or database.
 `
 }
 

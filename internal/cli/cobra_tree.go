@@ -170,7 +170,7 @@ func registerGlobalFlags(fs *pflag.FlagSet) {
 func buildRoot(global GlobalFlags, streams *Streams, rawArgs []string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "bdd",
-		Short:         "bdd is a CLI for tracking small cards.",
+		Short:         "bdd is a lightweight, fast CLI for tracking cards.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
@@ -312,7 +312,7 @@ func buildCommands(global GlobalFlags, streams *Streams, rawArgs []string) []*co
 			`  bdd create "Fix login bug" --type bug --priority P1 --reproduce "steps..." --acceptance "..."`,
 			runCardCreate, global, streams, rawArgs, func(f *pflag.FlagSet) {
 				f.String("title", "", "card title (alternative to the positional argument)")
-				f.String("type", "", "card type")
+				f.String("type", "task", "card type")
 				f.String("priority", "", "priority, e.g. P1 or 1")
 				f.String("description", "", "description text")
 				f.String("description-file", "", "read description from this file")
@@ -358,12 +358,12 @@ func buildCommands(global GlobalFlags, streams *Streams, rawArgs []string) []*co
 				f.String("limit", "", "maximum number of cards to return (default 20; 0 = no limit)")
 			}),
 
-		newLeaf("ready [id]", "List ready cards",
-			"List every active-category, unassigned, unclaimed card without the human label.\n--explain [id] reports exactly why a given card (or every matching card) is\nexcluded.",
+		newLeaf("ready", "List ready cards",
+			"List every active-category, unassigned, unclaimed card without the human label.\n--explain [<id>] reports exactly why a given card (or every matching card) is\nexcluded; <id> is only valid alongside --explain.",
 			"  bdd ready --limit 10\n  bdd ready --explain bdd-a1b", runCardReady, global, streams, rawArgs, func(f *pflag.FlagSet) {
 				f.StringArray("label", nil, "only cards with this label (repeatable)")
 				f.String("limit", "", "maximum number of cards to return (default 20; 0 = no limit)")
-				f.Bool("explain", false, "report exclusion reasons instead of listing ready cards")
+				f.Bool("explain", false, "report exclusion reasons instead of listing ready cards; accepts an optional trailing <id> to explain just that card")
 			}),
 
 		newLeaf("update <id>", "Update a card's fields, status, labels, or edges",

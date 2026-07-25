@@ -22,37 +22,42 @@ func TestReleaseScriptSyntax(t *testing.T) {
 	}
 }
 
-// TestReleaseVersionWiringMatchesMain guards the -ldflags -X path the
-// tools/build.sh and release script use to stamp each main package's version
-// variable. If either variable is renamed without updating the stamping
-// commands, a built binary would silently keep reporting "dev".
+// TestReleaseVersionWiringMatchesMain guards the version scheme: the
+// version literal in each main package is the single source of truth (bumped
+// by hand per release), while commit is still stamped at build time via
+// -ldflags -X main.commit=. If either goes out of sync, a built binary would
+// report the wrong commit, or a release would reintroduce ldflags version
+// stamping that fights the source literal.
 func TestReleaseVersionWiringMatchesMain(t *testing.T) {
 	for _, versionFile := range []string{"cmd/bdd/version.go", "tools/migrate/cmd/bdd-migration/version.go"} {
 		contents, err := os.ReadFile(versionFile)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(contents), `var version = "dev"`) {
-			t.Fatalf("%s no longer declares version; update the -ldflags -X main.version= target", versionFile)
+		if !strings.Contains(string(contents), `var version = "0.1.0"`) {
+			t.Fatalf("%s no longer declares version = \"0.1.0\"", versionFile)
 		}
 		if !strings.Contains(string(contents), `var commit = "unspecified"`) {
 			t.Fatalf("%s no longer declares commit; update the -ldflags -X main.commit= target", versionFile)
 		}
 	}
 
-	const ldflagsTarget = "-X main.version="
+	const versionLDFlagsTarget = "-X main.version="
 	const commitLDFlagsTarget = "-X main.commit="
 
 	buildScript, err := os.ReadFile("tools/build.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(string(buildScript), versionLDFlagsTarget) {
+		t.Fatalf("tools/build.sh stamps %s; version.go's literal should be the only source of truth", versionLDFlagsTarget)
+	}
 	for _, buildCommand := range []string{
-		`go build -trimpath -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" -o "$BIN_DIR/bdd" ./cmd/bdd`,
-		`go build -trimpath -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" -o "$BIN_DIR/bdd-migration" ./tools/migrate/cmd/bdd-migration`,
+		`go build -trimpath -ldflags "-X main.commit=$COMMIT" -o "$BIN_DIR/bdd" ./cmd/bdd`,
+		`go build -trimpath -ldflags "-X main.commit=$COMMIT" -o "$BIN_DIR/bdd-migration" ./tools/migrate/cmd/bdd-migration`,
 	} {
 		if !strings.Contains(string(buildScript), buildCommand) {
-			t.Fatalf("tools/build.sh no longer stamps %s: missing %q", ldflagsTarget, buildCommand)
+			t.Fatalf("tools/build.sh no longer stamps %s: missing %q", commitLDFlagsTarget, buildCommand)
 		}
 	}
 
@@ -60,8 +65,8 @@ func TestReleaseVersionWiringMatchesMain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(release), ldflagsTarget) {
-		t.Fatalf("scripts/release.sh no longer stamps %s; release archives would report the wrong version", ldflagsTarget)
+	if strings.Contains(string(release), versionLDFlagsTarget) {
+		t.Fatalf("scripts/release.sh stamps %s; version.go's literal should be the only source of truth", versionLDFlagsTarget)
 	}
 	if !strings.Contains(string(release), commitLDFlagsTarget) {
 		t.Fatalf("scripts/release.sh no longer stamps %s; release archives would report the wrong commit", commitLDFlagsTarget)

@@ -32,23 +32,25 @@ them checksums every archive.
 
 ## Version stamping
 
-`cmd/bdd/version.go` declares `var version = "dev"`, overridden at build time
-via `-ldflags "-X main.version=<version>"`. `bdd version` (and
-`bdd --version`/`-v`) print whatever was stamped in, with no workspace or
-database access.
+`cmd/bdd/version.go` declares `var version = "0.1.0"` — the literal in source
+is the single source of truth, bumped by hand for each release. There is no
+`-ldflags -X main.version=` stamping: a plain `go build` and a release build
+of the same commit report the same version. `bdd version` (and
+`bdd --version`/`-v`) print the literal, with no workspace or database
+access.
 
-Both `./tools/build.sh` (local dev binaries) and `./tools/build.sh --dist` (release archives)
-derive `<version>` the same way, so a locally built binary and a release
-binary built from the same commit report the same version:
+`commit`, by contrast, is still stamped at build time via
+`-ldflags "-X main.commit=<commit>"` from both `./tools/build.sh` (local dev
+binaries) and `./tools/build.sh --dist` (release archives):
 
 ```sh
-VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unspecified)}"
 ```
 
-On a tagged, clean commit this resolves to the tag itself (e.g. `v1.0.0`).
-Away from a tag it falls back to a short commit hash, `+dirty` if the
-worktree has uncommitted changes, or the literal string `dev` outside a git
-checkout entirely (e.g. an extracted source tarball).
+`VERSION` (the tag, via `git describe`) is still used to name release
+archives and directories (e.g. `dist/bdd-v1.0.0-linux-amd64.tar.gz`), but no
+longer flows into the binary itself — bump `version.go` to match the tag
+before cutting a release.
 
 ## Reproducibility
 
@@ -77,8 +79,10 @@ This is covered by `TestReleaseArchivesAreReproducible` in `release_test.go`.
 
 ## Cutting a release
 
-1. Confirm `main` is green: `./tools/build.sh --test` (build, vet, full test suite, and
-   the short fuzz smoke run).
+1. Bump `var version = "..."` in `cmd/bdd/version.go` and
+   `tools/migrate/cmd/bdd-migration/version.go` to the release version, and
+   confirm `main` is green: `./tools/build.sh --test` (build, vet, full test
+   suite, and the short fuzz smoke run).
 2. Tag the release commit with an annotated tag following semver, e.g.:
 
    ```sh

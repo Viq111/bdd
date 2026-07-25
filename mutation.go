@@ -20,10 +20,10 @@ import (
 // empty one (non-nil, pointing at ""). The creation-time required-field
 // matrix checks presence, not content:
 //
-//	bug              requires Reproduction, Acceptance
-//	task/feature/epic requires Acceptance
-//	decision         requires Description, Design
-//	chore            requires nothing beyond Title
+//	bug           requires Reproduction, Acceptance
+//	feature/epic  requires Acceptance
+//	decision      requires Description, Design
+//	task/chore    requires nothing beyond Title
 //
 // A required field satisfied by a non-nil pointer to "" is valid: it
 // acknowledges the field was considered and intentionally left blank. On
@@ -496,10 +496,13 @@ func requiredCreateFields(in CreateCard) error {
 		if in.Acceptance == nil {
 			missing = append(missing, "acceptance")
 		}
-	case CardTypeTask, CardTypeFeature, CardTypeEpic:
+	case CardTypeFeature, CardTypeEpic:
 		if in.Acceptance == nil {
 			missing = append(missing, "acceptance")
 		}
+	case CardTypeTask:
+		// No fields beyond title: bdd create defaults --type to task, and
+		// that default path must succeed with just a title.
 	case CardTypeDecision:
 		if in.Description == nil {
 			missing = append(missing, "description")

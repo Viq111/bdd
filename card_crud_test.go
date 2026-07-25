@@ -79,7 +79,6 @@ func TestCreateCardRequiredFieldMatrix(t *testing.T) {
 	}{
 		{"bug missing both", CreateCard{Title: "x", Type: CardTypeBug}, []string{"reproduction", "acceptance"}},
 		{"bug missing acceptance", CreateCard{Title: "x", Type: CardTypeBug, Reproduction: ptr("steps")}, []string{"acceptance"}},
-		{"task missing acceptance", CreateCard{Title: "x", Type: CardTypeTask}, []string{"acceptance"}},
 		{"feature missing acceptance", CreateCard{Title: "x", Type: CardTypeFeature}, []string{"acceptance"}},
 		{"epic missing acceptance", CreateCard{Title: "x", Type: CardTypeEpic}, []string{"acceptance"}},
 		{"decision missing both", CreateCard{Title: "x", Type: CardTypeDecision}, []string{"description", "design"}},
@@ -107,6 +106,19 @@ func TestCreateCardRequiredFieldMatrix(t *testing.T) {
 				t.Fatalf("error does not satisfy errors.Is(err, ErrInvalidArgument)")
 			}
 		})
+	}
+}
+
+func TestCreateCardTaskRequiresOnlyTitle(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	card, err := db.CreateCard(ctx, CreateCard{Title: "test", Type: CardTypeTask, CreatedBy: "alice"})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v, want success (task has no required fields beyond title)", err)
+	}
+	if card.Type != CardTypeTask {
+		t.Fatalf("Type = %q, want %q", card.Type, CardTypeTask)
 	}
 }
 

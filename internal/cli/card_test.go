@@ -180,7 +180,7 @@ func TestCreateStdinRejectsInvalidUTF8(t *testing.T) {
 	os.Stdin = r
 	defer func() { os.Stdin = origStdin }()
 
-	_, stderr := runCLI(t, dir, ExitUsage, "create", "--type", "task", "--title", "t", "--stdin")
+	_, stderr := runCLI(t, dir, ExitUsage, "create", "--type", "feature", "--title", "t", "--stdin")
 	if !strings.Contains(stderr, "UTF-8") {
 		t.Fatalf("stderr = %q, want mention of UTF-8", stderr)
 	}
@@ -200,7 +200,7 @@ func TestCreateStdinFillsSoleRequiredField(t *testing.T) {
 	defer func() { os.Stdin = origStdin }()
 
 	var out, errBuf bytes.Buffer
-	code := Run([]string{"--workspace", dir, "--json", "create", "--type", "task", "--title", "t", "--stdin"}, &out, &errBuf, "dev", "unspecified")
+	code := Run([]string{"--workspace", dir, "--json", "create", "--type", "feature", "--title", "t", "--stdin"}, &out, &errBuf, "dev", "unspecified")
 	if code != ExitSuccess {
 		t.Fatalf("exit = %d, stderr = %q", code, errBuf.String())
 	}

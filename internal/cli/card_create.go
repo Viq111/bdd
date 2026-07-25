@@ -175,7 +175,7 @@ func requiredTextFieldsForType(typ string) []string {
 	switch bdd.CardType(typ) {
 	case bdd.CardTypeBug:
 		return []string{"reproduction", "acceptance"}
-	case bdd.CardTypeTask, bdd.CardTypeFeature, bdd.CardTypeEpic:
+	case bdd.CardTypeFeature, bdd.CardTypeEpic:
 		return []string{"acceptance"}
 	case bdd.CardTypeDecision:
 		return []string{"description", "design"}

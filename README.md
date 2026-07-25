@@ -48,7 +48,7 @@ DEMO_BUG=$(bdd create "Cache corruption" --type bug \
   --reproduce "Start two writers and interrupt one during compaction" \
   --acceptance "The previous cache remains readable" --silent)
 
-bdd create "Ship the fix" --type task --acceptance "Released" --parent "$DEMO_BUG"
+bdd create "Ship the fix" --parent "$DEMO_BUG"
 
 bdd ready
 bdd update "$DEMO_BUG" --claim --actor alice
@@ -177,11 +177,14 @@ or warning mode.
 | Type | Required fields beyond title |
 |---|---|
 | `bug` | `reproduction`, `acceptance` |
-| `task` | `acceptance` |
+| `task` | none |
 | `feature` | `acceptance` |
 | `epic` | `acceptance` |
 | `decision` | `description`, `design` |
 | `chore` | none |
+
+`create` defaults `--type` to `task` when omitted, so `bdd create "<title>"`
+with no other flags always succeeds.
 
 Custom types (via `config set types.custom`) carry no extra required-field
 rules. Every card always requires a non-empty title and a registered type.
