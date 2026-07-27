@@ -34,6 +34,7 @@ Global flags:
   --actor <name>          Actor recorded against mutations (see BDD_ACTOR)
   --json                  Emit machine-readable JSON instead of human output
   --silent                Emit minimal output and suppress incidental diagnostics
+  --no-hooks              Disable hooks.yaml for this invocation (see BDD_NO_HOOKS)
 
 Commands:
 ` + commandsReferenceText() + `

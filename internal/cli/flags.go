@@ -23,6 +23,10 @@ type GlobalFlags struct {
 	// Silent requests terse output: no incidental stderr diagnostics on
 	// success, and minimal stdout.
 	Silent bool
+
+	// NoHooks forces hooks off for this invocation (--no-hooks), regardless
+	// of the hooks.enabled config key. See also BDD_NO_HOOKS.
+	NoHooks bool
 }
 
 // ParseGlobalFlags extracts every recognized global flag from args, in
@@ -32,7 +36,7 @@ type GlobalFlags struct {
 //
 // This pass runs ahead of cobra so a global flag may appear before or after
 // the subcommand name; cobra's own per-command FlagSet parsing (see
-// cobra_tree.go) never sees these four flags.
+// cobra_tree.go) never sees these five flags.
 func ParseGlobalFlags(args []string) (GlobalFlags, []string, error) {
 	var g GlobalFlags
 	rest := make([]string, 0, len(args))
@@ -54,6 +58,10 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string, error) {
 			continue
 		case "--silent":
 			g.Silent = true
+			i++
+			continue
+		case "--no-hooks":
+			g.NoHooks = true
 			i++
 			continue
 		default:

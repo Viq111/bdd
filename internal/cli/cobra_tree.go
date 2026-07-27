@@ -141,7 +141,7 @@ func newGroup(use, short, long, example string, fallback CmdFunc, global GlobalF
 	return cmd
 }
 
-// registerGlobalFlags declares the four flags shared by every bdd
+// registerGlobalFlags declares the five flags shared by every bdd
 // subcommand (see GlobalFlags in flags.go) on fs purely so cobra's
 // generated help text lists them; the values are never read back through
 // pflag. Run's pre-cobra ParseGlobalFlags pass (internal/cli/flags.go)
@@ -153,12 +153,13 @@ func registerGlobalFlags(fs *pflag.FlagSet) {
 	fs.String("actor", "", "actor recorded against mutations (see BDD_ACTOR)")
 	fs.Bool("json", false, "emit machine-readable JSON instead of human output")
 	fs.Bool("silent", false, "emit minimal output and suppress incidental diagnostics")
+	fs.Bool("no-hooks", false, "disable hooks.yaml for this invocation (see BDD_NO_HOOKS)")
 }
 
 // buildRoot constructs the full cobra command tree rooted at a synthetic
 // "bdd" command that is never itself executed (Run already handles the
 // no-args and version/help fast paths before reaching cobra). Its only
-// purposes are to carry the four global flags as persistent flags, so
+// purposes are to carry the five global flags as persistent flags, so
 // every subcommand's generated help lists them under "Global Flags:", and
 // to give cobra's own Find() a real tree to walk for unknown-command and
 // unknown-flag errors. It is built fresh on every Run call (never a

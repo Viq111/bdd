@@ -170,3 +170,159 @@ func TestStatusSilentEmitsOnlyDatabasePath(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q", got, wantDB+"\n")
 	}
 }
+
+func writeHooksYAML(t *testing.T, dir, content string) {
+	t.Helper()
+	path := filepath.Join(dir, ".bdd", "hooks.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func statusHooks(t *testing.T, args ...string) HooksResult {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := Run(append([]string{"status", "--json"}, args...), &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(status) exit = %d, stderr = %q", code, stderr.String())
+	}
+	var result StatusResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	return result.Hooks
+}
+
+func TestStatusHooksNoFile(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	h := statusHooks(t, "--workspace", dir)
+	if h.Present {
+		t.Fatalf("Hooks.Present = true, want false")
+	}
+	if h.Active {
+		t.Fatalf("Hooks.Active = true, want false")
+	}
+}
+
+func TestStatusHooksPresentButDisabled(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+	writeHooksYAML(t, dir, `
+version: 1
+hooks:
+  - event: status-change
+    command: ["true"]
+`)
+
+	h := statusHooks(t, "--workspace", dir)
+	if !h.Present {
+		t.Fatalf("Hooks.Present = false, want true")
+	}
+	if h.Error != "" {
+		t.Fatalf("Hooks.Error = %q, want empty", h.Error)
+	}
+	if h.Enabled {
+		t.Fatalf("Hooks.Enabled = true, want false (no opt-in)")
+	}
+	if h.Active {
+		t.Fatalf("Hooks.Active = true, want false (no opt-in)")
+	}
+}
+
+func TestStatusHooksActive(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+	writeHooksYAML(t, dir, `
+version: 1
+hooks:
+  - event: status-change
+    to_status: [awaiting_review]
+    command: ["true"]
+  - event: label-change
+    added: [review-approved]
+    command: ["true"]
+`)
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"config", "set", "hooks.enabled", "true", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(config set) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	h := statusHooks(t, "--workspace", dir)
+	if !h.Present || !h.Enabled || !h.Active {
+		t.Fatalf("Hooks = %+v, want present, enabled, and active", h)
+	}
+	if h.HookCount != 2 {
+		t.Fatalf("Hooks.HookCount = %d, want 2", h.HookCount)
+	}
+}
+
+func TestStatusHooksInvalidFile(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+	writeHooksYAML(t, dir, `
+version: 1
+hooks:
+  - event: bogus
+    command: ["true"]
+`)
+
+	h := statusHooks(t, "--workspace", dir)
+	if !h.Present {
+		t.Fatalf("Hooks.Present = false, want true")
+	}
+	if h.Error == "" {
+		t.Fatalf("Hooks.Error = empty, want a parse error")
+	}
+	if h.Active {
+		t.Fatalf("Hooks.Active = true, want false for an invalid file")
+	}
+}
+
+func TestStatusHooksNoHooksFlagForcesDisabled(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+	writeHooksYAML(t, dir, `
+version: 1
+hooks:
+  - event: status-change
+    command: ["true"]
+`)
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"config", "set", "hooks.enabled", "true", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(config set) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	h := statusHooks(t, "--workspace", dir, "--no-hooks")
+	if !h.Enabled {
+		t.Fatalf("Hooks.Enabled = false, want true (config gate unaffected by --no-hooks)")
+	}
+	if h.Active {
+		t.Fatalf("Hooks.Active = true, want false with --no-hooks")
+	}
+}
+
+func TestStatusHooksEnvVarForcesDisabled(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+	writeHooksYAML(t, dir, `
+version: 1
+hooks:
+  - event: status-change
+    command: ["true"]
+`)
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"config", "set", "hooks.enabled", "true", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified"); code != ExitSuccess {
+		t.Fatalf("Run(config set) exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	t.Setenv("BDD_NO_HOOKS", "1")
+	h := statusHooks(t, "--workspace", dir)
+	if h.Active {
+		t.Fatalf("Hooks.Active = true, want false with BDD_NO_HOOKS=1")
+	}
+}

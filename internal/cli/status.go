@@ -10,13 +10,14 @@ import (
 
 // StatusResult is the JSON/human result of `bdd status`.
 type StatusResult struct {
-	Workspace            string  `json:"workspace"`
-	Database             string  `json:"database"`
-	Prefix               *string `json:"prefix"`
-	SchemaVersion        int     `json:"schema_version"`
-	CurrentSchemaVersion int     `json:"current_schema_version"`
-	UpToDate             bool    `json:"up_to_date"`
-	Upgraded             bool    `json:"upgraded"`
+	Workspace            string      `json:"workspace"`
+	Database             string      `json:"database"`
+	Prefix               *string     `json:"prefix"`
+	SchemaVersion        int         `json:"schema_version"`
+	CurrentSchemaVersion int         `json:"current_schema_version"`
+	UpToDate             bool        `json:"up_to_date"`
+	Upgraded             bool        `json:"upgraded"`
+	Hooks                HooksResult `json:"hooks"`
 }
 
 // runStatus implements `bdd status [--upgrade]`.
@@ -62,6 +63,7 @@ func runStatus(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int
 		CurrentSchemaVersion: current,
 		UpToDate:             onDisk >= current,
 		Upgraded:             upgraded,
+		Hooks:                hooksStatus(ctx, db, g),
 	}
 	if onDisk > 0 {
 		if prefix, err := db.Prefix(ctx); err == nil {
@@ -98,7 +100,24 @@ func emitStatus(s *Streams, r StatusResult) int {
 	if r.Upgraded {
 		fmt.Fprintln(s.Stdout, "upgraded:  yes")
 	}
+	fmt.Fprintf(s.Stdout, "hooks:     %s\n", formatHooksStatus(r.Hooks))
 	return ExitSuccess
+}
+
+// formatHooksStatus renders the human-readable form of a status hooks
+// section, distinguishing: no hooks.yaml; present but invalid; present but
+// disabled; and active with its hook count.
+func formatHooksStatus(h HooksResult) string {
+	switch {
+	case !h.Present:
+		return "none"
+	case h.Error != "":
+		return fmt.Sprintf("present but invalid: %s", h.Error)
+	case h.Active:
+		return fmt.Sprintf("active (%d hook(s))", h.HookCount)
+	default:
+		return "present but disabled (run `bdd config set hooks.enabled true`)"
+	}
 }
 
 // workspaceDir derives the workspace directory a resolved database path
