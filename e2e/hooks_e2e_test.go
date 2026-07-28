@@ -711,12 +711,13 @@ hooks:
 			defer wg.Done()
 			// exec directly rather than via run(): t.Fatalf is unsafe to
 			// call from a non-test goroutine, and run() may call it.
-			// A bounded retry absorbs the connection-open race in
-			// internal/sqlite.applyPragmas (busy_timeout is applied after
-			// synchronous, so a concurrent opener can see a bare
-			// "database is locked" instead of blocking); that ordering gap
-			// is a distinct, already-reported defect, not the double-fire
-			// behavior this test targets.
+			// The bounded retry is a defensive margin against transient
+			// SQLITE_BUSY on Open() under concurrent access; the specific
+			// pragma-ordering gap that once made this common (busy_timeout
+			// applied after synchronous) was fixed for bdd-hzlx, but the
+			// retry costs nothing and keeps this test robust to any
+			// remaining contention on Open() rather than coupling its
+			// stability to that fix.
 			var r result
 			for attempt := 0; attempt < 20; attempt++ {
 				cmd := exec.Command(bddBinary, "--workspace", dbWorkspace(db), "label", "add", id, label)
@@ -755,7 +756,7 @@ hooks:
 	// invocation's label_change.added names only its own process's label,
 	// since the hookSource's pre-mutation read is a separate query from the
 	// mutation itself and can race a concurrent writer's commit -- a real,
-	// already-reported defect distinct from double-firing.
+	// open defect (bdd-o0zu) distinct from double-firing.
 	lines := readHookLines(t, out)
 	if len(lines) != len(labels) {
 		t.Fatalf("hook fired %d times for %d concurrent successful writes, want exactly %d (no double-fire)", len(lines), len(labels), len(labels))
