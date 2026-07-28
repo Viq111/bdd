@@ -228,6 +228,107 @@ func (db *DB) closeCard(ctx context.Context, id string, in CloseCard) (*Card, *C
 	return card, pre, nil
 }
 
+// ReleaseCard atomically returns a WIP-category card (in_progress,
+// awaiting_review, or any custom wip status) to StatusOpen, clearing
+// Assignee and StartedAt. Unlike ReopenCard, it does not clear ClosedAt or
+// DeferUntil, and it does not touch the worktree field. Releasing a card
+// already clean and open (empty assignee, nil StartedAt) is a no-op that
+// returns the current card. Releasing anything else -- done, frozen, or an
+// active-category card that is not clean-and-open -- returns
+// ErrInvalidTransition.
+func (db *DB) ReleaseCard(ctx context.Context, id string, in ReleaseCard) (*Card, error) {
+	post, _, err := db.releaseCard(ctx, id, in)
+	return post, err
+}
+
+// ReleaseCardWithPre behaves exactly like ReleaseCard but additionally
+// returns the card's pre-mutation state, captured inside the same
+// transaction as the mutation itself. Callers that need to diff pre/post
+// state (e.g. to compute a status-change hook's from/to) must use this
+// instead of a separate db.GetCard pre-read: a pre-read outside the
+// transaction can race a concurrent writer's commit and attribute that
+// writer's status change to this invocation's diff.
+func (db *DB) ReleaseCardWithPre(ctx context.Context, id string, in ReleaseCard) (post, pre *Card, err error) {
+	return db.releaseCard(ctx, id, in)
+}
+
+func (db *DB) releaseCard(ctx context.Context, id string, in ReleaseCard) (*Card, *Card, error) {
+	if in.Actor == "" {
+		return nil, nil, fmt.Errorf("bdd: release card %s: actor is required: %w", id, ErrInvalidArgument)
+	}
+	if !validateUTF8(in.Reason) {
+		return nil, nil, fmt.Errorf("bdd: release card %s: reason must be valid UTF-8: %w", id, ErrInvalidArgument)
+	}
+	if err := db.ready(); err != nil {
+		return nil, nil, err
+	}
+
+	var card, pre *Card
+	err := sqlite.Retry(ctx, func() error {
+		tx, err := db.sql.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		cur, err := loadCard(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		pre = cur
+
+		category, err := statusCategory(ctx, tx, cur.Status)
+		if err != nil {
+			return err
+		}
+
+		clean := cur.Status == StatusOpen && cur.Assignee == "" && cur.StartedAt == nil
+		switch {
+		case category == StatusCategoryWIP:
+			// proceed with the release below
+		case category == StatusCategoryActive && clean:
+			card = cur
+			return tx.Commit()
+		default:
+			return fmt.Errorf("bdd: release card %s: cannot release a %s-category card: %w", id, category, ErrInvalidTransition)
+		}
+
+		now := formatTime(time.Now())
+		if _, err := tx.ExecContext(ctx, `UPDATE cards SET status = ?, assignee = '', started_at = NULL, updated_at = ?, revision = revision + 1 WHERE id = ?`,
+			string(StatusOpen), now, id); err != nil {
+			return err
+		}
+
+		if in.Reason != "" {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO notes (card_id, author, body, created_at) VALUES (?, ?, ?, ?)`, id, in.Actor, in.Reason, now); err != nil {
+				return err
+			}
+		}
+
+		got, err := loadCard(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+
+		payload, _ := json.Marshal(map[string]any{
+			"from_status":       string(cur.Status),
+			"to_status":         string(StatusOpen),
+			"previous_assignee": cur.Assignee,
+			"reason":            in.Reason,
+		})
+		if err := writeEvent(ctx, tx, id, got.Revision, "release", in.Actor, now, payload); err != nil {
+			return err
+		}
+
+		card = got
+		return tx.Commit()
+	})
+	if err != nil {
+		return nil, nil, translateWriteErr(err, "release card")
+	}
+	return card, pre, nil
+}
+
 // ReopenCard moves a done-category card back to StatusOpen, clearing
 // ClosedAt, StartedAt, and Assignee. Reopening a card that is not currently
 // in a done-category status returns ErrInvalidTransition.

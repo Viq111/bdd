@@ -2,6 +2,7 @@ package bdd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -571,5 +572,503 @@ func TestCloseCardWithPreIsolatesConcurrentWriters(t *testing.T) {
 			t.Fatalf("revision %d: pre.Status = %s, want %s (chain broken: pre-read raced a concurrent writer's commit)", r.revision, r.preStatus, prevStatus)
 		}
 		prevStatus = r.postStatus
+	}
+}
+
+// TestReleaseCardClearsFieldsAfterClaim covers acceptance criterion 1:
+// ClaimCard followed by ReleaseCard yields status open, empty assignee, nil
+// StartedAt, with the revision incremented exactly once relative to the
+// post-claim card.
+func TestReleaseCardClearsFieldsAfterClaim(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "release me")
+
+	claimed, err := db.ClaimCard(ctx, card.ID, "alice")
+	if err != nil {
+		t.Fatalf("ClaimCard() error = %v", err)
+	}
+
+	got, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "orcha"})
+	if err != nil {
+		t.Fatalf("ReleaseCard() error = %v", err)
+	}
+	if got.Status != StatusOpen {
+		t.Fatalf("Status = %q, want %q", got.Status, StatusOpen)
+	}
+	if got.Assignee != "" {
+		t.Fatalf("Assignee = %q, want empty", got.Assignee)
+	}
+	if got.StartedAt != nil {
+		t.Fatalf("StartedAt = %v, want nil", got.StartedAt)
+	}
+	if got.Revision != claimed.Revision+1 {
+		t.Fatalf("Revision = %d, want %d (exactly one bump)", got.Revision, claimed.Revision+1)
+	}
+}
+
+// TestReleaseCardSucceedsFromEveryWIPStatus covers acceptance criterion 2:
+// release succeeds from every WIP-category status, including a custom
+// status declared with category wip.
+func TestReleaseCardSucceedsFromEveryWIPStatus(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	if err := db.ConfigSet(ctx, ConfigKeyStatusCustom, "qa_testing:wip", "alice"); err != nil {
+		t.Fatalf("ConfigSet(status.custom) error = %v", err)
+	}
+
+	for _, status := range []Status{StatusInProgress, StatusAwaitingReview, Status("qa_testing")} {
+		card := mustCreate(t, db, "release from "+string(status))
+		s := status
+		if _, err := db.UpdateCard(ctx, card.ID, UpdateCard{Status: &s, Actor: "alice"}); err != nil {
+			t.Fatalf("UpdateCard(status=%s) error = %v", status, err)
+		}
+
+		got, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "orcha"})
+		if err != nil {
+			t.Fatalf("ReleaseCard() from %s error = %v", status, err)
+		}
+		if got.Status != StatusOpen {
+			t.Fatalf("ReleaseCard() from %s: Status = %q, want %q", status, got.Status, StatusOpen)
+		}
+	}
+}
+
+// TestReleaseCardPreservesUnrelatedData covers acceptance criterion 3: every
+// field unrelated to the release survives byte-identical, including fields
+// ReopenCard would clear (closed_at, worktree) that ReleaseCard must not.
+func TestReleaseCardPreservesUnrelatedData(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	worktree := "/work/tree"
+	desc := "a description"
+	acceptance := "acceptance criteria"
+	externalRef := "EXT-1"
+	parent := mustCreate(t, db, "parent")
+	child := mustCreate(t, db, "child")
+
+	priority := int32(2)
+	card, err := db.CreateCard(ctx, CreateCard{
+		Title:       "release me fully",
+		Type:        CardTypeTask,
+		Priority:    &priority,
+		Description: &desc,
+		Acceptance:  &acceptance,
+		ExternalRef: &externalRef,
+		Worktree:    &worktree,
+		Labels:      []string{"keep-me"},
+		Parents:     []string{parent.ID},
+		CreatedBy:   "carol",
+		Owner:       "carol",
+	})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+	if _, err := db.UpdateCard(ctx, child.ID, UpdateCard{AddParents: []string{card.ID}}); err != nil {
+		t.Fatalf("UpdateCard(add child) error = %v", err)
+	}
+
+	until := time.Now().Add(24 * time.Hour)
+	if _, err := db.DeferCard(ctx, card.ID, "alice", &until); err != nil {
+		t.Fatalf("DeferCard() error = %v", err)
+	}
+	// Move the deferred card into WIP without going through the
+	// active-only ClaimCard, so DeferUntil and ClosedAt survive to the
+	// point of release. UpdateCard's transition table permits leaving any
+	// non-done category freely.
+	wip := StatusInProgress
+	if _, err := db.UpdateCard(ctx, card.ID, UpdateCard{Status: &wip, Actor: "alice"}); err != nil {
+		t.Fatalf("UpdateCard(status=in_progress) error = %v", err)
+	}
+	pre, err := db.GetCard(ctx, card.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+
+	got, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "orcha"})
+	if err != nil {
+		t.Fatalf("ReleaseCard() error = %v", err)
+	}
+
+	if got.Worktree != worktree {
+		t.Fatalf("Worktree = %q, want %q (must not be cleared)", got.Worktree, worktree)
+	}
+	if got.DeferUntil == nil || got.DeferUntil.Unix() != pre.DeferUntil.Unix() {
+		t.Fatalf("DeferUntil = %v, want ~%v (must not be cleared)", got.DeferUntil, pre.DeferUntil)
+	}
+	if len(got.Labels) != 1 || got.Labels[0] != "keep-me" {
+		t.Fatalf("Labels = %v, want [keep-me]", got.Labels)
+	}
+	if len(got.Parents) != 1 || got.Parents[0].ID != parent.ID {
+		t.Fatalf("Parents = %v, want [%s]", got.Parents, parent.ID)
+	}
+	if len(got.Children) != 1 || got.Children[0].ID != child.ID {
+		t.Fatalf("Children = %v, want [%s]", got.Children, child.ID)
+	}
+	if got.Priority != 2 {
+		t.Fatalf("Priority = %d, want 2", got.Priority)
+	}
+	if got.Type != CardTypeTask {
+		t.Fatalf("Type = %q, want %q", got.Type, CardTypeTask)
+	}
+	if got.Title != "release me fully" {
+		t.Fatalf("Title = %q, want unchanged", got.Title)
+	}
+	if got.Description != desc {
+		t.Fatalf("Description = %q, want %q", got.Description, desc)
+	}
+	if got.Acceptance != acceptance {
+		t.Fatalf("Acceptance = %q, want %q", got.Acceptance, acceptance)
+	}
+	if got.ExternalRef != externalRef {
+		t.Fatalf("ExternalRef = %q, want %q", got.ExternalRef, externalRef)
+	}
+	if got.Owner != "carol" {
+		t.Fatalf("Owner = %q, want carol", got.Owner)
+	}
+	if got.CreatedBy != "carol" {
+		t.Fatalf("CreatedBy = %q, want carol", got.CreatedBy)
+	}
+	if !got.CreatedAt.Equal(pre.CreatedAt) {
+		t.Fatalf("CreatedAt = %v, want unchanged %v", got.CreatedAt, pre.CreatedAt)
+	}
+}
+
+// TestReleaseCardAtomicOnError covers acceptance criterion 4/9: every error
+// path leaves the cards, notes, and events tables completely unchanged --
+// no partial write is observable.
+func TestReleaseCardAtomicOnError(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	assertUnchanged := func(t *testing.T, id string, wantRevision int64) {
+		t.Helper()
+		card, err := db.GetCard(ctx, id)
+		if err != nil {
+			t.Fatalf("GetCard() error = %v", err)
+		}
+		if card.Revision != wantRevision {
+			t.Fatalf("Revision = %d, want unchanged %d", card.Revision, wantRevision)
+		}
+		notes, err := db.Notes(ctx, id)
+		if err != nil {
+			t.Fatalf("Notes() error = %v", err)
+		}
+		if len(notes) != 0 {
+			t.Fatalf("Notes = %v, want none", notes)
+		}
+		events, err := db.Events(ctx, id)
+		if err != nil {
+			t.Fatalf("Events() error = %v", err)
+		}
+		for _, e := range events {
+			if e.Action == "release" {
+				t.Fatalf("Events contains a release event after a failed call: %+v", e)
+			}
+		}
+	}
+
+	t.Run("empty actor", func(t *testing.T) {
+		card := mustCreate(t, db, "empty actor")
+		if _, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Reason: "x"}); !errors.Is(err, ErrInvalidArgument) {
+			t.Fatalf("ReleaseCard() error = %v, want ErrInvalidArgument", err)
+		}
+		assertUnchanged(t, card.ID, card.Revision)
+	})
+
+	t.Run("invalid UTF-8 reason", func(t *testing.T) {
+		card := mustCreate(t, db, "bad reason")
+		if _, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "alice", Reason: "\xff\xfe"}); !errors.Is(err, ErrInvalidArgument) {
+			t.Fatalf("ReleaseCard() error = %v, want ErrInvalidArgument", err)
+		}
+		assertUnchanged(t, card.ID, card.Revision)
+	})
+
+	t.Run("missing card", func(t *testing.T) {
+		if _, err := db.ReleaseCard(ctx, "does-not-exist", ReleaseCard{Actor: "alice"}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("ReleaseCard() error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("done-category card", func(t *testing.T) {
+		card := mustCreate(t, db, "done")
+		if _, err := db.CloseCard(ctx, card.ID, CloseCard{Actor: "alice"}); err != nil {
+			t.Fatalf("CloseCard() error = %v", err)
+		}
+		closed, err := db.GetCard(ctx, card.ID)
+		if err != nil {
+			t.Fatalf("GetCard() error = %v", err)
+		}
+		if _, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "alice"}); !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("ReleaseCard() error = %v, want ErrInvalidTransition", err)
+		}
+		assertUnchanged(t, card.ID, closed.Revision)
+	})
+
+	t.Run("frozen-category card", func(t *testing.T) {
+		card := mustCreate(t, db, "frozen")
+		if _, err := db.DeferCard(ctx, card.ID, "alice", nil); err != nil {
+			t.Fatalf("DeferCard() error = %v", err)
+		}
+		deferred, err := db.GetCard(ctx, card.ID)
+		if err != nil {
+			t.Fatalf("GetCard() error = %v", err)
+		}
+		if _, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "alice"}); !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("ReleaseCard() error = %v, want ErrInvalidTransition", err)
+		}
+		assertUnchanged(t, card.ID, deferred.Revision)
+	})
+
+	t.Run("dirty active-category card", func(t *testing.T) {
+		card := mustCreate(t, db, "dirty active")
+		if _, err := db.ClaimCard(ctx, card.ID, "alice"); err != nil {
+			t.Fatalf("ClaimCard() error = %v", err)
+		}
+		open := StatusOpen
+		if _, err := db.UpdateCard(ctx, card.ID, UpdateCard{Status: &open, Actor: "alice"}); err != nil {
+			t.Fatalf("UpdateCard(status=open) error = %v", err)
+		}
+		dirty, err := db.GetCard(ctx, card.ID)
+		if err != nil {
+			t.Fatalf("GetCard() error = %v", err)
+		}
+		if dirty.Assignee == "" {
+			t.Fatalf("test precondition failed: card is not dirty (assignee empty)")
+		}
+		if _, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "alice"}); !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("ReleaseCard() on dirty open card error = %v, want ErrInvalidTransition", err)
+		}
+		assertUnchanged(t, card.ID, dirty.Revision)
+	})
+
+	t.Run("custom active-category card", func(t *testing.T) {
+		if err := db.ConfigSet(ctx, ConfigKeyStatusCustom, "triage:active", "alice"); err != nil {
+			t.Fatalf("ConfigSet(status.custom) error = %v", err)
+		}
+		card := mustCreate(t, db, "custom active")
+		triage := Status("triage")
+		if _, err := db.UpdateCard(ctx, card.ID, UpdateCard{Status: &triage, Actor: "alice"}); err != nil {
+			t.Fatalf("UpdateCard(status=triage) error = %v", err)
+		}
+		cur, err := db.GetCard(ctx, card.ID)
+		if err != nil {
+			t.Fatalf("GetCard() error = %v", err)
+		}
+		if _, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "alice"}); !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("ReleaseCard() on custom active status error = %v, want ErrInvalidTransition", err)
+		}
+		assertUnchanged(t, card.ID, cur.Revision)
+	})
+}
+
+// TestReleaseCardAuditEventAndNote covers acceptance criteria 5 and 6: the
+// release event carries the documented payload, and a non-empty Reason
+// becomes exactly one note authored by Actor.
+func TestReleaseCardAuditEventAndNote(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "audit me")
+
+	if _, err := db.ClaimCard(ctx, card.ID, "alice"); err != nil {
+		t.Fatalf("ClaimCard() error = %v", err)
+	}
+
+	const reason = "worker disappeared without recoverable work"
+	got, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "orcha", Reason: reason})
+	if err != nil {
+		t.Fatalf("ReleaseCard() error = %v", err)
+	}
+
+	events, err := db.Events(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("Events() error = %v", err)
+	}
+	var releaseEvents []Event
+	for _, e := range events {
+		if e.Action == "release" {
+			releaseEvents = append(releaseEvents, e)
+		}
+	}
+	if len(releaseEvents) != 1 {
+		t.Fatalf("release events = %d, want 1: %+v", len(releaseEvents), releaseEvents)
+	}
+	ev := releaseEvents[0]
+	if ev.Actor != "orcha" {
+		t.Fatalf("event Actor = %q, want orcha", ev.Actor)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(ev.Payload), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	want := map[string]any{
+		"from_status":       string(StatusInProgress),
+		"to_status":         string(StatusOpen),
+		"previous_assignee": "alice",
+		"reason":            reason,
+	}
+	for k, v := range want {
+		if payload[k] != v {
+			t.Fatalf("payload[%q] = %v, want %v (full payload: %s)", k, payload[k], v, ev.Payload)
+		}
+	}
+
+	notes, err := db.Notes(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("Notes() error = %v", err)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("Notes = %d, want 1: %+v", len(notes), notes)
+	}
+	if notes[0].Body != reason || notes[0].Author != "orcha" {
+		t.Fatalf("note = %+v, want body=%q author=orcha", notes[0], reason)
+	}
+}
+
+// TestReleaseCardEmptyReasonNoNote covers the second half of acceptance
+// criterion 6: an empty Reason creates no note.
+func TestReleaseCardEmptyReasonNoNote(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "no reason")
+
+	if _, err := db.ClaimCard(ctx, card.ID, "alice"); err != nil {
+		t.Fatalf("ClaimCard() error = %v", err)
+	}
+	got, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "orcha"})
+	if err != nil {
+		t.Fatalf("ReleaseCard() error = %v", err)
+	}
+
+	notes, err := db.Notes(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("Notes() error = %v", err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("Notes = %v, want none", notes)
+	}
+}
+
+// TestReleaseCardIdempotentOnCleanOpenCard covers acceptance criterion 7:
+// releasing an already-clean open card is a no-op that returns the current
+// card without bumping the revision or appending an event or note, even
+// when Reason is non-empty.
+func TestReleaseCardIdempotentOnCleanOpenCard(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "already clean")
+
+	got, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "orcha", Reason: "should be ignored"})
+	if err != nil {
+		t.Fatalf("ReleaseCard() error = %v", err)
+	}
+	if got.Status != StatusOpen {
+		t.Fatalf("Status = %q, want %q", got.Status, StatusOpen)
+	}
+	if got.Revision != card.Revision {
+		t.Fatalf("Revision = %d, want unchanged %d", got.Revision, card.Revision)
+	}
+
+	events, err := db.Events(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("Events() error = %v", err)
+	}
+	for _, e := range events {
+		if e.Action == "release" {
+			t.Fatalf("Events contains a release event after a no-op call: %+v", e)
+		}
+	}
+
+	notes, err := db.Notes(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("Notes() error = %v", err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("Notes = %v, want none (idempotent no-op must not append the ignored reason)", notes)
+	}
+}
+
+// TestReleaseCardConcurrentCallersOneWinnerRestAreNoOps covers acceptance
+// criterion 8: 12 concurrent ReleaseCard calls against one claimed card all
+// return without error, and afterwards the card has exactly one revision
+// bump attributable to the release and exactly one "release" event.
+func TestReleaseCardConcurrentCallersOneWinnerRestAreNoOps(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "release me concurrently")
+
+	claimed, err := db.ClaimCard(ctx, card.ID, "alice")
+	if err != nil {
+		t.Fatalf("ClaimCard() error = %v", err)
+	}
+
+	const n = 12
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := db.ReleaseCard(ctx, card.ID, ReleaseCard{Actor: "orcha"})
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("ReleaseCard(%d) error = %v, want nil", i, err)
+		}
+	}
+
+	got, err := db.GetCard(ctx, card.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if got.Status != StatusOpen || got.Assignee != "" || got.StartedAt != nil {
+		t.Fatalf("card after concurrent release = %+v, want clean open", got)
+	}
+	if got.Revision != claimed.Revision+1 {
+		t.Fatalf("Revision = %d, want %d (exactly one bump)", got.Revision, claimed.Revision+1)
+	}
+
+	events, err := db.Events(ctx, card.ID)
+	if err != nil {
+		t.Fatalf("Events() error = %v", err)
+	}
+	releaseCount := 0
+	for _, e := range events {
+		if e.Action == "release" {
+			releaseCount++
+		}
+	}
+	if releaseCount != 1 {
+		t.Fatalf("release events = %d, want exactly 1", releaseCount)
+	}
+}
+
+// TestReleaseCardWithPreReturnsPreMutationState covers acceptance criterion
+// 10: ReleaseCardWithPre's pre return value is the card as it existed
+// before this call's mutation, captured inside the same transaction.
+func TestReleaseCardWithPreReturnsPreMutationState(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "with pre")
+
+	if _, err := db.ClaimCard(ctx, card.ID, "alice"); err != nil {
+		t.Fatalf("ClaimCard() error = %v", err)
+	}
+
+	post, pre, err := db.ReleaseCardWithPre(ctx, card.ID, ReleaseCard{Actor: "orcha"})
+	if err != nil {
+		t.Fatalf("ReleaseCardWithPre() error = %v", err)
+	}
+	if pre.Status != StatusInProgress || pre.Assignee != "alice" {
+		t.Fatalf("pre = %+v, want in_progress/alice", pre)
+	}
+	if post.Status != StatusOpen || post.Assignee != "" {
+		t.Fatalf("post = %+v, want open/empty assignee", post)
 	}
 }

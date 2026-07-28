@@ -397,7 +397,10 @@ card, err := db.CreateCard(ctx, bdd.CreateCard{
 
 See the package doc comment (`go doc github.com/viq111/bdd`) and the
 runnable `Example*` functions in `example_test.go` for `Open`, `CreateCard`,
-`ClaimCard`, `ReadyCards`, `Remember`, `PutRune`, and `Snapshot`. Every
+`ClaimCard`, `ReadyCards`, `Remember`, `PutRune`, and `Snapshot`. The
+lifecycle also includes `CloseCard`, `ReopenCard`, `DeferCard`, and
+`ReleaseCard` (atomically returns an abandoned WIP card to `open`, clearing
+assignee and started-at). Every
 public method accepts a `context.Context`, returned slices are
 deterministically ordered, and mutations return the resulting object so
 callers never need a second read. Errors support `errors.Is` against the

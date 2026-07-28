@@ -84,7 +84,10 @@ for the current invocation.
 
 Hooks fire from the CLI handlers that can change a card's status or labels:
 `bdd create`, `bdd update` (including `--claim`), `bdd close`, `bdd reopen`,
-`bdd defer`, `bdd label add`, and `bdd label remove`. Events are derived by
+`bdd defer`, `bdd label add`, and `bdd label remove`. The Go API's
+`(*DB).ReleaseCard` is also a status-changing lifecycle operation (it
+returns an abandoned WIP card to `open`), but it has no CLI subcommand yet,
+so it does not fire hooks. Events are derived by
 diffing the card's state before the mutation against its state after:
 
 - `bdd create` emits a `status-change` with `from` empty and `to` the

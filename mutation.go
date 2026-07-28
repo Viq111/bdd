@@ -115,6 +115,17 @@ type CloseCard struct {
 	Actor  string
 }
 
+// ReleaseCard is the input to (*DB).ReleaseCard, which atomically returns an
+// abandoned WIP card to the normal readiness lifecycle: status open,
+// assignee cleared, started_at cleared.
+type ReleaseCard struct {
+	// Actor is required; it is recorded as the release event's actor and,
+	// when Reason is non-empty, as the reason note's author.
+	Actor string
+	// Reason, if non-empty, is recorded as an appended note.
+	Reason string
+}
+
 // AddNote is the input to (*DB).AddNote.
 type AddNote struct {
 	CardID string
