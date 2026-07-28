@@ -217,7 +217,11 @@ func fireStatusChangeIfChanged(ctx context.Context, s *Streams, hs *hookSource, 
 }
 
 // labelDiff reports the labels added and removed going from pre to post.
+// added and removed are always non-nil, even when empty, so callers that
+// serialize them (e.g. as hook payload JSON) get "[]" rather than "null".
 func labelDiff(pre, post []string) (added, removed []string) {
+	added = []string{}
+	removed = []string{}
 	preSet := make(map[string]bool, len(pre))
 	for _, l := range pre {
 		preSet[l] = true

@@ -263,10 +263,24 @@ hooks:
 	if len(addedList) != 1 || addedList[0] != "urgent" {
 		t.Fatalf("first label_change.added = %v, want [urgent]", add["added"])
 	}
+	if removed, ok := add["removed"].([]any); !ok || len(removed) != 0 {
+		t.Fatalf("first label_change.removed = %#v, want [] (empty array, not null)", add["removed"])
+	}
 	remove := lines[1]["label_change"].(map[string]any)
 	removedList, _ := remove["removed"].([]any)
 	if len(removedList) != 1 || removedList[0] != "keep" {
 		t.Fatalf("second label_change.removed = %v, want [keep]", remove["removed"])
+	}
+	if added, ok := remove["added"].([]any); !ok || len(added) != 0 {
+		t.Fatalf("second label_change.added = %#v, want [] (empty array, not null)", remove["added"])
+	}
+
+	rawData, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawData), "null") {
+		t.Fatalf("hook payload contains null, want [] for unchanged label side: %s", rawData)
 	}
 }
 
@@ -521,5 +535,25 @@ hooks:
 		if sc["to"] != want {
 			t.Fatalf("event %d status_change.to = %v, want %s", i, sc["to"], want)
 		}
+	}
+}
+
+// TestLabelDiffReturnsEmptySlicesNotNil guards the label-change hook payload
+// contract: the unchanged side must serialize as [], not null.
+func TestLabelDiffReturnsEmptySlicesNotNil(t *testing.T) {
+	added, removed := labelDiff([]string{"keep"}, []string{"keep", "urgent"})
+	if added == nil || len(added) != 1 || added[0] != "urgent" {
+		t.Fatalf("added = %#v, want [urgent]", added)
+	}
+	if removed == nil || len(removed) != 0 {
+		t.Fatalf("removed = %#v, want non-nil empty slice", removed)
+	}
+
+	added, removed = labelDiff([]string{"keep", "urgent"}, []string{"keep"})
+	if removed == nil || len(removed) != 1 || removed[0] != "urgent" {
+		t.Fatalf("removed = %#v, want [urgent]", removed)
+	}
+	if added == nil || len(added) != 0 {
+		t.Fatalf("added = %#v, want non-nil empty slice", added)
 	}
 }
