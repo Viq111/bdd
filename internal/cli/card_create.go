@@ -109,12 +109,13 @@ func runCardCreate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams)
 	}
 	defer db.Close()
 
+	actor := ResolveActor(g.Actor)
 	in := bdd.CreateCard{
 		Title:     title,
 		Type:      bdd.CardType(typ),
 		Labels:    labels,
 		Parents:   parents,
-		CreatedBy: ResolveActor(g.Actor),
+		CreatedBy: actor,
 	}
 	if havePriority {
 		p, err := parsePriority(priorityRaw)
@@ -163,6 +164,10 @@ func runCardCreate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams)
 		}
 		s.Errorf("bdd: create: %v\n", err)
 		return ExitCode(err)
+	}
+
+	if hs := loadHookSource(ctx, db, g, s, actor, bdd.HookEventStatusChange); hs != nil {
+		hs.fireStatusChange(ctx, s, card, "", string(card.Status))
 	}
 
 	return emitCard(s, "create", toCardResult(card))

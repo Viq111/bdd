@@ -117,10 +117,39 @@ func runCardUpdate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams)
 	}
 	defer db.Close()
 
+	var candidates []bdd.HookEvent
+	if claim || haveStatus {
+		candidates = append(candidates, bdd.HookEventStatusChange)
+	}
+	if len(addLabels) > 0 || len(removeLabels) > 0 {
+		candidates = append(candidates, bdd.HookEventLabelChange)
+	}
+	var hs *hookSource
+	var pre *bdd.Card
+	if len(candidates) > 0 {
+		hs = loadHookSource(ctx, db, g, s, actor, candidates...)
+		if hs != nil {
+			var preErr error
+			pre, preErr = db.GetCard(ctx, id)
+			if preErr != nil {
+				hs = nil
+			}
+		}
+	}
+
 	card, err := db.UpdateCard(ctx, id, in)
 	if err != nil {
 		s.Errorf("bdd: update: %v\n", err)
 		return ExitCode(err)
+	}
+
+	if hs != nil && pre != nil {
+		if pre.Status != card.Status {
+			hs.fireStatusChange(ctx, s, card, string(pre.Status), string(card.Status))
+		}
+		if added, removed := labelDiff(pre.Labels, card.Labels); len(added) > 0 || len(removed) > 0 {
+			hs.fireLabelChange(ctx, s, card, added, removed)
+		}
 	}
 
 	return emitCard(s, "update", toCardResult(card))

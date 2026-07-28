@@ -30,13 +30,16 @@ type HooksResult struct {
 }
 
 // HooksDisabled reports whether hooks are force-disabled for this
-// invocation via --no-hooks or BDD_NO_HOOKS=1, independent of the
-// hooks.enabled config gate.
+// invocation via --no-hooks, BDD_NO_HOOKS=1, or the BDD_HOOK_DEPTH
+// re-entrancy guard, independent of the hooks.enabled config gate.
 func HooksDisabled(g GlobalFlags) bool {
 	if g.NoHooks {
 		return true
 	}
-	return os.Getenv("BDD_NO_HOOKS") == "1"
+	if os.Getenv("BDD_NO_HOOKS") == "1" {
+		return true
+	}
+	return hooksReentrant()
 }
 
 // hooksStatus computes the HooksResult for db under global flags g, for

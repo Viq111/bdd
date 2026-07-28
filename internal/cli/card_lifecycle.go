@@ -94,11 +94,14 @@ func runCardClose(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) 
 	defer db.Close()
 
 	actor := ResolveActor(g.Actor)
+	hs, pre := prepareStatusChangeHook(ctx, db, g, s, actor, id)
+
 	card, err := db.CloseCard(ctx, id, bdd.CloseCard{Reason: reason, Actor: actor})
 	if err != nil {
 		s.Errorf("bdd: close: %v\n", err)
 		return ExitCode(err)
 	}
+	fireStatusChangeIfChanged(ctx, s, hs, pre, card)
 	return emitCard(s, "close", toCardResult(card))
 }
 
@@ -118,11 +121,14 @@ func runCardReopen(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams)
 	defer db.Close()
 
 	actor := ResolveActor(g.Actor)
+	hs, pre := prepareStatusChangeHook(ctx, db, g, s, actor, id)
+
 	card, err := db.ReopenCard(ctx, id, actor)
 	if err != nil {
 		s.Errorf("bdd: reopen: %v\n", err)
 		return ExitCode(err)
 	}
+	fireStatusChangeIfChanged(ctx, s, hs, pre, card)
 	return emitCard(s, "reopen", toCardResult(card))
 }
 
@@ -158,11 +164,14 @@ func runCardDefer(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) 
 	defer db.Close()
 
 	actor := ResolveActor(g.Actor)
+	hs, pre := prepareStatusChangeHook(ctx, db, g, s, actor, id)
+
 	card, err := db.DeferCard(ctx, id, actor, until)
 	if err != nil {
 		s.Errorf("bdd: defer: %v\n", err)
 		return ExitCode(err)
 	}
+	fireStatusChangeIfChanged(ctx, s, hs, pre, card)
 	return emitCard(s, "defer", toCardResult(card))
 }
 

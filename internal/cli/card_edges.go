@@ -106,11 +106,28 @@ func runCardLabelMutate(g GlobalFlags, cmd *cobra.Command, args []string, s *Str
 		in.RemoveLabels = []string{label}
 	}
 
+	var hs *hookSource
+	var pre *bdd.Card
+	if hs = loadHookSource(ctx, db, g, s, actor, bdd.HookEventLabelChange); hs != nil {
+		var preErr error
+		pre, preErr = db.GetCard(ctx, id)
+		if preErr != nil {
+			hs = nil
+		}
+	}
+
 	card, err := db.UpdateCard(ctx, id, in)
 	if err != nil {
 		s.Errorf("bdd: %s: %v\n", cmdName, err)
 		return ExitCode(err)
 	}
+
+	if hs != nil && pre != nil {
+		if added, removed := labelDiff(pre.Labels, card.Labels); len(added) > 0 || len(removed) > 0 {
+			hs.fireLabelChange(ctx, s, card, added, removed)
+		}
+	}
+
 	return emitCard(s, cmdName, toCardResult(card))
 }
 
