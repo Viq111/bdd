@@ -89,9 +89,9 @@ func Open(ctx context.Context, path string, opts Options) (*sql.DB, error) {
 
 func applyPragmas(ctx context.Context, db *sql.DB, skipJournalMode bool) error {
 	pragmas := []string{
+		fmt.Sprintf("PRAGMA busy_timeout = %d", CurrentRetryConfig().BusyTimeoutMS),
 		"PRAGMA foreign_keys = ON",
 		"PRAGMA synchronous = NORMAL",
-		fmt.Sprintf("PRAGMA busy_timeout = %d", CurrentRetryConfig().BusyTimeoutMS),
 	}
 	if !skipJournalMode {
 		pragmas = append(pragmas, "PRAGMA journal_mode = WAL")
