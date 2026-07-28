@@ -3,6 +3,8 @@ package bdd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -333,6 +335,81 @@ func TestUpdateCardFieldChangesAndRevision(t *testing.T) {
 	if !updated.UpdatedAt.After(created.UpdatedAt) && !updated.UpdatedAt.Equal(created.UpdatedAt) {
 		t.Fatalf("UpdatedAt did not advance")
 	}
+}
+
+// TestUpdateCardWithPreIsolatesConcurrentLabelWriters ensures the pre-state
+// returned by UpdateCardWithPre reflects only this call's own transaction,
+// not a concurrent writer's commit racing in between a separate pre-read
+// and the mutation. Regression test for label-change hook payloads
+// misattributing another process's label under contention.
+func TestUpdateCardWithPreIsolatesConcurrentLabelWriters(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.CreateCard(ctx, CreateCard{Title: "x", Type: CardTypeChore})
+	if err != nil {
+		t.Fatalf("CreateCard() error = %v", err)
+	}
+
+	const n = 8
+	var wg sync.WaitGroup
+	addedBy := make([][]string, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			label := fmt.Sprintf("concurrent-%d", i)
+			post, pre, err := db.UpdateCardWithPre(ctx, created.ID, UpdateCard{AddLabels: []string{label}})
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			added, _ := labelDiffForTest(pre.Labels, post.Labels)
+			addedBy[i] = added
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("UpdateCardWithPre(%d) error = %v", i, err)
+		}
+		want := fmt.Sprintf("concurrent-%d", i)
+		if len(addedBy[i]) != 1 || addedBy[i][0] != want {
+			t.Fatalf("call %d added = %v, want exactly [%s] (own label only, no other writer's label leaking in)", i, addedBy[i], want)
+		}
+	}
+
+	final, err := db.GetCard(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetCard() error = %v", err)
+	}
+	if len(final.Labels) != n {
+		t.Fatalf("final labels = %v, want %d labels", final.Labels, n)
+	}
+}
+
+func labelDiffForTest(pre, post []string) (added, removed []string) {
+	preSet := make(map[string]bool, len(pre))
+	for _, l := range pre {
+		preSet[l] = true
+	}
+	postSet := make(map[string]bool, len(post))
+	for _, l := range post {
+		postSet[l] = true
+	}
+	for _, l := range post {
+		if !preSet[l] {
+			added = append(added, l)
+		}
+	}
+	for _, l := range pre {
+		if !postSet[l] {
+			removed = append(removed, l)
+		}
+	}
+	return added, removed
 }
 
 func TestUpdateCardExplicitEmptyClearsField(t *testing.T) {

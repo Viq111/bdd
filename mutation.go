@@ -242,12 +242,28 @@ func (db *DB) CreateCard(ctx context.Context, in CreateCard) (*Card, error) {
 // transaction and returns the resulting card. See the UpdateCard type for
 // field semantics, including the Status transition rules.
 func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, error) {
+	post, _, err := db.updateCard(ctx, id, in, false)
+	return post, err
+}
+
+// UpdateCardWithPre behaves exactly like UpdateCard but additionally
+// returns the card's pre-mutation state, captured inside the same
+// transaction as the mutation itself. Callers that need to diff pre/post
+// state (e.g. to compute a hook's label/status delta) must use this instead
+// of a separate db.GetCard pre-read: a pre-read outside the transaction can
+// race a concurrent writer's commit and attribute that writer's change to
+// this invocation's diff.
+func (db *DB) UpdateCardWithPre(ctx context.Context, id string, in UpdateCard) (post, pre *Card, err error) {
+	return db.updateCard(ctx, id, in, true)
+}
+
+func (db *DB) updateCard(ctx context.Context, id string, in UpdateCard, capturePre bool) (*Card, *Card, error) {
 	if err := validateUpdateCard(in); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := db.ready(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	addLabels := dedupe(in.AddLabels)
@@ -257,7 +273,7 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 	addChildren := dedupe(in.AddChildren)
 	removeChildren := dedupe(in.RemoveChildren)
 
-	var card *Card
+	var card, pre *Card
 	err := sqlite.Retry(ctx, func() error {
 		tx, err := db.sql.BeginTx(ctx, nil)
 		if err != nil {
@@ -267,6 +283,14 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 
 		now := time.Now().UTC()
 		nowStr := formatTime(now)
+
+		if capturePre {
+			got, err := loadCard(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			pre = got
+		}
 
 		if in.Status != nil {
 			var curStatus string
@@ -470,9 +494,9 @@ func (db *DB) UpdateCard(ctx context.Context, id string, in UpdateCard) (*Card, 
 		return tx.Commit()
 	})
 	if err != nil {
-		return nil, translateWriteErr(err, "update card")
+		return nil, nil, translateWriteErr(err, "update card")
 	}
-	return card, nil
+	return card, pre, nil
 }
 
 // requiredCreateFields checks the creation-time required-field matrix:

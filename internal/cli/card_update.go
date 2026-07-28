@@ -125,19 +125,17 @@ func runCardUpdate(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams)
 		candidates = append(candidates, bdd.HookEventLabelChange)
 	}
 	var hs *hookSource
-	var pre *bdd.Card
 	if len(candidates) > 0 {
 		hs = loadHookSource(ctx, db, g, s, actor, candidates...)
-		if hs != nil {
-			var preErr error
-			pre, preErr = db.GetCard(ctx, id)
-			if preErr != nil {
-				hs = nil
-			}
-		}
 	}
 
-	card, err := db.UpdateCard(ctx, id, in)
+	var card, pre *bdd.Card
+	var err error
+	if hs != nil {
+		card, pre, err = db.UpdateCardWithPre(ctx, id, in)
+	} else {
+		card, err = db.UpdateCard(ctx, id, in)
+	}
 	if err != nil {
 		s.Errorf("bdd: update: %v\n", err)
 		return ExitCode(err)
