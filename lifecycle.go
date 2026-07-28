@@ -137,14 +137,30 @@ func (db *DB) ClaimCard(ctx context.Context, id, actor string) (*Card, error) {
 // or a custom done status) leaves its status and ClosedAt untouched. A
 // non-empty Reason is appended as a note on every call, closed or not.
 func (db *DB) CloseCard(ctx context.Context, id string, in CloseCard) (*Card, error) {
+	post, _, err := db.closeCard(ctx, id, in)
+	return post, err
+}
+
+// CloseCardWithPre behaves exactly like CloseCard but additionally returns
+// the card's pre-mutation state, captured inside the same transaction as
+// the mutation itself. Callers that need to diff pre/post state (e.g. to
+// compute a status-change hook's from/to) must use this instead of a
+// separate db.GetCard pre-read: a pre-read outside the transaction can race
+// a concurrent writer's commit and attribute that writer's status change to
+// this invocation's diff.
+func (db *DB) CloseCardWithPre(ctx context.Context, id string, in CloseCard) (post, pre *Card, err error) {
+	return db.closeCard(ctx, id, in)
+}
+
+func (db *DB) closeCard(ctx context.Context, id string, in CloseCard) (*Card, *Card, error) {
 	if !validateUTF8(in.Reason) {
-		return nil, fmt.Errorf("bdd: close card %s: reason must be valid UTF-8: %w", id, ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("bdd: close card %s: reason must be valid UTF-8: %w", id, ErrInvalidArgument)
 	}
 	if err := db.ready(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var card *Card
+	var card, pre *Card
 	err := sqlite.Retry(ctx, func() error {
 		tx, err := db.sql.BeginTx(ctx, nil)
 		if err != nil {
@@ -156,6 +172,7 @@ func (db *DB) CloseCard(ctx context.Context, id string, in CloseCard) (*Card, er
 		if err != nil {
 			return err
 		}
+		pre = cur
 
 		category, err := statusCategory(ctx, tx, cur.Status)
 		if err != nil {
@@ -206,20 +223,36 @@ func (db *DB) CloseCard(ctx context.Context, id string, in CloseCard) (*Card, er
 		return tx.Commit()
 	})
 	if err != nil {
-		return nil, translateWriteErr(err, "close card")
+		return nil, nil, translateWriteErr(err, "close card")
 	}
-	return card, nil
+	return card, pre, nil
 }
 
 // ReopenCard moves a done-category card back to StatusOpen, clearing
 // ClosedAt, StartedAt, and Assignee. Reopening a card that is not currently
 // in a done-category status returns ErrInvalidTransition.
 func (db *DB) ReopenCard(ctx context.Context, id string, actor string) (*Card, error) {
+	post, _, err := db.reopenCard(ctx, id, actor)
+	return post, err
+}
+
+// ReopenCardWithPre behaves exactly like ReopenCard but additionally
+// returns the card's pre-mutation state, captured inside the same
+// transaction as the mutation itself. Callers that need to diff pre/post
+// state (e.g. to compute a status-change hook's from/to) must use this
+// instead of a separate db.GetCard pre-read: a pre-read outside the
+// transaction can race a concurrent writer's commit and attribute that
+// writer's status change to this invocation's diff.
+func (db *DB) ReopenCardWithPre(ctx context.Context, id string, actor string) (post, pre *Card, err error) {
+	return db.reopenCard(ctx, id, actor)
+}
+
+func (db *DB) reopenCard(ctx context.Context, id string, actor string) (*Card, *Card, error) {
 	if err := db.ready(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var card *Card
+	var card, pre *Card
 	err := sqlite.Retry(ctx, func() error {
 		tx, err := db.sql.BeginTx(ctx, nil)
 		if err != nil {
@@ -231,6 +264,7 @@ func (db *DB) ReopenCard(ctx context.Context, id string, actor string) (*Card, e
 		if err != nil {
 			return err
 		}
+		pre = cur
 
 		category, err := statusCategory(ctx, tx, cur.Status)
 		if err != nil {
@@ -260,9 +294,9 @@ func (db *DB) ReopenCard(ctx context.Context, id string, actor string) (*Card, e
 		return tx.Commit()
 	})
 	if err != nil {
-		return nil, translateWriteErr(err, "reopen card")
+		return nil, nil, translateWriteErr(err, "reopen card")
 	}
-	return card, nil
+	return card, pre, nil
 }
 
 // DeferCard moves a card to StatusDeferred, optionally recording until as
@@ -271,11 +305,27 @@ func (db *DB) ReopenCard(ctx context.Context, id string, actor string) (*Card, e
 // until something re-evaluates the card. Deferring a done-category card
 // returns ErrInvalidTransition.
 func (db *DB) DeferCard(ctx context.Context, id string, actor string, until *time.Time) (*Card, error) {
+	post, _, err := db.deferCard(ctx, id, actor, until)
+	return post, err
+}
+
+// DeferCardWithPre behaves exactly like DeferCard but additionally returns
+// the card's pre-mutation state, captured inside the same transaction as
+// the mutation itself. Callers that need to diff pre/post state (e.g. to
+// compute a status-change hook's from/to) must use this instead of a
+// separate db.GetCard pre-read: a pre-read outside the transaction can race
+// a concurrent writer's commit and attribute that writer's status change to
+// this invocation's diff.
+func (db *DB) DeferCardWithPre(ctx context.Context, id string, actor string, until *time.Time) (post, pre *Card, err error) {
+	return db.deferCard(ctx, id, actor, until)
+}
+
+func (db *DB) deferCard(ctx context.Context, id string, actor string, until *time.Time) (*Card, *Card, error) {
 	if err := db.ready(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var card *Card
+	var card, pre *Card
 	err := sqlite.Retry(ctx, func() error {
 		tx, err := db.sql.BeginTx(ctx, nil)
 		if err != nil {
@@ -287,6 +337,7 @@ func (db *DB) DeferCard(ctx context.Context, id string, actor string, until *tim
 		if err != nil {
 			return err
 		}
+		pre = cur
 
 		category, err := statusCategory(ctx, tx, cur.Status)
 		if err != nil {
@@ -322,9 +373,9 @@ func (db *DB) DeferCard(ctx context.Context, id string, actor string, until *tim
 		return tx.Commit()
 	})
 	if err != nil {
-		return nil, translateWriteErr(err, "defer card")
+		return nil, nil, translateWriteErr(err, "defer card")
 	}
-	return card, nil
+	return card, pre, nil
 }
 
 // HumanCard atomically adds the "human" label and appends reason as a note

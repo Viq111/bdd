@@ -185,23 +185,6 @@ func runHook(ctx context.Context, h bdd.Hook, event bdd.HookEvent, payload []byt
 	}
 }
 
-// prepareStatusChangeHook loads a hookSource gated on status-change hooks
-// and, only when one exists, pre-reads id's current card so the caller can
-// diff it against the mutation's post-state. Returns a nil hookSource (and
-// nil pre) whenever hooks are inactive, unconfigured for status-change, or
-// the pre-read fails.
-func prepareStatusChangeHook(ctx context.Context, db *bdd.DB, g GlobalFlags, s *Streams, actor, id string) (*hookSource, *bdd.Card) {
-	hs := loadHookSource(ctx, db, g, s, actor, bdd.HookEventStatusChange)
-	if hs == nil {
-		return nil, nil
-	}
-	pre, err := db.GetCard(ctx, id)
-	if err != nil {
-		return nil, nil
-	}
-	return hs, pre
-}
-
 // fireStatusChangeIfChanged fires hs's status-change event for post using
 // pre's status as "from", when hs and pre are non-nil and the status
 // actually changed. It is a no-op otherwise, so callers can invoke it

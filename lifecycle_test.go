@@ -3,6 +3,9 @@ package bdd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
+	"sync"
 	"testing"
 	"time"
 )
@@ -508,5 +511,65 @@ func TestUpdateCardAddParentsRejectsCycle(t *testing.T) {
 
 	if _, err := db.UpdateCard(ctx, a.ID, UpdateCard{AddParents: []string{b.ID}, Actor: "alice"}); !errors.Is(err, ErrCycle) {
 		t.Fatalf("UpdateCard(AddParents cycle) error = %v, want ErrCycle", err)
+	}
+}
+
+// TestCloseCardWithPreIsolatesConcurrentWriters ensures the pre-state
+// returned by CloseCardWithPre reflects only this call's own transaction,
+// never a concurrent writer's commit racing in between a separate pre-read
+// and the mutation. Regression test for the same class of misattribution
+// bug fixed for label/status hooks by UpdateCardWithPre (bd bdd-o0zu),
+// applied here to the lifecycle-specific status-change mutations
+// (CloseCard/ReopenCard/DeferCard) driving the `close`/`reopen`/`defer`
+// commands' status-change hook.
+//
+// Every call passes a non-empty Reason, so CloseCard always bumps the
+// revision (even when the status itself is already closed and the call is
+// otherwise a no-op), giving every successful call a distinct, strictly
+// increasing revision that totally orders the calls' commits. Once sorted
+// by revision, each call's pre.Status must equal the previous call's
+// post.Status: any break in that chain means a pre-read observed state
+// other than what its own transaction actually wrote over.
+func TestCloseCardWithPreIsolatesConcurrentWriters(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	card := mustCreate(t, db, "close me")
+
+	const n = 12
+	type result struct {
+		revision   int64
+		preStatus  Status
+		postStatus Status
+	}
+	results := make([]result, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			post, pre, err := db.CloseCardWithPre(ctx, card.ID, CloseCard{Reason: fmt.Sprintf("note %d", i), Actor: "alice"})
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			results[i] = result{revision: post.Revision, preStatus: pre.Status, postStatus: post.Status}
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("CloseCardWithPre(%d) error = %v", i, err)
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool { return results[i].revision < results[j].revision })
+	prevStatus := StatusOpen
+	for _, r := range results {
+		if r.preStatus != prevStatus {
+			t.Fatalf("revision %d: pre.Status = %s, want %s (chain broken: pre-read raced a concurrent writer's commit)", r.revision, r.preStatus, prevStatus)
+		}
+		prevStatus = r.postStatus
 	}
 }
