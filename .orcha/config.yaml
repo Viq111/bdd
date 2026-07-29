@@ -1,6 +1,5 @@
 project:
   name: bdd
-  conventions-id: bdd-iux
 #default_agent: codex
 dispatch:
   max-active: 3
@@ -24,8 +23,6 @@ llm:
     - "0.01"
     - --top-k
     - "64"
-dolt:
-  connection: 127.0.0.1:3307
 agents:
   - name: claude-fable
     model: fable

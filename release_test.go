@@ -34,8 +34,8 @@ func TestReleaseVersionWiringMatchesMain(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(contents), `var version = "0.1.1"`) {
-			t.Fatalf("%s no longer declares version = \"0.1.1\"", versionFile)
+		if !strings.Contains(string(contents), `var version = "0.1.2"`) {
+			t.Fatalf("%s no longer declares version = \"0.1.2\"", versionFile)
 		}
 		if !strings.Contains(string(contents), `var commit = "unspecified"`) {
 			t.Fatalf("%s no longer declares commit; update the -ldflags -X main.commit= target", versionFile)

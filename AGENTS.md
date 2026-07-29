@@ -1,16 +1,16 @@
-This project uses **bd** (Beads) for issue tracking. Run `bd prime` for the
+This project uses **bdd** for card tracking. Run `bdd prime` for the
 current command reference and session-close protocol.
 
 ## Project
 
 `bdd` is a lightweight, fast CLI for tracking cards. It starts as a blank implementation;
-the active Beads card and the conventions card are the source of truth for
+the active bdd card and the conventions card are the source of truth for
 scope and acceptance criteria.
 
 ## Per-task workflow
 
 1. Work in a new worktree below `./.worktrees/` on a branch named for the
-   assigned role and Beads issue.
+   assigned role and bdd card.
 2. Keep implementation work, unit tests, and QA verification in their assigned
    role scopes from `ROLES.md`.
 3. When implementation is ready, create or reuse one `[qa]` review card for
@@ -26,7 +26,7 @@ scope and acceptance criteria.
 
 ## Rules
 
-- Use `bd` for task tracking and `bd remember` for cross-session notes.
+- Use `bdd` for card tracking and `bdd remember` for cross-session notes.
 - Use non-interactive flags for commands that might prompt.
 - Do not manually set daemon-owned labels: `awaiting-review`,
   `review-round-N`, or `merge-completed`.

@@ -1,6 +1,6 @@
 # BDD Roles
 
-`ROLES.md` is the committed source of truth for local Beads role wisps. Run
+`ROLES.md` is the committed source of truth for local bdd role runes. Run
 `orcha setup` after cloning to hydrate these roles on a new machine.
 
 ## Roles
@@ -24,8 +24,8 @@ Review:
 
 Workflow:
 - Create a worktree under `./.worktrees/`, branch
-  `programmer/<bd-short-id>/<short-desc>`, and commit
-  `programmer: <description> (bd <id>)`.
+  `programmer/<bdd-short-id>/<short-desc>`, and commit
+  `programmer: <description> (bdd <id>)`.
 - Follow the per-task review workflow in `AGENTS.md`.
 
 ---
@@ -53,8 +53,8 @@ Review:
 
 Workflow:
 - Create a worktree under `./.worktrees/`, branch
-  `qa/<bd-short-id>/<short-desc>`, and commit
-  `qa: <description> (bd <id>)`.
+  `qa/<bdd-short-id>/<short-desc>`, and commit
+  `qa: <description> (bdd <id>)`.
 - Follow the per-task review workflow in `AGENTS.md`.
 
 ---
