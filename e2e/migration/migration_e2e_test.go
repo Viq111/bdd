@@ -314,17 +314,36 @@ exec '` + real + `' "$@"
 
 func runMigration(t *testing.T, workspace, bd, destination string) result {
 	t.Helper()
+	r, _ := runMigrationChain(t, workspace, bd, destination, "")
+	return r
+}
+
+// runMigrationChain is runMigration, extended so a caller driving several
+// migrations back to back over the same workspace can skip recomputing a
+// "before" snapshot it already knows: pass the "after" value returned by the
+// previous call as knownBefore whenever nothing has written to workspace
+// since, and that already-verified value is reused instead of re-running the
+// same 7 read-only bd calls to reconfirm a state that has not changed. This
+// never skips the check that matters -- the "after" snapshot below is always
+// freshly computed -- it only skips re-deriving an already-known "before".
+// Pass "" to always compute before fresh (this is what runMigration does).
+func runMigrationChain(t *testing.T, workspace, bd, destination, knownBefore string) (result, string) {
+	t.Helper()
 	// Snapshot through the real bd binary, not the bd argument: bd here may be
 	// a shim (recordingBD, timestampBD) whose behavior depends on the exact
 	// sequence or count of invocations it sees, which extra snapshot calls
 	// would otherwise perturb.
 	real := migrationBD(t)
-	before := sourceSnapshot(t, workspace, real)
+	before := knownBefore
+	if before == "" {
+		before = sourceSnapshot(t, workspace, real)
+	}
 	r := runCommand(t, workspace, migrationBinary, "--workspace", workspace, "--bd", bd, "--destination", destination)
-	if after := sourceSnapshot(t, workspace, real); after != before {
+	after := sourceSnapshot(t, workspace, real)
+	if after != before {
 		t.Fatalf("migration changed source: before=%s after=%s", before, after)
 	}
-	return r
+	return r, after
 }
 
 func canonicalDestination(t *testing.T, destination string) string {
@@ -341,13 +360,25 @@ func canonicalDestination(t *testing.T, destination string) string {
 // must discover .beads without a subcommand or explicit source flag.
 func runMigrationFromWorkspace(t *testing.T, workspace, bd, destination string) result {
 	t.Helper()
+	r, _ := runMigrationFromWorkspaceChain(t, workspace, bd, destination, "")
+	return r
+}
+
+// runMigrationFromWorkspaceChain extends runMigrationFromWorkspace the same
+// way runMigrationChain extends runMigration; see its doc comment.
+func runMigrationFromWorkspaceChain(t *testing.T, workspace, bd, destination, knownBefore string) (result, string) {
+	t.Helper()
 	real := migrationBD(t)
-	before := sourceSnapshot(t, workspace, real)
+	before := knownBefore
+	if before == "" {
+		before = sourceSnapshot(t, workspace, real)
+	}
 	r := runCommand(t, workspace, migrationBinary, "--bd", bd, "--destination", destination)
-	if after := sourceSnapshot(t, workspace, real); after != before {
+	after := sourceSnapshot(t, workspace, real)
+	if after != before {
 		t.Fatalf("migration changed source: before=%s after=%s", before, after)
 	}
-	return r
+	return r, after
 }
 
 func wroteTo(t *testing.T, destination string) string {
@@ -479,7 +510,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	shim := recordingBD(t, migrationBD(t), log)
 	destination := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
 
-	first := runMigrationFromWorkspace(t, workspace, shim, destination)
+	first, afterFirst := runMigrationFromWorkspaceChain(t, workspace, shim, destination, "")
 	if first.code != 0 || first.stderr != expectedRoleWarnings || first.stdout != wroteTo(t, destination) {
 		t.Fatalf("first migration = %#v", first)
 	}
@@ -489,7 +520,10 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := runMigration(t, workspace, shim, destination)
+	// Nothing has written to workspace since first's "after" snapshot (the
+	// two calls above only read the destination), so second's "before" is
+	// already known -- reuse it instead of re-querying the source.
+	second, _ := runMigrationChain(t, workspace, shim, destination, afterFirst)
 	if second.code != 0 || second.stdout != first.stdout || second.stderr != first.stderr {
 		t.Fatalf("identical rerun = %#v, want %#v", second, first)
 	}
@@ -796,7 +830,7 @@ func TestMigrationTransactionFailureRollsBackEarlierUpserts(t *testing.T) {
 	if err != nil || closeErr != nil {
 		t.Fatalf("install failure trigger: exec=%v close=%v", err, closeErr)
 	}
-	r := runMigration(t, workspace, bd, destination)
+	r, afterR := runMigrationChain(t, workspace, bd, destination, "")
 	if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "injected transaction failure") {
 		t.Fatalf("injected failure = %#v", r)
 	}
@@ -820,7 +854,10 @@ func TestMigrationTransactionFailureRollsBackEarlierUpserts(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	retry := runMigration(t, workspace, bd, destination)
+	// Nothing has written to workspace since r's "after" snapshot (the trigger
+	// install/drop and reads above only touch the destination sqlite file
+	// directly), so retry's "before" is already known.
+	retry, _ := runMigrationChain(t, workspace, bd, destination, afterR)
 	if retry.code != 0 || retry.stdout != wroteTo(t, destination) {
 		t.Fatalf("retry after rollback = %#v", retry)
 	}
