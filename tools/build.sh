@@ -47,6 +47,11 @@ case "${1:-}" in
     go test ./...
     fuzz_short
     ;;
+  --test-fast)
+    go build ./...
+    go vet ./...
+    go test -short ./...
+    ;;
   --fuzz-short) fuzz_short ;;
   --fixture) fixture ;;
   --bench)
@@ -58,7 +63,7 @@ case "${1:-}" in
   --dist|--release) VERSION="$VERSION" ./scripts/release.sh ;;
   --clean) rm -rf "$BIN_DIR" dist "$BENCH_DIR" ;;
   *)
-    echo "usage: $0 [--install|--test|--fuzz-short|--fixture|--bench|--dist|--release|--clean]" >&2
+    echo "usage: $0 [--install|--test|--test-fast|--fuzz-short|--fixture|--bench|--dist|--release|--clean]" >&2
     exit 2
     ;;
 esac

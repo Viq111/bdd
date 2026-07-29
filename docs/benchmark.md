@@ -105,7 +105,15 @@ never needs to query the fixture directly to find realistic arguments.
 
 ## CI
 
-`./tools/build.sh --test` (`go build`, `go vet`, `go test ./...`) is safe to run in any
-CI job. `./tools/build.sh --bench` is intended for a dedicated, pinned-hardware CI job
+There are two test lanes:
+
+- `./tools/build.sh --test-fast` (`go build`, `go vet`, `go test -short ./...`) is
+  for the inner edit/run loop. It skips the migration e2e suite and the fuzz
+  seed corpora, so it does not catch regressions in either.
+- `./tools/build.sh --test` (`go build`, `go vet`, `go test ./...`, plus the fuzz
+  seed corpora) is the full pre-submit lane and is safe to run in any CI job.
+  Run it before submitting for review.
+
+`./tools/build.sh --bench` is intended for a dedicated, pinned-hardware CI job
 (or manual runs) given the reference-machine caveats above; it is not part
 of `./tools/build.sh --test`.
