@@ -1,8 +1,10 @@
 package bdd
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -29,13 +31,24 @@ func TestReleaseScriptSyntax(t *testing.T) {
 // report the wrong commit, or a release would reintroduce ldflags version
 // stamping that fights the source literal.
 func TestReleaseVersionWiringMatchesMain(t *testing.T) {
+	mainVersionFile := "cmd/bdd/version.go"
+	mainContents, err := os.ReadFile(mainVersionFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionLine := regexp.MustCompile(`var version = "([^"]+)"`).FindStringSubmatch(string(mainContents))
+	if versionLine == nil {
+		t.Fatalf("%s does not declare a `var version = \"...\"` literal", mainVersionFile)
+	}
+	wantVersion := fmt.Sprintf(`var version = "%s"`, versionLine[1])
+
 	for _, versionFile := range []string{"cmd/bdd/version.go", "tools/migrate/cmd/bdd-migration/version.go"} {
 		contents, err := os.ReadFile(versionFile)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(contents), `var version = "0.1.2"`) {
-			t.Fatalf("%s no longer declares version = \"0.1.2\"", versionFile)
+		if !strings.Contains(string(contents), wantVersion) {
+			t.Fatalf("%s does not declare %s (expected it to track cmd/bdd/version.go)", versionFile, wantVersion)
 		}
 		if !strings.Contains(string(contents), `var commit = "unspecified"`) {
 			t.Fatalf("%s no longer declares commit; update the -ldflags -X main.commit= target", versionFile)
