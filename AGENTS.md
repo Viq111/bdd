@@ -26,7 +26,8 @@ scope and acceptance criteria.
 
 ## Rules
 
-- Use `bdd` for card tracking and `bdd remember` for cross-session notes.
+- Use `bdd` for card tracking and `bdd memory create`/`bdd memory update` for
+  cross-session notes.
 - Use non-interactive flags for commands that might prompt.
 - Do not manually set daemon-owned labels: `awaiting-review`,
   `review-round-N`, or `merge-completed`.
