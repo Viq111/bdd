@@ -30,7 +30,8 @@ Usage:
   bdd [global flags] <command> [flags]
 
 Global flags:
-  --workspace, -C <dir>  Resolve the workspace starting from <dir> (default: cwd)
+  --workspace, -C <dir>   Resolve the workspace starting from <dir>
+                          (default: cwd; see BDD_WORKSPACE)
   --actor <name>          Actor recorded against mutations (see BDD_ACTOR)
   --json                  Emit machine-readable JSON instead of human output
   --silent                Emit minimal output and suppress incidental diagnostics
@@ -52,6 +53,7 @@ func Run(args []string, stdout, stderr io.Writer, version, commit string) int {
 		fmt.Fprintln(stderr, err)
 		return ExitUsage
 	}
+	global.Workspace, global.WorkspaceSource = ResolveWorkspace(global.Workspace)
 
 	if len(rest) == 0 {
 		fmt.Fprint(stdout, helpTextFor())

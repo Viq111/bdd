@@ -326,3 +326,83 @@ hooks:
 		t.Fatalf("Hooks.Active = true, want false with BDD_NO_HOOKS=1")
 	}
 }
+
+func statusWorkspaceSource(t *testing.T, args ...string) StatusResult {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := Run(append([]string{"status", "--json"}, args...), &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(status) exit = %d, stderr = %q", code, stderr.String())
+	}
+	var result StatusResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal(%q) error = %v", stdout.String(), err)
+	}
+	return result
+}
+
+func TestStatusWorkspaceSourceFlag(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	result := statusWorkspaceSource(t, "--workspace", dir)
+	if result.WorkspaceSource != "flag" {
+		t.Fatalf("WorkspaceSource = %q, want %q", result.WorkspaceSource, "flag")
+	}
+}
+
+func TestStatusWorkspaceSourceEnv(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	t.Setenv("BDD_WORKSPACE", dir)
+	result := statusWorkspaceSource(t)
+	if result.WorkspaceSource != "env" {
+		t.Fatalf("WorkspaceSource = %q, want %q", result.WorkspaceSource, "env")
+	}
+}
+
+func TestStatusWorkspaceSourceEnvFlagWins(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+	other := t.TempDir()
+
+	t.Setenv("BDD_WORKSPACE", other)
+	result := statusWorkspaceSource(t, "--workspace", dir)
+	if result.WorkspaceSource != "flag" {
+		t.Fatalf("WorkspaceSource = %q, want %q", result.WorkspaceSource, "flag")
+	}
+	if result.Workspace != dir {
+		t.Fatalf("Workspace = %q, want %q (flag must win over BDD_WORKSPACE)", result.Workspace, dir)
+	}
+}
+
+func TestStatusWorkspaceSourceCwd(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	t.Chdir(dir)
+	result := statusWorkspaceSource(t)
+	if result.WorkspaceSource != "cwd" {
+		t.Fatalf("WorkspaceSource = %q, want %q", result.WorkspaceSource, "cwd")
+	}
+}
+
+func TestStatusHumanOutputIncludesSourceLine(t *testing.T) {
+	dir := t.TempDir()
+	initWorkspace(t, dir)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"status", "--workspace", dir}, &stdout, &stderr, "dev", "unspecified")
+	if code != ExitSuccess {
+		t.Fatalf("Run(status) exit = %d, stderr = %q", code, stderr.String())
+	}
+	wantWorkspace, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(stdout.String(), "\n")
+	if len(lines) < 2 || lines[0] != "workspace: "+wantWorkspace || lines[1] != "source:    flag" {
+		t.Fatalf("stdout = %q, want workspace line followed by source line", stdout.String())
+	}
+}

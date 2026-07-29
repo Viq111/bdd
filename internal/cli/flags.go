@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -12,6 +13,10 @@ type GlobalFlags struct {
 	// Workspace is the directory to resolve the workspace from (--workspace,
 	// -C). Empty means the current working directory.
 	Workspace string
+
+	// WorkspaceSource records where Workspace came from: "flag", "env", or
+	// "cwd". Set by ResolveWorkspace in Run, after ParseGlobalFlags returns.
+	WorkspaceSource string
 
 	// Actor is the caller-supplied actor override (--actor). Empty means
 	// fall through the rest of the precedence chain; see ResolveActor.
@@ -83,6 +88,22 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string, error) {
 	}
 
 	return g, rest, nil
+}
+
+// ResolveWorkspace resolves the directory to start the workspace walk from,
+// following the fixed precedence: an explicit --workspace/-C flag, then
+// BDD_WORKSPACE, then "" meaning the current working directory. It returns
+// both the resolved directory and the source that produced it ("flag",
+// "env", or "cwd"), for `bdd status` to report. This is deliberately not
+// consulted from ParseGlobalFlags itself; see Run.
+func ResolveWorkspace(flagWorkspace string) (dir string, source string) {
+	if flagWorkspace != "" {
+		return flagWorkspace, "flag"
+	}
+	if v := os.Getenv("BDD_WORKSPACE"); v != "" {
+		return v, "env"
+	}
+	return "", "cwd"
 }
 
 // cutFlagValue splits a "--flag=value" token into its name and value. A

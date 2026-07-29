@@ -67,11 +67,16 @@ bdd show "$DEMO_BUG"
 All workspace configuration — the ID prefix, custom statuses, custom types,
 and memories — lives in that one SQLite file; there is no separate
 JSON/YAML config file to parse before opening the database. The CLI starts
-at `--workspace`/`-C` (default: the current directory) and walks upward
-looking for `.bdd/bdd.sqlite`, stopping at the filesystem root.
-`bdd status` prints the resolved workspace and database path plus schema
-state; `bdd status --upgrade` applies pending schema migrations (a normal
-open only compares schema versions and never runs migrations itself).
+at `--workspace`/`-C` (default: the `BDD_WORKSPACE` environment variable if
+set and non-empty, else the current directory) and walks upward looking for
+`.bdd/bdd.sqlite`, stopping at the filesystem root. An explicit
+`--workspace`/`-C` flag always wins over `BDD_WORKSPACE`; a bad starting
+directory from either source fails the same way, with no silent fallback to
+the current directory. `bdd status` prints the resolved workspace and database path,
+which of the three sources (`flag`, `env`, `cwd`) the workspace came from,
+and schema state; `bdd status --upgrade` applies pending schema migrations
+(a normal open only compares schema versions and never runs migrations
+itself).
 
 ## CLI contract
 
@@ -79,7 +84,7 @@ open only compares schema versions and never runs migrations itself).
 
 | Flag | Meaning |
 |---|---|
-| `--workspace, -C <dir>` | Resolve the workspace starting from `<dir>` (default: cwd) |
+| `--workspace, -C <dir>` | Resolve the workspace starting from `<dir>` (default: cwd; see `BDD_WORKSPACE`) |
 | `--actor <name>` | Actor recorded against mutations |
 | `--json` | Emit machine-readable JSON instead of human output |
 | `--silent` | Emit minimal output and suppress incidental diagnostics on success |

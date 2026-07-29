@@ -11,6 +11,7 @@ import (
 // StatusResult is the JSON/human result of `bdd status`.
 type StatusResult struct {
 	Workspace            string      `json:"workspace"`
+	WorkspaceSource      string      `json:"workspace_source"`
 	Database             string      `json:"database"`
 	Prefix               *string     `json:"prefix"`
 	SchemaVersion        int         `json:"schema_version"`
@@ -58,6 +59,7 @@ func runStatus(g GlobalFlags, cmd *cobra.Command, args []string, s *Streams) int
 
 	result := StatusResult{
 		Workspace:            workspaceDir(db.Path()),
+		WorkspaceSource:      g.WorkspaceSource,
 		Database:             db.Path(),
 		SchemaVersion:        onDisk,
 		CurrentSchemaVersion: current,
@@ -88,6 +90,7 @@ func emitStatus(s *Streams, r StatusResult) int {
 	}
 
 	fmt.Fprintf(s.Stdout, "workspace: %s\n", r.Workspace)
+	fmt.Fprintf(s.Stdout, "source:    %s\n", r.WorkspaceSource)
 	fmt.Fprintf(s.Stdout, "database:  %s\n", r.Database)
 	if r.Prefix != nil {
 		fmt.Fprintf(s.Stdout, "prefix:    %s\n", *r.Prefix)

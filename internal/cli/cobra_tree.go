@@ -149,7 +149,7 @@ func newGroup(use, short, long, example string, fallback CmdFunc, global GlobalF
 // they appear, before any cobra command sees its argument list, so
 // registering them here cannot double-parse or conflict with that pass.
 func registerGlobalFlags(fs *pflag.FlagSet) {
-	fs.StringP("workspace", "C", "", "resolve the workspace starting from <dir> (default: cwd)")
+	fs.StringP("workspace", "C", "", "resolve the workspace starting from <dir> (default: cwd; see BDD_WORKSPACE)")
 	fs.String("actor", "", "actor recorded against mutations (see BDD_ACTOR)")
 	fs.Bool("json", false, "emit machine-readable JSON instead of human output")
 	fs.Bool("silent", false, "emit minimal output and suppress incidental diagnostics")

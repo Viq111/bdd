@@ -782,3 +782,42 @@ func TestRemovedDBFlagRejectedInTrailingPositional(t *testing.T) {
 		})
 	}
 }
+
+// TestBDDWorkspaceEnvVarBadValueFailsWithoutCwdFallback verifies that a
+// BDD_WORKSPACE pointing at a directory with no .bdd anywhere above it
+// fails with exactly the same error a bad --workspace produces, and does
+// NOT silently fall back to walking up from the process's cwd -- even when
+// that cwd is itself a real workspace. A silent fallback would let an
+// agent quietly write cards into an unrelated workspace.
+func TestBDDWorkspaceEnvVarBadValueFailsWithoutCwdFallback(t *testing.T) {
+	realWorkspace := newWorkspace(t)
+	cwd := dbWorkspace(realWorkspace)
+	nonexistent := filepath.Join(t.TempDir(), "does-not-exist")
+
+	cmd := exec.Command(bddBinary, "status")
+	cmd.Dir = cwd
+	cmd.Env = append(os.Environ(), "BDD_WORKSPACE="+nonexistent)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			t.Fatalf("run: %v", err)
+		}
+	}
+
+	if code == 0 {
+		t.Fatalf("BDD_WORKSPACE=%s bdd status: code = 0, want non-zero (must not fall back to cwd %s)", nonexistent, cwd)
+	}
+	const want = "bdd: status: bdd: no .bdd/bdd.sqlite found, init database with bdd init\n"
+	if stderr.String() != want {
+		t.Fatalf("BDD_WORKSPACE=%s bdd status: stderr = %q, want %q", nonexistent, stderr.String(), want)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("BDD_WORKSPACE=%s bdd status: stdout = %q, want empty", nonexistent, stdout.String())
+	}
+}
