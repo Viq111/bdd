@@ -237,6 +237,16 @@ func seedSingleRoleWorkspace(t *testing.T) string {
 // before and after a migration run proves the migration observed a
 // consistent, unmodified source.
 //
+// The three config keys are read via a single "config list --json" call
+// rather than three "config get" calls: "config list" returns every
+// configured key (a strict superset of status.custom/types.custom/
+// issue-prefix), so the hash still covers everything the individual "get"
+// calls covered, plus more, while paying for one bd subprocess instead of
+// three. Each bd subprocess against a nontrivial workspace costs hundreds of
+// milliseconds even for --readonly reads (Dolt commit-history traversal, not
+// process startup), so this materially shrinks a call that every test in
+// this package pays for at least twice.
+//
 // An earlier version of this check hashed the raw bytes under .beads
 // instead. That was flaky: bd's embedded Dolt storage engine performs
 // journal/manifest housekeeping (compaction, checkpointing) that can touch
@@ -251,9 +261,7 @@ func sourceSnapshot(t *testing.T, workspace, bd string) string {
 		{"--readonly", "version"},
 		{"--readonly", "statuses", "--json"},
 		{"--readonly", "types", "--json"},
-		{"--readonly", "config", "get", "status.custom"},
-		{"--readonly", "config", "get", "types.custom"},
-		{"--readonly", "config", "get", "issue-prefix"},
+		{"--readonly", "config", "list", "--json"},
 		{"--readonly", "export", "--all"},
 	} {
 		r := runCommand(t, workspace, bd, args...)
