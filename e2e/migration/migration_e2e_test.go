@@ -1,8 +1,8 @@
-package e2e_test
-
-// This file intentionally uses only subprocesses and the public bd/bdd
-// command surfaces. It is the migration QA harness, rather than a unit-test
-// seam for tools/migrate.
+// Package migration_test is QA's black-box, subprocess-level verification of
+// the bd -> bdd migration tool. This file intentionally uses only
+// subprocesses and the public bd/bdd command surfaces. It is the migration
+// QA harness, rather than a unit-test seam for tools/migrate.
+package migration_test
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +21,82 @@ import (
 
 	_ "modernc.org/sqlite"
 )
+
+var bddBinary, migrationBinary string
+
+// TestMain skips before building anything when -short is set: the entire
+// migration package is slow (bd-dependent, ~186s), unlike the per-test
+// testing.Short() skips used elsewhere in this codebase (see snapshot_test.go),
+// so the fast lane should not even pay for the two go build invocations.
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		// Skip the whole package before paying for the two go build
+		// invocations below: every test here is bd-dependent and slow.
+		fmt.Println("SKIP migration tests: skipped in -short mode")
+		os.Exit(0)
+	}
+
+	dir, err := os.MkdirTemp("", "bdd-migration-e2e-bin-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	bddBinary = filepath.Join(dir, "bdd")
+	build := exec.Command("go", "build", "-o", bddBinary, "../../cmd/bdd")
+	if out, err := build.CombinedOutput(); err != nil {
+		panic("build bdd: " + err.Error() + "\n" + string(out))
+	}
+	migrationBinary = filepath.Join(dir, "bdd-migration")
+	build = exec.Command("go", "build", "-o", migrationBinary, "../../tools/migrate/cmd/bdd-migration")
+	if out, err := build.CombinedOutput(); err != nil {
+		panic("build bdd-migration: " + err.Error() + "\n" + string(out))
+	}
+
+	os.Exit(m.Run())
+}
+
+type result struct {
+	stdout string
+	stderr string
+	code   int
+}
+
+// dbWorkspace derives the --workspace argument that resolves to db: the
+// grandparent directory when db follows the standard <workspace>/.bdd/
+// bdd.sqlite layout, or db's own parent directory otherwise (mirroring
+// internal/cli's workspaceDir).
+func dbWorkspace(db string) string {
+	dir := filepath.Dir(db)
+	if filepath.Base(dir) == ".bdd" {
+		return filepath.Dir(dir)
+	}
+	return dir
+}
+
+func run(t *testing.T, db string, args ...string) result {
+	t.Helper()
+	full := args
+	if db != "" {
+		full = append([]string{"--workspace", dbWorkspace(db)}, args...)
+	}
+	cmd := exec.Command(bddBinary, full...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	cmd.Stdin = nil
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			t.Fatalf("run %v: %v", full, err)
+		}
+	}
+	return result{stdout: stdout.String(), stderr: stderr.String(), code: code}
+}
 
 const expectedRoleWarnings = "warning: mig-role: skipped dependency kind \"related\" to mig-related; skipped dependency to mig-blocker because role is imported as a rune; skipped role-attached comments because role is imported as a rune\n"
 
@@ -485,7 +563,7 @@ func TestMigrationHelpFailureAndArchitectureContracts(t *testing.T) {
 		t.Fatalf("missing source = %#v", bad)
 	}
 
-	deps := runCommand(t, "..", "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/bdd")
+	deps := runCommand(t, "../..", "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/bdd")
 	if deps.code != 0 {
 		t.Fatalf("list bdd dependencies: %s", deps.stderr)
 	}
