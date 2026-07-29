@@ -473,6 +473,7 @@ func assertImportedPublicState(t *testing.T, destination, wantMemory, wantRoleTi
 }
 
 func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	log := filepath.Join(t.TempDir(), "bd.calls")
 	shim := recordingBD(t, migrationBD(t), log)
@@ -550,6 +551,7 @@ func TestMigrationEndToEndRerunMutationAndReadonlySource(t *testing.T) {
 }
 
 func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
+	t.Parallel()
 	workspace := seedSingleRoleWorkspace(t)
 	destination := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
 	r := runMigration(t, workspace, migrationBD(t), destination)
@@ -563,6 +565,7 @@ func TestMigrationSingleValidRoleBecomesProtectedRune(t *testing.T) {
 }
 
 func TestMigrationReconcilesSourceTimestamps(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	shim := timestampBD(t, migrationBD(t))
 	destination := filepath.Join(t.TempDir(), ".bdd", "bdd.sqlite")
@@ -596,6 +599,7 @@ func TestMigrationReconcilesSourceTimestamps(t *testing.T) {
 }
 
 func TestMigrationHelpFailureAndArchitectureContracts(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	log := filepath.Join(t.TempDir(), "bd.calls")
 	shim := recordingBD(t, migrationBD(t), log)
@@ -632,6 +636,7 @@ func TestMigrationHelpFailureAndArchitectureContracts(t *testing.T) {
 }
 
 func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	bd := migrationBD(t)
 	for _, args := range [][]string{
@@ -665,6 +670,7 @@ func TestMigrationUnsupportedRecordsWarnButSupportedRecordsImport(t *testing.T) 
 }
 
 func TestMigrationCorruptDestinationDoesNotPartiallyUpsert(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	destination := filepath.Join(t.TempDir(), "corrupt.sqlite")
 	contents := []byte("not a sqlite database")
@@ -685,6 +691,7 @@ func TestMigrationCorruptDestinationDoesNotPartiallyUpsert(t *testing.T) {
 }
 
 func TestMigrationNewDestinationPublicationFailureLeavesNoArtifact(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	parentFile := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(parentFile, []byte("destination parent blocker"), 0o600); err != nil {
@@ -701,6 +708,7 @@ func TestMigrationNewDestinationPublicationFailureLeavesNoArtifact(t *testing.T)
 }
 
 func TestMigrationDestinationOwnedCollisionsWarnAndPreserveRecords(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	destinationDir := t.TempDir()
 	destination := filepath.Join(destinationDir, ".bdd", "bdd.sqlite")
@@ -756,6 +764,7 @@ func TestMigrationDestinationOwnedCollisionsWarnAndPreserveRecords(t *testing.T)
 }
 
 func TestMigrationTransactionFailureRollsBackEarlierUpserts(t *testing.T) {
+	t.Parallel()
 	workspace := seedMigrationWorkspace(t)
 	bd := migrationBD(t)
 	if seeded := runCommand(t, workspace, bd, "create", "--id", "mig-fail", "--title", "Transaction failure", "--silent"); seeded.code != 0 {
