@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -127,10 +128,36 @@ func runCommand(t *testing.T, dir, binary string, args ...string) result {
 	return result{stdout: stdout.String(), stderr: stderr.String(), code: code}
 }
 
-func seedMigrationWorkspace(t *testing.T) string {
-	t.Helper()
-	workspace := t.TempDir()
-	bd := migrationBD(t)
+// seedMigrationTemplate and seedSingleRoleTemplate build each seeded
+// workspace's on-disk fixture exactly once per package run, the first time
+// any test needs it, via sync.OnceValues. Every test then hands itself a
+// fresh copy of the cached template in its own t.TempDir() rather than
+// re-running the same ~13 bd subprocess calls. The template directories
+// themselves are never written to after they are built; only copies are
+// ever mutated.
+var (
+	seedMigrationTemplate  = sync.OnceValues(buildMigrationWorkspaceTemplate)
+	seedSingleRoleTemplate = sync.OnceValues(buildSingleRoleWorkspaceTemplate)
+)
+
+func runInDir(dir, binary string, args ...string) error {
+	cmd := exec.Command(binary, args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s %v: %w: %s", binary, args, err, out)
+	}
+	return nil
+}
+
+func buildMigrationWorkspaceTemplate() (string, error) {
+	bd, err := exec.LookPath("bd")
+	if err != nil {
+		return "", err
+	}
+	dir, err := os.MkdirTemp("", "bdd-migration-seed-template-")
+	if err != nil {
+		return "", err
+	}
 	for _, args := range [][]string{
 		{"init", "--non-interactive", "--quiet", "--prefix", "mig", "--skip-agents", "--skip-hooks"},
 		{"config", "set", "status.custom", "awaiting_review"},
@@ -147,27 +174,59 @@ func seedMigrationWorkspace(t *testing.T) string {
 		{"dep", "add", "mig-role", "mig-related", "--type", "related"},
 		{"remember", "seed memory", "--key", "migration/seed"},
 	} {
-		r := runCommand(t, workspace, bd, args...)
-		if r.code != 0 {
-			t.Fatalf("seed bd %v: code=%d stderr=%s", args, r.code, r.stderr)
+		if err := runInDir(dir, bd, args...); err != nil {
+			return "", fmt.Errorf("seed migration workspace template: %w", err)
 		}
 	}
-	return workspace
+	return dir, nil
 }
 
-func seedSingleRoleWorkspace(t *testing.T) string {
-	t.Helper()
-	workspace := t.TempDir()
-	bd := migrationBD(t)
+func buildSingleRoleWorkspaceTemplate() (string, error) {
+	bd, err := exec.LookPath("bd")
+	if err != nil {
+		return "", err
+	}
+	dir, err := os.MkdirTemp("", "bdd-migration-seed-single-role-template-")
+	if err != nil {
+		return "", err
+	}
 	for _, args := range [][]string{
 		{"init", "--non-interactive", "--quiet", "--prefix", "mig", "--skip-agents", "--skip-hooks"},
 		{"config", "set", "status.custom", "awaiting_review"},
 		{"config", "set", "types.custom", "role"},
 		{"create", "--id", "mig-role", "--title", "[role] Operator", "--type", "role", "--description", "role body", "--silent"},
 	} {
-		if r := runCommand(t, workspace, bd, args...); r.code != 0 {
-			t.Fatalf("seed single role %v: %#v", args, r)
+		if err := runInDir(dir, bd, args...); err != nil {
+			return "", fmt.Errorf("seed single-role workspace template: %w", err)
 		}
+	}
+	return dir, nil
+}
+
+func seedMigrationWorkspace(t *testing.T) string {
+	t.Helper()
+	migrationBD(t) // skip if bd is not on PATH, before touching the cached template
+	template, err := seedMigrationTemplate()
+	if err != nil {
+		t.Fatalf("build migration workspace template: %v", err)
+	}
+	workspace := t.TempDir()
+	if err := os.CopyFS(workspace, os.DirFS(template)); err != nil {
+		t.Fatalf("copy migration workspace template: %v", err)
+	}
+	return workspace
+}
+
+func seedSingleRoleWorkspace(t *testing.T) string {
+	t.Helper()
+	migrationBD(t) // skip if bd is not on PATH, before touching the cached template
+	template, err := seedSingleRoleTemplate()
+	if err != nil {
+		t.Fatalf("build single-role workspace template: %v", err)
+	}
+	workspace := t.TempDir()
+	if err := os.CopyFS(workspace, os.DirFS(template)); err != nil {
+		t.Fatalf("copy single-role workspace template: %v", err)
 	}
 	return workspace
 }
