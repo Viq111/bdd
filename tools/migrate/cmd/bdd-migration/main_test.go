@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/viq111/bdd/tools/migrate/internal/sourcebd"
@@ -150,6 +151,81 @@ esac
 	}
 	if stdout.String() != "wrote to "+canonicalDestination+"\n" || stderr.Len() != 0 {
 		t.Fatalf("rerun streams = (%q, %q)", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunMainRejectsUnsupportedBDVersionWithoutFlag(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bd := filepath.Join(workspace, "fake-bd")
+	script := "#!/bin/sh\nprintf 'bd version 1.1.0\\n'\n"
+	if err := os.WriteFile(bd, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	got := runMain(context.Background(), []string{"--workspace", workspace, "--bd", bd}, &stdout, &stderr)
+	if got != 2 {
+		t.Fatalf("exit = %d, want 2; stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte(`unsupported bd version "1.1.0" (supported: 1.0.x)`)) {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunMainProceedsWithUnsupportedBDVersionWhenFlagSet(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bd := filepath.Join(workspace, "fake-bd")
+	script := `#!/bin/sh
+case "$2" in
+version) printf 'bd version 1.1.0\n' ;;
+statuses) printf '%s\n' '{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[],"schema_version":1}' ;;
+types) printf '%s\n' '{"core_types":[{"name":"task"}],"custom_types":[],"schema_version":1}' ;;
+config) case "$4" in status.custom) printf '\n' ;; types.custom) printf '\n' ;; issue-prefix) printf 'demo\n' ;; esac ;;
+export) printf '%s\n' '{"_type":"issue","id":"demo-1","title":"solo","status":"open","issue_type":"task"}' ;;
+esac
+`
+	if err := os.WriteFile(bd, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(workspace, "destination.sqlite")
+	var stdout, stderr bytes.Buffer
+	got := runMain(context.Background(), []string{"--workspace", workspace, "--bd", bd, "--destination", destination, "--allow-unsupported-bd-version"}, &stdout, &stderr)
+	if got != 0 {
+		t.Fatalf("exit = %d, want 0; stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte(`warning: proceeding with unsupported bd version "1.1.0" (supported: 1.0.x)`)) {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunMainRejectsMalformedVersionOutputEvenWithFlag(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bd := filepath.Join(workspace, "fake-bd")
+	script := "#!/bin/sh\nprintf 'not a version line\\n'\n"
+	if err := os.WriteFile(bd, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	got := runMain(context.Background(), []string{"--workspace", workspace, "--bd", bd, "--allow-unsupported-bd-version"}, &stdout, &stderr)
+	if got == 0 {
+		t.Fatalf("exit = %d, want non-zero; stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("unsupported bd version output")) {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestHelpListsAllowUnsupportedBDVersionFlag(t *testing.T) {
+	if !strings.Contains(usage, "--allow-unsupported-bd-version") {
+		t.Fatalf("usage = %q, missing --allow-unsupported-bd-version", usage)
 	}
 }
 

@@ -2,6 +2,7 @@ package sourcebd
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -71,10 +72,49 @@ func TestEveryRunnerCommandIsReadonly(t *testing.T) {
 }
 
 func TestParseVersion(t *testing.T) {
-	if _, err := ParseVersion("bd version 1.0.3 (build)"); err != nil {
-		t.Fatal(err)
+	accepted := []string{
+		"bd version 1.0.0",
+		"bd version 1.0.3",
+		"bd version 1.0.99",
+		"bd version 1.0.3 (1b2dd2cb: main@1b2dd2cb56b3)",
+		"bd version 1.0.3-rc.1",
+		"bd version 1.0.3+build.7",
 	}
-	if _, err := ParseVersion("bd version 9.9.9"); err == nil {
-		t.Fatal("accepted unsupported version")
+	for _, output := range accepted {
+		if _, err := ParseVersion(output); err != nil {
+			t.Fatalf("ParseVersion(%q) = %v, want accept", output, err)
+		}
+	}
+
+	rejected := []string{
+		"bd version 1.1.0",
+		"bd version 0.9.9",
+		"bd version 2.0.0",
+		"bd version 9.9.9",
+	}
+	for _, output := range rejected {
+		_, err := ParseVersion(output)
+		if err == nil {
+			t.Fatalf("ParseVersion(%q) accepted unsupported version", output)
+		}
+		var unsupported *UnsupportedVersionError
+		if !errors.As(err, &unsupported) {
+			t.Fatalf("ParseVersion(%q) error = %v, want *UnsupportedVersionError", output, err)
+		}
+	}
+
+	malformed := []string{"", "not a version string", "bd 1.0.3"}
+	for _, output := range malformed {
+		_, err := ParseVersion(output)
+		if err == nil {
+			t.Fatalf("ParseVersion(%q) accepted malformed output", output)
+		}
+		var unsupported *UnsupportedVersionError
+		if errors.As(err, &unsupported) {
+			t.Fatalf("ParseVersion(%q) returned UnsupportedVersionError for malformed output", output)
+		}
+		if !strings.Contains(err.Error(), "unsupported bd version output") {
+			t.Fatalf("ParseVersion(%q) error = %v, want malformed-output message", output, err)
+		}
 	}
 }

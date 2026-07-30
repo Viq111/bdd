@@ -10,8 +10,33 @@ import (
 	"strings"
 )
 
-// Version is the only Beads version whose export shapes this adapter supports.
-const Version = "1.0.3"
+// SupportedSeries lists the Beads major.minor series whose export shapes this
+// adapter is known to support. Patch releases within a listed series are
+// assumed compatible; series outside this list are rejected until they have
+// been qualified against real fixtures.
+var SupportedSeries = []string{"1.0"}
+
+// UnsupportedVersionError reports a bd version whose major.minor series is not
+// in SupportedSeries. It is distinct from malformed-output errors so callers
+// can offer an opt-in override for the former but never the latter.
+type UnsupportedVersionError struct {
+	Version   string
+	Supported []string
+}
+
+func (e *UnsupportedVersionError) Error() string {
+	return fmt.Sprintf("unsupported bd version %q (supported: %s)", e.Version, FormatSupportedSeries(e.Supported))
+}
+
+// FormatSupportedSeries renders a list of major.minor series as the "1.0.x"
+// style shown in error and warning messages.
+func FormatSupportedSeries(series []string) string {
+	formatted := make([]string, len(series))
+	for i, s := range series {
+		formatted[i] = s + ".x"
+	}
+	return strings.Join(formatted, ", ")
+}
 
 // Result keeps streams separate: Beads diagnostics must never contaminate JSONL.
 type Result struct{ Stdout, Stderr []byte }
@@ -84,8 +109,31 @@ func ParseVersion(output string) (string, error) {
 	if len(fields) < 3 || fields[0] != "bd" || fields[1] != "version" {
 		return "", fmt.Errorf("unsupported bd version output %q", strings.TrimSpace(output))
 	}
-	if fields[2] != Version {
-		return "", fmt.Errorf("unsupported bd version %q (supported: %s)", fields[2], Version)
+	full := fields[2]
+	if !contains(SupportedSeries, versionSeries(full)) {
+		return "", &UnsupportedVersionError{Version: full, Supported: SupportedSeries}
 	}
-	return fields[2], nil
+	return full, nil
+}
+
+// versionSeries extracts the major.minor series from a version string,
+// dropping the patch component and any -rc.N / +build suffix.
+func versionSeries(version string) string {
+	if i := strings.IndexAny(version, "-+"); i >= 0 {
+		version = version[:i]
+	}
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0] + "." + parts[1]
+}
+
+func contains(series []string, target string) bool {
+	for _, s := range series {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }

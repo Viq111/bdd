@@ -21,7 +21,7 @@ import (
 	"github.com/viq111/bdd/tools/migrate/internal/warnings"
 )
 
-const usage = "Usage: bdd-migration [--workspace <dir>] [--bd <path>] [--destination <path>] [--version]\n"
+const usage = "Usage: bdd-migration [--workspace <dir>] [--bd <path>] [--destination <path>] [--allow-unsupported-bd-version] [--version]\n"
 
 type usageError struct{ err error }
 
@@ -30,6 +30,7 @@ func (e usageError) Error() string { return e.err.Error() }
 type options struct {
 	workspace, binary, destination string
 	help, showVersion              bool
+	allowUnsupportedBDVersion      bool
 }
 
 func main() { os.Exit(runMain(context.Background(), os.Args[1:], os.Stdout, os.Stderr)) }
@@ -53,7 +54,7 @@ func runMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stdout, "bdd-migration version %s (%s)\n", version, commit)
 		return 0
 	}
-	warningsFound, err := run(ctx, opts)
+	warningsFound, err := run(ctx, opts, stderr)
 	if rendered := warnings.Render(warningsFound); rendered != "" {
 		fmt.Fprintln(stderr, rendered)
 	}
@@ -79,6 +80,7 @@ func parseArgs(args []string, stdout io.Writer) (options, error) {
 	fs.BoolVar(&o.help, "help", false, "print usage")
 	fs.BoolVar(&o.help, "h", false, "print usage")
 	fs.BoolVar(&o.showVersion, "version", false, "print version")
+	fs.BoolVar(&o.allowUnsupportedBDVersion, "allow-unsupported-bd-version", false, "proceed even if the bd version's series is not in the supported allowlist")
 	if err := fs.Parse(args); err != nil {
 		return o, usageError{err}
 	}
@@ -135,7 +137,7 @@ func canonicalPath(path string) (string, error) {
 	}
 }
 
-func run(ctx context.Context, o options) ([]model.Warning, error) {
+func run(ctx context.Context, o options, stderr io.Writer) ([]model.Warning, error) {
 	if info, err := os.Stat(filepath.Join(o.workspace, ".beads")); err != nil || !info.IsDir() {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, usageError{fmt.Errorf("source workspace %s has no .beads directory", o.workspace)}
@@ -147,10 +149,15 @@ func run(ctx context.Context, o options) ([]model.Warning, error) {
 	}
 	runner := sourcebd.Runner{Binary: o.binary, Workspace: o.workspace}
 	if _, err := runner.Version(ctx); err != nil {
-		if strings.HasPrefix(err.Error(), "unsupported bd version") {
-			return nil, usageError{err}
+		var unsupported *sourcebd.UnsupportedVersionError
+		if errors.As(err, &unsupported) {
+			if !o.allowUnsupportedBDVersion {
+				return nil, usageError{err}
+			}
+			fmt.Fprintf(stderr, "warning: proceeding with unsupported bd version %q (supported: %s)\n", unsupported.Version, sourcebd.FormatSupportedSeries(unsupported.Supported))
+		} else {
+			return nil, fmt.Errorf("read bd version: %w", err)
 		}
-		return nil, fmt.Errorf("read bd version: %w", err)
 	}
 	statuses, err := runner.Statuses(ctx)
 	if err != nil {
