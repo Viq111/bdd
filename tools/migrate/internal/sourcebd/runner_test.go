@@ -44,7 +44,7 @@ func TestEveryRunnerCommandIsReadonly(t *testing.T) {
 	var commands [][]string
 	r := Runner{Workspace: t.TempDir(), RunCommand: func(_ context.Context, _ string, args []string, _ string, _ []string) (Result, error) {
 		commands = append(commands, args)
-		return Result{Stdout: []byte("bd version 1.0.3 (test)\n")}, nil
+		return Result{Stdout: []byte("bd version 1.1.2 (test)\n")}, nil
 	}}
 	ctx := context.Background()
 	if _, err := r.Export(ctx); err != nil {
@@ -79,6 +79,9 @@ func TestParseVersion(t *testing.T) {
 		"bd version 1.0.3 (1b2dd2cb: main@1b2dd2cb56b3)",
 		"bd version 1.0.3-rc.1",
 		"bd version 1.0.3+build.7",
+		"bd version 1.1.0",
+		"bd version 1.1.2",
+		"bd version 1.1.2 (20e493e56: main@20e493e569c9)",
 	}
 	for _, output := range accepted {
 		if _, err := ParseVersion(output); err != nil {
@@ -87,7 +90,7 @@ func TestParseVersion(t *testing.T) {
 	}
 
 	rejected := []string{
-		"bd version 1.1.0",
+		"bd version 1.2.0",
 		"bd version 0.9.9",
 		"bd version 2.0.0",
 		"bd version 9.9.9",

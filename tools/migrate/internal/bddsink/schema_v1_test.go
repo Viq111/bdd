@@ -654,7 +654,7 @@ func TestSchemaContractRejectsDoctoredDatabase(t *testing.T) {
 
 func TestSupportedFixturesImportThroughPublicAPI(t *testing.T) {
 	ctx := context.Background()
-	for _, fixture := range []string{"orcha-bd-1.0.3.jsonl", "ocp-bd-1.0.3.jsonl"} {
+	for _, fixture := range []string{"orcha-bd-1.1.2.jsonl", "ocp-bd-1.1.2.jsonl"} {
 		t.Run(fixture, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join("..", "..", "testdata", fixture))
 			if err != nil {

@@ -26,7 +26,7 @@ func plan(t *testing.T, data string) (string, error) {
 }
 
 func TestOrchaFixtureAccountsForRoleAttachments(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "orcha-bd-1.0.3.jsonl"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "orcha-bd-1.1.2.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestOrchaFixtureAccountsForRoleAttachments(t *testing.T) {
 }
 
 func TestOCPFixtureMapsEverySupportedRecord(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ocp-bd-1.0.3.jsonl"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ocp-bd-1.1.2.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestOCPFixtureMapsEverySupportedRecord(t *testing.T) {
 }
 
 func TestFixtureMappingDeterminism(t *testing.T) {
-	for _, fixture := range []string{"ocp-bd-1.0.3.jsonl", "orcha-bd-1.0.3.jsonl"} {
+	for _, fixture := range []string{"ocp-bd-1.1.2.jsonl", "orcha-bd-1.1.2.jsonl"} {
 		t.Run(fixture, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join("..", "..", "testdata", fixture))
 			if err != nil {

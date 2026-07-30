@@ -33,7 +33,8 @@ type Issue struct {
 // layer needs first. Their Raw fields retain any later-added Beads fields.
 type Dependency struct {
 	// IssueID identifies the issue that owns this dependency record. In bd
-	// 1.0.3, DependsOnID is the other endpoint of a blocks relationship.
+	// 1.1.2 (and 1.0.3 before it), DependsOnID is the other endpoint of a
+	// blocks relationship.
 	IssueID     string `json:"issue_id"`
 	DependsOnID string `json:"depends_on_id"`
 	Kind        string `json:"type"`
@@ -42,8 +43,8 @@ type Dependency struct {
 
 type Comment struct {
 	ID string `json:"id"`
-	// Text is the comment content emitted by bd 1.0.3's live export.
-	// Body remains as a compatibility fallback for the pinned fixtures.
+	// Text is the comment content emitted by live bd exports (1.0.3 through
+	// 1.1.2). Body remains as a compatibility fallback for the pinned fixtures.
 	Text string `json:"text"`
 	Body string `json:"body"`
 	Raw  map[string]json.RawMessage
@@ -113,8 +114,8 @@ func ParseJSONL(input io.Reader) ([]Record, error) {
 			for i := range v.Dependencies {
 				v.Dependencies[i].Raw = rawObject(raw["dependencies"], i)
 				// Early sanitized fixtures used issue_id as the endpoint. Keep
-				// that representation readable while production uses 1.0.3's
-				// explicit depends_on_id field.
+				// that representation readable while production (1.0.3 through
+				// 1.1.2) uses the explicit depends_on_id field.
 				if v.Dependencies[i].DependsOnID == "" {
 					v.Dependencies[i].DependsOnID = v.Dependencies[i].IssueID
 				}

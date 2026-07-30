@@ -14,7 +14,11 @@ import (
 // adapter is known to support. Patch releases within a listed series are
 // assumed compatible; series outside this list are rejected until they have
 // been qualified against real fixtures.
-var SupportedSeries = []string{"1.0"}
+//
+// 1.0 is accepted on the strength of its original qualification against bd
+// 1.0.3, but is no longer exercised by checked-in fixtures: those moved to
+// 1.1.2 (see bdd-rpwdo4), the series actually installed going forward.
+var SupportedSeries = []string{"1.0", "1.1"}
 
 // UnsupportedVersionError reports a bd version whose major.minor series is not
 // in SupportedSeries. It is distinct from malformed-output errors so callers

@@ -102,7 +102,7 @@ func TestSourceConfigAcceptsLegacyCustomStatusName(t *testing.T) {
 	}
 }
 
-func TestSourceConfigAcceptsBD103Envelopes(t *testing.T) {
+func TestSourceConfigAcceptsBD112Envelopes(t *testing.T) {
 	statuses := []byte(`{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[{"name":"reviewing","category":"wip"}],"schema_version":1}`)
 	types := []byte(`{"core_types":[{"name":"task"}],"custom_types":["role","runbook"],"schema_version":1}`)
 	cfg, err := sourceConfig(statuses, types, []byte("reviewing\n"), []byte("role,runbook\n"), []byte("demo\n"))
@@ -114,7 +114,7 @@ func TestSourceConfigAcceptsBD103Envelopes(t *testing.T) {
 	}
 }
 
-func TestRunMainImportsWithBD103CommandEnvelopes(t *testing.T) {
+func TestRunMainImportsWithBD112CommandEnvelopes(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.Mkdir(filepath.Join(workspace, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestRunMainImportsWithBD103CommandEnvelopes(t *testing.T) {
 	bd := filepath.Join(workspace, "fake-bd")
 	script := `#!/bin/sh
 case "$2" in
-version) printf 'bd version 1.0.3\n' ;;
+version) printf 'bd version 1.1.2\n' ;;
 statuses) printf '%s\n' '{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[{"name":"awaiting_review","category":"wip"}],"schema_version":1}' ;;
 types) printf '%s\n' '{"core_types":[{"name":"task"}],"custom_types":["role"],"schema_version":1}' ;;
 config) case "$4" in status.custom) printf 'awaiting_review\n' ;; types.custom) printf 'role\n' ;; issue-prefix) printf 'demo\n' ;; esac ;;
@@ -160,7 +160,7 @@ func TestRunMainRejectsUnsupportedBDVersionWithoutFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	bd := filepath.Join(workspace, "fake-bd")
-	script := "#!/bin/sh\nprintf 'bd version 1.1.0\\n'\n"
+	script := "#!/bin/sh\nprintf 'bd version 1.2.0\\n'\n"
 	if err := os.WriteFile(bd, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestRunMainRejectsUnsupportedBDVersionWithoutFlag(t *testing.T) {
 	if got != 2 {
 		t.Fatalf("exit = %d, want 2; stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
 	}
-	if !bytes.Contains(stderr.Bytes(), []byte(`unsupported bd version "1.1.0" (supported: 1.0.x)`)) {
+	if !bytes.Contains(stderr.Bytes(), []byte(`unsupported bd version "1.2.0" (supported: 1.0.x, 1.1.x)`)) {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
@@ -182,7 +182,7 @@ func TestRunMainProceedsWithUnsupportedBDVersionWhenFlagSet(t *testing.T) {
 	bd := filepath.Join(workspace, "fake-bd")
 	script := `#!/bin/sh
 case "$2" in
-version) printf 'bd version 1.1.0\n' ;;
+version) printf 'bd version 1.2.0\n' ;;
 statuses) printf '%s\n' '{"built_in_statuses":[{"name":"open","category":"active"}],"custom_statuses":[],"schema_version":1}' ;;
 types) printf '%s\n' '{"core_types":[{"name":"task"}],"custom_types":[],"schema_version":1}' ;;
 config) case "$4" in status.custom) printf '\n' ;; types.custom) printf '\n' ;; issue-prefix) printf 'demo\n' ;; esac ;;
@@ -198,7 +198,7 @@ esac
 	if got != 0 {
 		t.Fatalf("exit = %d, want 0; stdout = %q, stderr = %q", got, stdout.String(), stderr.String())
 	}
-	if !bytes.Contains(stderr.Bytes(), []byte(`warning: proceeding with unsupported bd version "1.1.0" (supported: 1.0.x)`)) {
+	if !bytes.Contains(stderr.Bytes(), []byte(`warning: proceeding with unsupported bd version "1.2.0" (supported: 1.0.x, 1.1.x)`)) {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
